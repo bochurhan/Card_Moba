@@ -1,0 +1,19 @@
+{
+  "name": "CardMoba.Client.Presentation",
+  "rootNamespace": "CardMoba.Client.Presentation",
+  "references": [
+    "CardMoba.ConfigModels",
+    "CardMoba.Client.GameLogic",
+    "CardMoba.Client.Data",
+    "CardMoba.Client.Common"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

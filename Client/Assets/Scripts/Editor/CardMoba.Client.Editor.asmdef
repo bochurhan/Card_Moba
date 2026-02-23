@@ -1,0 +1,22 @@
+{
+  "name": "CardMoba.Client.Editor",
+  "rootNamespace": "CardMoba.Client.Editor",
+  "references": [
+    "CardMoba.BattleCore",
+    "CardMoba.ConfigModels",
+    "CardMoba.Client.GameLogic",
+    "CardMoba.Client.Data",
+    "CardMoba.Client.Common"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

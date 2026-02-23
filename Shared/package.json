@@ -1,0 +1,16 @@
+{
+  "name": "com.cardmoba.shared",
+  "version": "0.1.0",
+  "displayName": "Card Moba Shared Library",
+  "description": "前后端共享代码：权威结算库（BattleCore）、通信协议（Protocol）、配置数据模型（ConfigModels）",
+  "unity": "2022.3",
+  "author": {
+    "name": "CardMoba Dev"
+  },
+  "keywords": [
+    "battle-core",
+    "settlement",
+    "protocol",
+    "config"
+  ]
+}

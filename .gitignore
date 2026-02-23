@@ -1,0 +1,71 @@
+# =========================
+# Unity
+# =========================
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+sysinfo.txt
+*.unitypackage
+*.apk
+*.aab
+/Client/Assets/Plugins/
+ExportedObj/
+*.svd
+*.pdb
+*.mdb
+
+# =========================
+# Unity auto-generated project files
+# =========================
+*.csproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+
+# =========================
+# Visual Studio / Rider
+# =========================
+.vs/
+.idea/
+*.opendb
+*.VC.db
+bin/
+obj/
+
+# =========================
+# OS
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# Build outputs
+# =========================
+*.exe
+*.dll
+*.so
+*.dylib
+
+# =========================
+# Config secrets
+# =========================
+appsettings.Development.json
+*.env
+.env.local
+
+# =========================
+# Misc
+# =========================
+Crashlytics/
+crashlytics-build.properties

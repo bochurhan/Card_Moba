@@ -1,0 +1,51 @@
+{
+  "folders": [
+    {
+      "name": "📁 项目根目录",
+      "path": "."
+    },
+    {
+      "name": "🎮 Client (Unity客户端)",
+      "path": "Client/Assets/Scripts"
+    },
+    {
+      "name": "🧠 Shared (共享结算库)",
+      "path": "Shared"
+    },
+    {
+      "name": "🖥️ Server (后台服务)",
+      "path": "Server"
+    },
+    {
+      "name": "🔧 Tools (辅助工具)",
+      "path": "Tools"
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/Library": true,
+      "**/Temp": true,
+      "**/obj": true,
+      "**/bin": true,
+      "**/*.meta": false,
+      "**/UserSettings": true,
+      "**/.vs": true
+    },
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "ms-dotnettools.csharp",
+    "omnisharp.enableEditorConfigSupport": true,
+    "dotnet.defaultSolution": "disable",
+    "omnisharp.defaultLaunchSolution": "Client/Client.sln",
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
+    "files.encoding": "utf8"
+  },
+  "extensions": {
+    "recommendations": [
+      "ms-dotnettools.csdevkit",
+      "ms-dotnettools.csharp",
+      "visualstudiotoolsforunity.vstuc",
+      "patcx.vscode-nuget-gallery"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "CardMoba.Client.GameLogic",
+  "rootNamespace": "CardMoba.Client.GameLogic",
+  "references": [
+    "CardMoba.BattleCore",
+    "CardMoba.ConfigModels",
+    "CardMoba.Protocol",
+    "CardMoba.Client.Data",
+    "CardMoba.Client.Network"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

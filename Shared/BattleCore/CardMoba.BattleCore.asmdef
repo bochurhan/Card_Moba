@@ -1,0 +1,17 @@
+{
+  "name": "CardMoba.BattleCore",
+  "rootNamespace": "CardMoba.BattleCore",
+  "references": [
+    "CardMoba.ConfigModels",
+    "CardMoba.Protocol"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": true
+}
