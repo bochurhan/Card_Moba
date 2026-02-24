@@ -240,7 +240,7 @@ namespace CardMoba.Client.GameLogic
                     CardName = "火球术",
                     Description = "向敌人投掷火球，造成4点伤害",
                     TrackType = CardTrackType.瞬策牌,
-                    SubType = CardSubType.伤害型,
+                    SubType = CardSubType.伤害,
                     TargetType = CardTargetType.SingleEnemy,
                     EnergyCost = 1,
                     Rarity = 1,
@@ -260,7 +260,7 @@ namespace CardMoba.Client.GameLogic
                     CardName = "雷霆一击",
                     Description = "凝聚雷电之力，造成7点伤害",
                     TrackType = CardTrackType.瞬策牌,
-                    SubType = CardSubType.伤害型,
+                    SubType = CardSubType.伤害,
                     TargetType = CardTargetType.SingleEnemy,
                     EnergyCost = 2,
                     Rarity = 2,
@@ -280,7 +280,7 @@ namespace CardMoba.Client.GameLogic
                     CardName = "快速格挡",
                     Description = "迅速举盾，获得3点护盾",
                     TrackType = CardTrackType.瞬策牌,
-                    SubType = CardSubType.防御型,
+                    SubType = CardSubType.防御,
                     TargetType = CardTargetType.Self,
                     EnergyCost = 1,
                     Rarity = 1,
@@ -302,7 +302,7 @@ namespace CardMoba.Client.GameLogic
                     CardName = "蓄力斩",
                     Description = "蓄力后发出致命一击，造成8点伤害",
                     TrackType = CardTrackType.定策牌,
-                    SubType = CardSubType.伤害型,
+                    SubType = CardSubType.伤害,
                     TargetType = CardTargetType.SingleEnemy,
                     EnergyCost = 2,
                     Rarity = 2,
@@ -320,7 +320,7 @@ namespace CardMoba.Client.GameLogic
                 CardName = "铁斩",
                 Description = "先获得3点护甲，然后造成6点伤害",
                 TrackType = CardTrackType.定策牌,
-                SubType = CardSubType.伤害型,  // 主类型为伤害型
+                SubType = CardSubType.伤害,  // 主类型为伤害
                 TargetType = CardTargetType.SingleEnemy,
                 EnergyCost = 2,
                 Rarity = 2,
@@ -342,7 +342,7 @@ namespace CardMoba.Client.GameLogic
                     CardName = "铁壁",
                     Description = "在回合结算时获得5点护盾",
                     TrackType = CardTrackType.定策牌,
-                    SubType = CardSubType.防御型,
+                    SubType = CardSubType.防御,
                     TargetType = CardTargetType.Self,
                     EnergyCost = 1,
                     Rarity = 1,
@@ -362,13 +362,13 @@ namespace CardMoba.Client.GameLogic
                     CardName = "生命回复",
                     Description = "在回合结算时恢复5点生命值",
                     TrackType = CardTrackType.定策牌,
-                    SubType = CardSubType.功能型,
+                    SubType = CardSubType.资源,
                     TargetType = CardTargetType.Self,
                     EnergyCost = 1,
                     Rarity = 1,
                     Effects = new List<CardEffect>
                     {
-                        new CardEffect { EffectType = EffectType.恢复生命, Value = 5 }
+                        new CardEffect { EffectType = EffectType.回复生命, Value = 5 }
                     }
                 });
             }
@@ -378,15 +378,15 @@ namespace CardMoba.Client.GameLogic
             {
                 CardId = 2004,
                 CardName = "见招拆招",
-                Description = "预判对手行动，下回合触发时展开4点反制护盾",
+                Description = "预判对手行动，反制下回合首张伤害牌",
                 TrackType = CardTrackType.定策牌,
-                SubType = CardSubType.反制型,
-                TargetType = CardTargetType.Self,
+                SubType = CardSubType.反制,
+                TargetType = CardTargetType.SingleEnemy,
                 EnergyCost = 1,
                 Rarity = 2,
                 Effects = new List<CardEffect>
                 {
-                    new CardEffect { EffectType = EffectType.反制护盾, Value = 4 }
+                    new CardEffect { EffectType = EffectType.反制首张伤害牌, Value = 1 }
                 }
             });
 
@@ -397,13 +397,13 @@ namespace CardMoba.Client.GameLogic
                 CardName = "战意激昂",
                 Description = "获得2点力量（永久增加伤害）",
                 TrackType = CardTrackType.定策牌,
-                SubType = CardSubType.增益型,
+                SubType = CardSubType.增益,
                 TargetType = CardTargetType.Self,
                 EnergyCost = 1,
                 Rarity = 2,
                 Effects = new List<CardEffect>
                 {
-                    new CardEffect { EffectType = EffectType.获得力量, Value = 2 }
+                    new CardEffect { EffectType = EffectType.增加力量, Value = 2 }
                 }
             });
 

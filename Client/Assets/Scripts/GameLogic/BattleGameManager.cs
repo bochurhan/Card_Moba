@@ -403,14 +403,14 @@ namespace CardMoba.Client.GameLogic
                 });
             }
 
-            // 生命回复 x2：恢复5点生命（定策，堆叠3层结算）
+            // 生命回复 x2：回复5点生命（定策，堆叠3层结算）
             for (int i = 0; i < 2; i++)
             {
                 deck.Add(new CardConfig
                 {
                     CardId = 2003,
                     CardName = "生命回复",
-                    Description = "恢复5点生命",
+                    Description = "回复5点生命",
                     TrackType = CardTrackType.定策牌,
                     SubType = CardSubType.资源,
                     TargetType = CardTargetType.Self,
@@ -436,7 +436,7 @@ namespace CardMoba.Client.GameLogic
                 Rarity = 2,
                 Effects = new List<CardEffect>
                 {
-                    new CardEffect { EffectType = EffectType.反制首张伤害牌, Value = 1, IsDelayed = true }
+                    new CardEffect { EffectType = EffectType.反制首张伤害牌, Value = 1 }
                 }
             });
 
