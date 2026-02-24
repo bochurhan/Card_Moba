@@ -222,6 +222,8 @@ namespace CardMoba.Client.GameLogic
         /// <summary>
         /// 创建一套测试卡组（15张牌，混合瞬策和定策）。
         /// 这是临时硬编码的测试数据，后续会从配置表读取。
+        /// 
+        /// 注意：已升级为新的「原子效果」架构，每张卡使用 Effects 列表。
         /// </summary>
         private List<CardConfig> CreateTestDeck()
         {
@@ -236,13 +238,16 @@ namespace CardMoba.Client.GameLogic
                 {
                     CardId = 1001,
                     CardName = "火球术",
-                    Description = "向敌人投掷火球，造成伤害",
+                    Description = "向敌人投掷火球，造成4点伤害",
                     TrackType = CardTrackType.瞬策牌,
                     SubType = CardSubType.伤害型,
                     TargetType = CardTargetType.SingleEnemy,
                     EnergyCost = 1,
-                    EffectValue = 4,
                     Rarity = 1,
+                    Effects = new List<CardEffect>
+                    {
+                        new CardEffect { EffectType = EffectType.造成伤害, Value = 4 }
+                    }
                 });
             }
 
@@ -253,13 +258,16 @@ namespace CardMoba.Client.GameLogic
                 {
                     CardId = 1002,
                     CardName = "雷霆一击",
-                    Description = "凝聚雷电之力，造成大量伤害",
+                    Description = "凝聚雷电之力，造成7点伤害",
                     TrackType = CardTrackType.瞬策牌,
                     SubType = CardSubType.伤害型,
                     TargetType = CardTargetType.SingleEnemy,
                     EnergyCost = 2,
-                    EffectValue = 7,
                     Rarity = 2,
+                    Effects = new List<CardEffect>
+                    {
+                        new CardEffect { EffectType = EffectType.造成伤害, Value = 7 }
+                    }
                 });
             }
 
@@ -270,34 +278,60 @@ namespace CardMoba.Client.GameLogic
                 {
                     CardId = 1003,
                     CardName = "快速格挡",
-                    Description = "迅速举盾，获得护盾",
+                    Description = "迅速举盾，获得3点护盾",
                     TrackType = CardTrackType.瞬策牌,
                     SubType = CardSubType.防御型,
                     TargetType = CardTargetType.Self,
                     EnergyCost = 1,
-                    EffectValue = 3,
                     Rarity = 1,
+                    Effects = new List<CardEffect>
+                    {
+                        new CardEffect { EffectType = EffectType.获得护盾, Value = 3 }
+                    }
                 });
             }
 
             // === 定策牌（回合末统一结算） ===
 
-            // 3张 定策伤害牌（费用高但伤害更高）
-            for (int i = 0; i < 3; i++)
+            // 2张 定策伤害牌（费用高但伤害更高）
+            for (int i = 0; i < 2; i++)
             {
                 deck.Add(new CardConfig
                 {
                     CardId = 2001,
                     CardName = "蓄力斩",
-                    Description = "蓄力后发出致命一击",
+                    Description = "蓄力后发出致命一击，造成8点伤害",
                     TrackType = CardTrackType.定策牌,
                     SubType = CardSubType.伤害型,
                     TargetType = CardTargetType.SingleEnemy,
                     EnergyCost = 2,
-                    EffectValue = 8,
                     Rarity = 2,
+                    Effects = new List<CardEffect>
+                    {
+                        new CardEffect { EffectType = EffectType.造成伤害, Value = 8 }
+                    }
                 });
             }
+
+            // 1张 多效果卡：铁斩（先获得护甲，再造成伤害）—— 验证四堆叠层机制
+            deck.Add(new CardConfig
+            {
+                CardId = 2005,
+                CardName = "铁斩",
+                Description = "先获得3点护甲，然后造成6点伤害",
+                TrackType = CardTrackType.定策牌,
+                SubType = CardSubType.伤害型,  // 主类型为伤害型
+                TargetType = CardTargetType.SingleEnemy,
+                EnergyCost = 2,
+                Rarity = 2,
+                Effects = new List<CardEffect>
+                {
+                    // Layer 1 效果（防御/属性层）
+                    new CardEffect { EffectType = EffectType.获得护甲, Value = 3 },
+                    // Layer 2 效果（伤害层）
+                    new CardEffect { EffectType = EffectType.造成伤害, Value = 6 }
+                }
+            });
 
             // 2张 定策防御牌
             for (int i = 0; i < 2; i++)
@@ -306,13 +340,16 @@ namespace CardMoba.Client.GameLogic
                 {
                     CardId = 2002,
                     CardName = "铁壁",
-                    Description = "在回合结算时展开厚重护盾",
+                    Description = "在回合结算时获得5点护盾",
                     TrackType = CardTrackType.定策牌,
                     SubType = CardSubType.防御型,
                     TargetType = CardTargetType.Self,
                     EnergyCost = 1,
-                    EffectValue = 5,
                     Rarity = 1,
+                    Effects = new List<CardEffect>
+                    {
+                        new CardEffect { EffectType = EffectType.获得护盾, Value = 5 }
+                    }
                 });
             }
 
@@ -323,28 +360,51 @@ namespace CardMoba.Client.GameLogic
                 {
                     CardId = 2003,
                     CardName = "生命回复",
-                    Description = "在回合结算时恢复生命值",
+                    Description = "在回合结算时恢复5点生命值",
                     TrackType = CardTrackType.定策牌,
                     SubType = CardSubType.功能型,
                     TargetType = CardTargetType.Self,
                     EnergyCost = 1,
-                    EffectValue = 5,
                     Rarity = 1,
+                    Effects = new List<CardEffect>
+                    {
+                        new CardEffect { EffectType = EffectType.恢复生命, Value = 5 }
+                    }
                 });
             }
 
-            // 1张 定策反制牌
+            // 1张 定策反制牌（本回合暗置，下回合堆叠0层触发）
             deck.Add(new CardConfig
             {
                 CardId = 2004,
                 CardName = "见招拆招",
-                Description = "预判对手行动，展开反制护盾",
+                Description = "预判对手行动，下回合触发时展开4点反制护盾",
                 TrackType = CardTrackType.定策牌,
                 SubType = CardSubType.反制型,
                 TargetType = CardTargetType.Self,
                 EnergyCost = 1,
-                EffectValue = 4,
                 Rarity = 2,
+                Effects = new List<CardEffect>
+                {
+                    new CardEffect { EffectType = EffectType.反制护盾, Value = 4 }
+                }
+            });
+
+            // 1张 增益牌（力量）
+            deck.Add(new CardConfig
+            {
+                CardId = 2006,
+                CardName = "战意激昂",
+                Description = "获得2点力量（永久增加伤害）",
+                TrackType = CardTrackType.定策牌,
+                SubType = CardSubType.增益型,
+                TargetType = CardTargetType.Self,
+                EnergyCost = 1,
+                Rarity = 2,
+                Effects = new List<CardEffect>
+                {
+                    new CardEffect { EffectType = EffectType.获得力量, Value = 2 }
+                }
             });
 
             return deck;
