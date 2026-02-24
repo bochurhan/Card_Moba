@@ -518,107 +518,187 @@ namespace CardMoba.BattleCore.Settlement
         /// </summary>
         private void ApplySingleEffect(BattleContext ctx, CardAction action, CardEffect effect, PlayerBattleState source)
         {
-            var target = ctx.GetPlayer(action.TargetPlayerId);
+            // ══════════════════════════════════════════════════════════
+            // 核心修复：正确处理 TargetOverride
+            // - 如果效果指定了 TargetOverride，使用它来确定目标
+            // - 否则使用卡牌出牌时选择的目标
+            // ══════════════════════════════════════════════════════════
+            PlayerBattleState? effectTarget = ResolveEffectTarget(ctx, action, effect, source);
 
             switch (effect.EffectType)
             {
                 // ── 防御与数值修正（堆叠1层） ──
                 case EffectType.获得护甲:
-                    source.Armor += effect.Value;
-                    ctx.RoundLog.Add($"[Effect] 玩家{source.PlayerId}获得{effect.Value}点护甲");
+                    if (effectTarget != null)
+                    {
+                        effectTarget.Armor += effect.Value;
+                        ctx.RoundLog.Add($"[Effect] 玩家{effectTarget.PlayerId}获得{effect.Value}点护甲");
+                    }
                     break;
 
                 case EffectType.获得护盾:
-                    source.Shield += effect.Value;
-                    ctx.RoundLog.Add($"[Effect] 玩家{source.PlayerId}获得{effect.Value}点护盾");
+                    if (effectTarget != null)
+                    {
+                        effectTarget.Shield += effect.Value;
+                        ctx.RoundLog.Add($"[Effect] 玩家{effectTarget.PlayerId}获得{effect.Value}点护盾");
+                    }
                     break;
 
                 case EffectType.增加力量:
-                    source.Strength += effect.Value;
-                    ctx.RoundLog.Add($"[Effect] 玩家{source.PlayerId}力量+{effect.Value}");
+                    if (effectTarget != null)
+                    {
+                        effectTarget.Strength += effect.Value;
+                        ctx.RoundLog.Add($"[Effect] 玩家{effectTarget.PlayerId}力量+{effect.Value}");
+                    }
                     break;
 
                 case EffectType.降低力量:
-                    if (target != null)
+                    if (effectTarget != null)
                     {
-                        target.Strength -= effect.Value;
-                        ctx.RoundLog.Add($"[Effect] 玩家{target.PlayerId}力量-{effect.Value}");
+                        effectTarget.Strength -= effect.Value;
+                        ctx.RoundLog.Add($"[Effect] 玩家{effectTarget.PlayerId}力量-{effect.Value}");
                     }
                     break;
 
                 case EffectType.易伤:
-                    if (target != null)
+                    if (effectTarget != null)
                     {
-                        target.VulnerableStacks += effect.Value;
-                        ctx.RoundLog.Add($"[Effect] 玩家{target.PlayerId}获得{effect.Value}层易伤");
+                        effectTarget.VulnerableStacks += effect.Value;
+                        ctx.RoundLog.Add($"[Effect] 玩家{effectTarget.PlayerId}获得{effect.Value}层易伤");
                     }
                     break;
 
                 case EffectType.虚弱:
-                    if (target != null)
+                    if (effectTarget != null)
                     {
-                        target.WeakStacks += effect.Value;
-                        ctx.RoundLog.Add($"[Effect] 玩家{target.PlayerId}获得{effect.Value}层虚弱");
+                        effectTarget.WeakStacks += effect.Value;
+                        ctx.RoundLog.Add($"[Effect] 玩家{effectTarget.PlayerId}获得{effect.Value}层虚弱");
                     }
                     break;
 
                 case EffectType.伤害减免:
-                    source.DamageReductionPercent += effect.Value;
-                    ctx.RoundLog.Add($"[Effect] 玩家{source.PlayerId}获得{effect.Value}%伤害减免");
+                    if (effectTarget != null)
+                    {
+                        effectTarget.DamageReductionPercent += effect.Value;
+                        ctx.RoundLog.Add($"[Effect] 玩家{effectTarget.PlayerId}获得{effect.Value}%伤害减免");
+                    }
                     break;
 
                 case EffectType.无敌:
-                    source.IsInvincible = true;
-                    ctx.RoundLog.Add($"[Effect] 玩家{source.PlayerId}获得无敌状态");
+                    if (effectTarget != null)
+                    {
+                        effectTarget.IsInvincible = true;
+                        ctx.RoundLog.Add($"[Effect] 玩家{effectTarget.PlayerId}获得无敌状态");
+                    }
                     break;
 
                 // ── 伤害（堆叠2层，通常在Step1处理，这里作为备用） ──
                 case EffectType.造成伤害:
-                    if (target != null && target.IsAlive)
+                    if (effectTarget != null && effectTarget.IsAlive)
                     {
                         int damage = source.CalculateOutgoingDamage(effect.Value);
-                        int actualDamage = target.CalculateIncomingDamage(damage);
-                        target.Hp -= actualDamage;
-                        if (target.Hp < 0) target.Hp = 0;
-                        ctx.RoundLog.Add($"[Effect] 玩家{source.PlayerId}对玩家{target.PlayerId}造成{actualDamage}点伤害");
+                        int actualDamage = effectTarget.CalculateIncomingDamage(damage);
+                        effectTarget.Hp -= actualDamage;
+                        if (effectTarget.Hp < 0) effectTarget.Hp = 0;
+                        ctx.RoundLog.Add($"[Effect] 玩家{source.PlayerId}对玩家{effectTarget.PlayerId}造成{actualDamage}点伤害");
                     }
                     break;
 
                 // ── 控制效果（堆叠3层） ──
                 case EffectType.沉默:
-                    if (target != null)
+                    if (effectTarget != null)
                     {
-                        target.IsSilenced = true;
-                        target.SilencedRounds = effect.Duration > 0 ? effect.Duration : 1;
-                        ctx.RoundLog.Add($"[Effect] 玩家{target.PlayerId}被沉默{target.SilencedRounds}回合");
+                        effectTarget.IsSilenced = true;
+                        effectTarget.SilencedRounds = effect.Duration > 0 ? effect.Duration : 1;
+                        ctx.RoundLog.Add($"[Effect] 玩家{effectTarget.PlayerId}被沉默{effectTarget.SilencedRounds}回合");
                     }
                     break;
 
                 case EffectType.眩晕:
-                    if (target != null)
+                    if (effectTarget != null)
                     {
-                        target.IsStunned = true;
-                        target.StunnedRounds = effect.Duration > 0 ? effect.Duration : 1;
-                        ctx.RoundLog.Add($"[Effect] 玩家{target.PlayerId}被眩晕{target.StunnedRounds}回合");
+                        effectTarget.IsStunned = true;
+                        effectTarget.StunnedRounds = effect.Duration > 0 ? effect.Duration : 1;
+                        ctx.RoundLog.Add($"[Effect] 玩家{effectTarget.PlayerId}被眩晕{effectTarget.StunnedRounds}回合");
                     }
                     break;
 
                 // ── 资源效果（堆叠3层） ──
                 case EffectType.抽牌:
-                    // TODO: 实现抽牌逻辑
-                    ctx.RoundLog.Add($"[Effect] 玩家{source.PlayerId}抽{effect.Value}张牌");
+                    // 抽牌效果作用于 effectTarget（通常是自己）
+                    if (effectTarget != null)
+                    {
+                        // TODO: 实现抽牌逻辑
+                        ctx.RoundLog.Add($"[Effect] 玩家{effectTarget.PlayerId}抽{effect.Value}张牌");
+                    }
                     break;
 
                 case EffectType.回复能量:
-                    source.Energy += effect.Value;
-                    ctx.RoundLog.Add($"[Effect] 玩家{source.PlayerId}回复{effect.Value}点能量");
+                    if (effectTarget != null)
+                    {
+                        effectTarget.Energy += effect.Value;
+                        ctx.RoundLog.Add($"[Effect] 玩家{effectTarget.PlayerId}回复{effect.Value}点能量");
+                    }
                     break;
 
                 case EffectType.回复生命:
-                    source.Hp += effect.Value;
-                    if (source.Hp > source.MaxHp) source.Hp = source.MaxHp;
-                    ctx.RoundLog.Add($"[Effect] 玩家{source.PlayerId}回复{effect.Value}点生命");
+                    if (effectTarget != null)
+                    {
+                        effectTarget.Hp += effect.Value;
+                        if (effectTarget.Hp > effectTarget.MaxHp) effectTarget.Hp = effectTarget.MaxHp;
+                        ctx.RoundLog.Add($"[Effect] 玩家{effectTarget.PlayerId}回复{effect.Value}点生命");
+                    }
                     break;
+            }
+        }
+
+        /// <summary>
+        /// 解析效果的实际目标。
+        /// 优先使用效果的 TargetOverride，否则使用卡牌出牌时选择的目标。
+        /// </summary>
+        private PlayerBattleState? ResolveEffectTarget(BattleContext ctx, CardAction action, CardEffect effect, PlayerBattleState source)
+        {
+            // 如果效果指定了目标覆盖类型
+            if (effect.TargetOverride.HasValue)
+            {
+                return ResolveTargetByType(ctx, source, action.TargetPlayerId, effect.TargetOverride.Value);
+            }
+            
+            // 否则使用卡牌默认目标
+            return ctx.GetPlayer(action.TargetPlayerId);
+        }
+
+        /// <summary>
+        /// 根据目标类型枚举解析实际目标玩家。
+        /// </summary>
+        private PlayerBattleState? ResolveTargetByType(BattleContext ctx, PlayerBattleState source, int cardTargetId, CardTargetType targetType)
+        {
+            switch (targetType)
+            {
+                case CardTargetType.无目标:
+                    return null;
+                    
+                case CardTargetType.自身:
+                    return source;
+                    
+                case CardTargetType.敌方当前对手:
+                case CardTargetType.敌方任意:
+                    // 使用卡牌出牌时选择的目标
+                    return ctx.GetPlayer(cardTargetId);
+                    
+                case CardTargetType.友方任意:
+                    // 使用卡牌出牌时选择的目标
+                    return ctx.GetPlayer(cardTargetId);
+                    
+                case CardTargetType.全体敌方:
+                case CardTargetType.全体友方:
+                    // AOE效果需要特殊处理，这里返回null
+                    // AOE应该在调用处循环处理所有目标
+                    ctx.RoundLog.Add($"[Warning] AOE目标类型应在调用处特殊处理");
+                    return null;
+                    
+                default:
+                    return ctx.GetPlayer(cardTargetId);
             }
         }
 

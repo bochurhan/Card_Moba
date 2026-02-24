@@ -455,8 +455,20 @@ namespace CardMoba.Client.GameLogic
                 Rarity = 2,
                 Effects = new List<CardEffect>
                 {
-                    new CardEffect { EffectType = EffectType.获得护甲, Value = 4 }, // 堆叠1层
-                    new CardEffect { EffectType = EffectType.造成伤害, Value = 5 }  // 堆叠2层
+                    // 堆叠1层：护甲给自己
+                    new CardEffect 
+                    { 
+                        EffectType = EffectType.获得护甲, 
+                        Value = 4,
+                        TargetOverride = CardTargetType.自身  // ← 核心修复：护甲作用于自身
+                    },
+                    // 堆叠2层：伤害给敌人（使用卡牌默认目标）
+                    new CardEffect 
+                    { 
+                        EffectType = EffectType.造成伤害, 
+                        Value = 5,
+                        TargetOverride = null  // 使用卡牌默认目标（敌方）
+                    }
                 }
             });
 
