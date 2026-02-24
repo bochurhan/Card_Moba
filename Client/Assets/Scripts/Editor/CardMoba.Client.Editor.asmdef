@@ -2,8 +2,10 @@
   "name": "CardMoba.Client.Editor",
   "rootNamespace": "CardMoba.Client.Editor",
   "references": [
+    "Unity.TextMeshPro",
     "CardMoba.BattleCore",
     "CardMoba.ConfigModels",
+    "CardMoba.Client.Presentation",
     "CardMoba.Client.GameLogic",
     "CardMoba.Client.Data",
     "CardMoba.Client.Common"

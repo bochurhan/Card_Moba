@@ -2,7 +2,10 @@
   "name": "CardMoba.Client.Presentation",
   "rootNamespace": "CardMoba.Client.Presentation",
   "references": [
+    "Unity.TextMeshPro",
+    "CardMoba.BattleCore",
     "CardMoba.ConfigModels",
+    "CardMoba.Protocol",
     "CardMoba.Client.GameLogic",
     "CardMoba.Client.Data",
     "CardMoba.Client.Common"

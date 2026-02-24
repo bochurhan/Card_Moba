@@ -1,7 +1,9 @@
 {
   "name": "CardMoba.ConfigModels",
   "rootNamespace": "CardMoba.ConfigModels",
-  "references": [],
+  "references": [
+    "CardMoba.Protocol"
+  ],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,

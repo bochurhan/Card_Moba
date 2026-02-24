@@ -1,0 +1,510 @@
+---
+description: AI coding guidance and rules for this repository.
+alwaysApply: true
+---
+<rule>
+
+# Card_Moba — AI Coding Rules & Context Map
+
+## 1. High-Level Overview
+
+### 1.1 Project Description
+3v3 synchronous turn-based card MOBA game. Core mechanics: 1+2 fixed lane assignment, Instant-Plan dual-track card system, Central Tower PVE+Boss fights, lane-collapse 3v3 final battle, 25-round hard cap.
+
+### 1.2 Monorepo Architecture
+```
+Card_Moba/                          ← Git root
+├── Client/                         ← Unity 2022.3 LTS project root
+│   ├── Assets/Scripts/             ← Client C# code (4-layer architecture)
+│   │   ├── Presentation/           ← View layer (UI, VFX, Audio, Input, Scene)
+│   │   ├── GameLogic/              ← Business logic (RoundFlow, CardSystem, PlayerState, TeamComm)
+│   │   ├── Data/                   ← Data layer (ConfigData, PlayerData, BattleCache)
+│   │   ├── Network/                ← Network layer (Connection, MessageDispatch, Security, Proto)
+│   │   ├── Common/                 ← Shared utilities (Constants, Utils, Extensions, Events)
+│   │   └── Editor/                 ← Editor-only tools (CardEditor, BattleSimulator)
+│   ├── Assets/Resources/Prefabs/   ← Runtime prefabs (Cards, Characters, UI, VFX, Scene)
+│   ├── Assets/ScriptableObjects/   ← SO data files (Cards, Heroes, GameConfig)
+│   ├── Assets/StreamingAssets/Config/ ← Hot-update config JSONs
+│   └── Packages/manifest.json      ← UPM manifest (includes Shared as local package)
+│
+├── Shared/                         ← UPM local package (com.cardmoba.shared v0.1.0)
+│   ├── BattleCore/                 ← Authoritative settlement engine (noEngineReferences!)
+│   │   ├── CardEffects/            ← Card effect components & pipeline
+│   │   ├── Context/                ← Battle context (all mutable game state)
+│   │   ├── Random/                 ← Seeded PRNG for deterministic settlement
+│   │   ├── RoundStateMachine/      ← 7-phase round FSM
+│   │   └── Settlement/             ← Settlement priority engine
+│   ├── Protocol/                   ← Communication protocol (Enums, Messages)
+│   └── ConfigModels/               ← Data models (Card, Hero, Relic, Rule)
+│
+├── Server/                         ← ASP.NET Core backend
+│   ├── src/
+│   │   ├── CardMoba.Gateway/       ← SignalR WebSocket gateway
+│   │   ├── CardMoba.AccountService/
+│   │   ├── CardMoba.MatchService/
+│   │   ├── CardMoba.RoomService/   ← Core game room lifecycle
+│   │   ├── CardMoba.ConfigService/
+│   │   ├── CardMoba.Common/
+│   │   └── CardMoba.DataAccess/    ← EF Core + Redis
+│   ├── tests/
+│   └── sql/init.sql                ← MySQL 8.0 schema
+│
+├── Config/                         ← Game config (Excel source → JSON export)
+│   ├── Excel/
+│   └── Json/{Cards,Heroes,Relics,Rules}/
+│
+├── Tools/                          ← .NET Core CLI tools
+│   ├── ConfigTool/                 ← Config generation & validation
+│   └── ExcelConverter/             ← Excel → JSON converter
+│
+└── Docs/
+    ├── Design/                     ← Game design documents
+    ├── Guides/                     ← Technical guides
+    └── API/                        ← Protocol & API docs
+```
+
+### 1.3 Application Entry Point
+- **Client entry**: `GameEntry` MonoBehaviour at `Client/Assets/Scripts/Common/GameEntry.cs`
+  - Attached to root GameObject in the startup scene
+  - `Awake()`: Calls `DontDestroyOnLoad`, initializes managers
+  - `Start()`: Loads config, enters main menu
+- **Server entry**: ASP.NET Core `Program.cs` in each service project (not yet created)
+- **Shared**: Pure library, no entry point — consumed by both Client (via UPM) and Server (via ProjectReference)
+
+### 1.4 Assembly Dependency Graph (ENFORCED by .asmdef)
+```
+Shared (noEngineReferences: true)
+├── CardMoba.BattleCore    → refs: ConfigModels, Protocol
+├── CardMoba.Protocol      → refs: (none)
+└── CardMoba.ConfigModels  → refs: (none)
+
+Client Assemblies:
+├── CardMoba.Client.Common        → refs: (none)
+├── CardMoba.Client.Network       → refs: Protocol
+├── CardMoba.Client.Data          → refs: ConfigModels, Protocol, Client.Network
+├── CardMoba.Client.GameLogic     → refs: BattleCore, ConfigModels, Protocol, Client.Data, Client.Network
+├── CardMoba.Client.Presentation  → refs: ConfigModels, Client.GameLogic, Client.Data, Client.Common
+└── CardMoba.Client.Editor        → refs: BattleCore, ConfigModels, Client.GameLogic, Client.Data, Client.Common [Editor-only]
+```
+**CRITICAL**: Dependencies flow DOWN only. Never add upward references (e.g., Network must NOT reference GameLogic).
+
+---
+
+## 2. Code Style & Consistency Enforcers
+
+### 2.1 Naming Conventions (C# Official + Project-Specific)
+| Element | Convention | Example |
+|---------|-----------|---------|
+| Namespace | `CardMoba.{Layer}.{Module}` PascalCase | `CardMoba.Client.GameLogic.RoundFlow` |
+| Class / Struct / Enum | PascalCase | `RoundStateMachine`, `CardTrackType` |
+| Interface | `I` + PascalCase | `ISettlementHandler`, `ICardEffect` |
+| Public method | PascalCase | `ProcessSettlement()`, `GetPlayerState()` |
+| Public property | PascalCase | `PlayerId`, `CardName` |
+| Public field | PascalCase | `TrackType`, `Cost` |
+| Private field | `_` + camelCase | `_roundNumber`, `_playerStates` |
+| Local variable | camelCase | `currentRound`, `targetPlayer` |
+| Parameter | camelCase | `playerId`, `cardConfig` |
+| Constant | PascalCase | `MaxHandSize`, `HeartbeatInterval` |
+| Enum values | PascalCase (Chinese allowed for game-specific enums) | `瞬策牌 = 1`, `定策牌 = 2` |
+| File name | Must match primary class name | `RoundStateMachine.cs` |
+| asmdef name | `CardMoba.{Assembly}` | `CardMoba.Client.GameLogic.asmdef` |
+
+### 2.2 Comment & Documentation Standards
+- **Every** public class, method, property, and enum MUST have XML doc comments (`/// <summary>`)
+- Core business logic and complex settlement code MUST have inline comments explaining the "why"
+- Use `[Header("Section Name")]` attribute to group fields in MonoBehaviour / ScriptableObject inspectors
+- Debug logs MUST use the format: `Debug.Log("[ModuleName] message")` — e.g., `Debug.Log("[CardSystem] 卡牌打出: " + cardId)`
+
+### 2.3 File Structure Template (C# class)
+```csharp
+using UnityEngine;               // Unity namespaces first
+using System;                    // System namespaces second
+using System.Collections.Generic;
+using CardMoba.BattleCore;       // Shared namespaces third
+using CardMoba.Client.Data;      // Client namespaces fourth (respect layer order)
+
+namespace CardMoba.Client.GameLogic.RoundFlow
+{
+    /// <summary>
+    /// Brief description of the class purpose.
+    /// </summary>
+    public class ClassName : MonoBehaviour  // or plain class
+    {
+        // ── Serialized Fields ──
+        [Header("配置")]
+        [SerializeField] private int _configValue;
+
+        // ── Private Fields ──
+        private int _internalState;
+
+        // ── Public Properties ──
+        public int InternalState => _internalState;
+
+        // ── Unity Lifecycle ──
+        private void Awake() { }
+        private void Start() { }
+        private void OnDestroy() { }
+
+        // ── Public Methods ──
+        // ── Private Methods ──
+    }
+}
+```
+
+### 2.4 Formatting Rules
+- Indentation: **4 spaces** (no tabs)
+- Encoding: **UTF-8**
+- Braces: Allman style (opening brace on new line for methods/classes)
+- Max method length: **100 lines** — split into smaller methods if exceeded
+- `using` statements: Ordered as Unity → System → Shared → Client (layered)
+
+---
+
+## 3. Rapid Reference & Context Map
+
+### 3.1 Namespace → Directory Mapping
+| Namespace Root | Directory | Purpose |
+|---------------|-----------|---------|
+| `CardMoba.BattleCore` | `Shared/BattleCore/` | Settlement engine (NO UnityEngine!) |
+| `CardMoba.Protocol` | `Shared/Protocol/` | Enums & message types |
+| `CardMoba.ConfigModels` | `Shared/ConfigModels/` | Card/Hero/Relic/Rule data models |
+| `CardMoba.Client.Common` | `Client/Assets/Scripts/Common/` | Constants, utils, events |
+| `CardMoba.Client.Network` | `Client/Assets/Scripts/Network/` | WebSocket, message dispatch |
+| `CardMoba.Client.Data` | `Client/Assets/Scripts/Data/` | Config cache, player data, battle cache |
+| `CardMoba.Client.GameLogic` | `Client/Assets/Scripts/GameLogic/` | Round FSM, card system, player state |
+| `CardMoba.Client.Presentation` | `Client/Assets/Scripts/Presentation/` | UI, VFX, audio, input, scene |
+| `CardMoba.Client.Editor` | `Client/Assets/Scripts/Editor/` | Card editor, battle simulator |
+
+### 3.2 Key Enums (from design docs, to be implemented in Shared/Protocol/Enums/)
+```csharp
+// Card dual-track types
+public enum CardTrackType { 瞬策牌 = 1, 定策牌 = 2 }
+
+// Card sub-types
+public enum CardSubType { 伤害型 = 1, 功能型 = 2, 反制型 = 3, 传说特殊型 = 4 }
+
+// Card tags
+public enum CardTag { 跨路生效 = 1, 卡组循环 = 2, 防御 = 3, 控制 = 4, 斩杀 = 5 }
+
+// Player operation types
+public enum OperationType
+{
+    OP_UNKNOWN = 0,
+    OP_PLAY_INSTANT_CARD = 1,   // Play instant card
+    OP_COMMIT_PLAN_CARD = 2,    // Submit plan card
+    OP_CANCEL_PLAN_CARD = 3,    // Cancel plan card
+    OP_LOCK_OPERATION = 4,      // Lock current round operations
+    OP_COMMIT_TRANSFER = 10,    // Permanent lane transfer
+    OP_COMMIT_SUPPORT = 11,     // Temporary support request
+    OP_VOTE_TRANSFER = 12,
+    OP_VOTE_SUPPORT = 13,
+    OP_SELECT_MONSTER_LEVEL = 20,
+    OP_COMMIT_SURRENDER = 30,
+    OP_VOTE_SURRENDER = 31,
+    OP_CANCEL_MATCH = 32,
+}
+
+// 7 Round phases (immutable order)
+public enum RoundPhase
+{
+    RoundStartSettle = 1,   // 回合开始结算期
+    OperationWindow = 2,    // 同步操作窗口期
+    CommandLock = 3,        // 指令最终锁定期
+    PlanCardSettle = 4,     // 定策牌统一结算期
+    DeathJudge = 5,         // 濒死判定期
+    RoundEnd = 6,           // 回合结束期
+}
+
+// Match phases
+public enum MatchPhase
+{
+    LanePhase1 = 1,         // 第一分路对线期
+    CentralTower1 = 2,      // 第一中枢塔
+    LanePhase2 = 3,         // 第二分路对线期
+    CentralTower2 = 4,      // 第二中枢塔
+    FinalBattle = 5,        // 全局决战死斗期
+}
+
+// Settlement priority (high → low)
+// 反制牌 → 防御牌 → 增益/减益牌 → 伤害牌 → 支援牌 → 传说特殊牌
+```
+
+### 3.3 Key Constants (to be defined in Common/Constants/)
+```csharp
+public static class GameConstants
+{
+    // Team composition
+    public const int TeamSize = 3;                // Players per team
+    public const int MatchPlayerCount = 6;        // Total players per match
+
+    // Timing
+    public const float HeartbeatIntervalSec = 30f;
+    public const int HeartbeatTimeoutCount = 3;
+    public const int MatchTimeoutSec = 60;
+
+    // Card system
+    public const int MaxHandSize = 10;            // Max cards in hand (TBD by design)
+    public const int MaxRounds = 25;              // Hard cap rounds
+
+    // Performance
+    public const int MaxDrawCalls = 300;
+    public const int MobileTargetFPS = 30;
+    public const int PCTargetFPS = 60;
+}
+```
+
+### 3.4 Key Database Tables (MySQL 8.0)
+- `player_account` — PK: `player_id`, unique: `account`
+- `player_deck` — PK: `deck_id`, FK: `player_id`, `hero_id`
+- `battle_record` — PK: `battle_id`, index: `battle_time`
+
+### 3.5 Shared Package Reference
+- UPM package name: `com.cardmoba.shared`
+- manifest.json entry: `"com.cardmoba.shared": "file:../../Shared"`
+- Unity version requirement: `2022.3`
+
+---
+
+## 4. Game-Specific Patterns
+
+### 4.1 Strict Layer Isolation
+- **Presentation** → can reference GameLogic, Data, Common. NEVER reference Network directly.
+- **GameLogic** → can reference BattleCore, Data, Network. NEVER reference Presentation.
+- **Data** → can reference ConfigModels, Protocol, Network. NEVER reference GameLogic or Presentation.
+- **Network** → can reference Protocol ONLY. NEVER reference any other client layer.
+- **Common** → ZERO references. Leaf node.
+- **Shared/BattleCore** → `noEngineReferences: true`. MUST NOT use `UnityEngine.*`. Pure C# only.
+
+### 4.2 Settlement Logic Ownership
+**ALL gameplay settlement logic MUST live in `Shared/BattleCore/`.**
+- Client GameLogic does local pre-calculation by calling the same BattleCore functions
+- Server calls the same BattleCore functions for authoritative settlement
+- Client displays server result as final truth, correcting any prediction mismatch
+- NEVER implement settlement/game rules in Client-only code
+
+### 4.3 Async & Concurrency Patterns
+- **Client → Server communication**: WebSocket via SignalR (async message-based)
+- **Unity main thread**: All MonoBehaviour callbacks run on main thread. Never block.
+- **Coroutine pattern**: Use `IEnumerator` + `StartCoroutine` for sequenced async operations in Unity
+- **async/await**: Prefer `UniTask` or `Task` for non-coroutine async (network calls, file I/O)
+- **Shared/BattleCore**: Purely synchronous. No async. No threading. Deterministic execution.
+
+### 4.4 Lifecycle Management
+```
+Init Flow:
+  GameEntry.Awake() → DontDestroyOnLoad → Initialize managers
+  GameEntry.Start() → Load config → Enter main menu
+
+Per-Battle Flow:
+  Match found → Initialize BattleContext
+  → RoundStateMachine loops through phases
+  → Battle ends → Cleanup BattleCache → Return to menu
+
+CRITICAL CLEANUP RULES:
+  - OnDestroy(): Remove ALL event listeners, cancel ALL coroutines, clear ALL timers
+  - Battle end: Clear BattleCache, reset PlayerState, dispose network subscriptions
+  - Scene transition: Unload unused assets (Resources.UnloadUnusedAssets)
+```
+
+### 4.5 Event-Driven Communication (Presentation ↔ GameLogic)
+Since Presentation cannot directly call GameLogic (and vice versa in some cases), use an **Event System** in `Common/Events/`:
+```csharp
+// Pattern: Define events in Common, publish from GameLogic, subscribe in Presentation
+// This avoids circular dependencies between layers
+```
+
+### 4.6 Performance Rules
+- **UI caching**: Reuse UI elements via object pooling for card displays, damage numbers, buff icons
+- **Sprite Atlas**: ALL UI textures must be packed into atlases. No loose sprites in builds.
+- **Object pooling**: Pool frequently instantiated objects (VFX, projectiles, damage texts)
+- **Scene loading**: Async additive scene loading for lane/tower/battle scenes
+- **DrawCall budget**: ≤ 300 total on screen
+- **Memory budget**: ≤ 2GB resident
+- **Frame rate**: Mobile = 30 FPS locked, PC = 60 FPS locked
+- **Package size**: ≤ 500MB initial download
+
+### 4.7 Error Handling
+- **Network callbacks**: Always check for error codes before processing response data
+- **Null safety**: Use null-conditional operators (`?.`) and null checks for all Unity object references
+- **Operation validation**: Client pre-validates card plays (cost, target, window) before sending to server
+- **Server rejection**: If server rejects an operation, revert local pre-calculation state gracefully
+- **Reconnection**: On disconnect, auto-reconnect and fetch full battle state from server
+
+### 4.8 Serialization
+- **Protocol**: MessagePack (`[MessagePackObject]` + `[Key(n)]` attributes)
+- **Config data**: JSON (loaded from `StreamingAssets/Config/`)
+- **ScriptableObjects**: Unity native serialization for editor-time card/hero data
+- **Local save**: AES-encrypted JSON for player data persistence
+
+---
+
+## 5. Developer Workflows
+
+### 5.1 Environment Setup
+```bash
+# Prerequisites
+# - Unity 2022.3 LTS (install via Unity Hub)
+# - .NET SDK 8.0
+# - VSCode with extensions: C# Dev Kit, C#, Unity for VS Code
+
+# Clone & open
+git clone https://github.com/bochurhan/Card_Moba.git
+cd Card_Moba
+
+# Open Client in Unity Hub → Add project from disk → select Client/
+# Open Client/ folder in VSCode for C# IntelliSense (needs Client.sln)
+```
+
+### 5.2 Daily Development Loop
+```
+1. Open Unity Editor (Client/ project)
+2. Open VSCode → File → Open Folder → Client/
+3. Write code in VSCode (AI-assisted) → Ctrl+S
+4. Switch to Unity → auto-compile → Play to test
+5. git add -A && git commit -m "feat: description" && git push
+```
+
+### 5.3 Git Commit Convention
+```
+Format: <type>: <description>
+
+Types:
+  feat:     New feature
+  fix:      Bug fix
+  refactor: Code refactoring
+  docs:     Documentation
+  style:    Formatting (no logic change)
+  test:     Adding tests
+  chore:    Build/config changes
+
+Examples:
+  feat: 实现回合状态机7阶段流转
+  fix: 修复瞬策牌跨路生效校验缺失
+  refactor: 将结算逻辑从Client迁移到BattleCore
+  docs: 更新协议文档
+```
+
+### 5.4 Creating a New Script (Scaffold Template)
+
+#### MonoBehaviour (Client Presentation/GameLogic):
+```csharp
+using UnityEngine;
+
+namespace CardMoba.Client.{Layer}.{Module}
+{
+    /// <summary>
+    /// Brief description of purpose.
+    /// </summary>
+    public class NewComponent : MonoBehaviour
+    {
+        // ── Serialized Fields ──
+
+        // ── Private Fields ──
+
+        // ── Unity Lifecycle ──
+        private void Awake() { }
+        private void OnDestroy()
+        {
+            // MUST: Clean up event listeners, timers, coroutines
+        }
+
+        // ── Public Methods ──
+
+        // ── Private Methods ──
+    }
+}
+```
+
+#### Pure C# Class (Shared/BattleCore):
+```csharp
+namespace CardMoba.BattleCore.{Module}
+{
+    /// <summary>
+    /// Brief description. NO UnityEngine references allowed.
+    /// </summary>
+    public class NewSettlementLogic
+    {
+        // Pure C#, deterministic, no side effects outside BattleContext
+    }
+}
+```
+
+#### ScriptableObject (Config Data):
+```csharp
+using UnityEngine;
+using System.Collections.Generic;
+
+namespace CardMoba.Client.Data.ConfigData
+{
+    /// <summary>
+    /// Brief description.
+    /// </summary>
+    [CreateAssetMenu(fileName = "NewData", menuName = "CardMoba/NewData")]
+    public class NewDataSO : ScriptableObject
+    {
+        [Header("基础信息")]
+        public int id;
+        public string displayName;
+    }
+}
+```
+
+#### Editor Window:
+```csharp
+#if UNITY_EDITOR
+using UnityEditor;
+using UnityEngine;
+
+namespace CardMoba.Client.Editor.Tools
+{
+    /// <summary>
+    /// Brief description.
+    /// </summary>
+    public class NewEditorWindow : EditorWindow
+    {
+        [MenuItem("CardMoba Tools/New Tool")]
+        public static void ShowWindow()
+        {
+            GetWindow<NewEditorWindow>("New Tool");
+        }
+
+        private void OnGUI()
+        {
+            // Editor GUI code
+        }
+    }
+}
+#endif
+```
+
+---
+
+## 6. Critical Safety Rules
+
+### 6.1 ABSOLUTE PROHIBITIONS
+1. **NEVER** put settlement/game-rule logic in Client-only code. It MUST be in `Shared/BattleCore/`.
+2. **NEVER** use `UnityEngine.*` in any file under `Shared/`. The asmdef has `noEngineReferences: true`.
+3. **NEVER** add upward assembly references (e.g., Network → GameLogic, Data → Presentation).
+4. **NEVER** hardcode magic numbers. Define them as constants in `Common/Constants/`.
+5. **NEVER** send hidden game state (opponent hand cards, unresolved plan cards, deck contents) to the client.
+6. **NEVER** let the client advance round phases autonomously — server pushes phase transitions.
+7. **NEVER** skip `OnDestroy()` cleanup for event listeners, coroutines, or timers.
+8. **NEVER** commit `Library/`, `Temp/`, `obj/`, `bin/`, `.sln`, `.csproj` to Git (enforced by .gitignore).
+
+### 6.2 MANDATORY PRACTICES
+1. **ALWAYS** validate operations client-side before sending (cost check, target check, window check).
+2. **ALWAYS** treat server response as authoritative truth — revert local predictions if they mismatch.
+3. **ALWAYS** use XML doc comments on all public APIs.
+4. **ALWAYS** use the `[CardMoba]` or `[ModuleName]` prefix in Debug.Log messages.
+5. **ALWAYS** use seeded PRNG (`Shared/BattleCore/Random/`) for any randomness in settlement — never `System.Random` or `UnityEngine.Random`.
+6. **ALWAYS** test settlement logic in isolation (via BattleSimulator or unit tests) before integrating with Client.
+7. **ALWAYS** encrypt local player data with AES before writing to disk.
+
+### 6.3 Language & Localization
+- Code identifiers: English (PascalCase / camelCase)
+- Comments and documentation: Chinese (中文) is the primary language
+- Enum display names: Chinese is acceptable for game-design enums (e.g., `瞬策牌`, `定策牌`)
+- Debug.Log messages: Chinese
+- Git commit messages: Chinese description is fine
+
+</rule>
