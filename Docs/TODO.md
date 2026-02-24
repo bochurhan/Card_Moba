@@ -1,10 +1,12 @@
 # Card_Moba 待办事项 (TODO)
 
+**更新日期**：2026年02月25日
+
 ## Sprint 2.1 - 配置系统
 
 - [ ] Excel → JSON 导出工具 (`Tools/ExcelConverter`)
 - [ ] Unity 配置加载器 (`Client/Assets/Scripts/Data/ConfigLoader`)
-- [ ] 完善 Cards.xlsx 卡牌设计
+- [ ] 完善 Cards.xlsx 卡牌设计（使用 `Config/Excel/` 模板）
 
 ---
 
@@ -64,6 +66,8 @@ public class CardConfig
 
 ## 已完成
 
-- [x] CardSubType 改为 Flags 枚举支持多类型组合
-- [x] 创建 Excel 配置模板
+- [x] ~~CardSubType 改为 Flags 枚举支持多类型组合~~ → **已废弃，合并到 CardTag**
+- [x] 创建 Excel 配置模板（`Config/Excel/Cards_Template*.csv`）
 - [x] CardEffect.TargetOverride 支持效果级目标覆盖
+- [x] **CardSubType 合并到 CardTag** — 统一使用 `Tags` 字段，`EffectType` 决定结算层
+- [x] 更新 Excel 模板使用 `E` 前缀避免日期格式问题
