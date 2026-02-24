@@ -4,6 +4,7 @@ using CardMoba.BattleCore.Context;
 using CardMoba.BattleCore.RoundStateMachine;
 using CardMoba.ConfigModels.Card;
 using CardMoba.Protocol.Enums;
+using CardMoba.Client.Data.ConfigData;
 
 namespace CardMoba.Client.GameLogic
 {
@@ -68,11 +69,14 @@ namespace CardMoba.Client.GameLogic
         /// </summary>
         public void StartBattle()
         {
+            // 确保配置已加载
+            EnsureConfigLoaded();
+
             _roundManager = new RoundManager();
 
-            // 创建双方卡组（临时硬编码，后续从配置表读取）
-            List<CardConfig> deck1 = CreateTestDeck();
-            List<CardConfig> deck2 = CreateTestDeck();
+            // 从配置加载卡组
+            List<CardConfig> deck1 = CreateDeckFromConfig();
+            List<CardConfig> deck2 = CreateDeckFromConfig();
 
             // 初始化对局
             _ctx = _roundManager.InitBattle(deck1, deck2);
@@ -84,6 +88,41 @@ namespace CardMoba.Client.GameLogic
             IsPlayerTurn = true;
             OnPhaseChanged?.Invoke($"第{_ctx.CurrentRound}回合 · 你的操作期");
             OnStateChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// 使用指定卡牌ID列表开始对战（供外部指定卡组）。
+        /// </summary>
+        /// <param name="playerDeckIds">玩家卡组ID列表</param>
+        /// <param name="aiDeckIds">AI卡组ID列表（null则使用默认）</param>
+        public void StartBattleWithDeck(int[] playerDeckIds, int[] aiDeckIds = null)
+        {
+            EnsureConfigLoaded();
+
+            _roundManager = new RoundManager();
+
+            List<CardConfig> deck1 = CreateDeckFromCardIds(playerDeckIds);
+            List<CardConfig> deck2 = aiDeckIds != null 
+                ? CreateDeckFromCardIds(aiDeckIds) 
+                : CreateDeckFromConfig();
+
+            _ctx = _roundManager.InitBattle(deck1, deck2);
+            FlushLogs();
+
+            IsPlayerTurn = true;
+            OnPhaseChanged?.Invoke($"第{_ctx.CurrentRound}回合 · 你的操作期");
+            OnStateChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// 确保配置管理器已加载。
+        /// </summary>
+        private void EnsureConfigLoaded()
+        {
+            if (!CardConfigManager.Instance.IsLoaded)
+            {
+                CardConfigManager.Instance.LoadAll();
+            }
         }
 
         // ── 玩家操作接口（由UI层调用） ──
@@ -290,26 +329,86 @@ namespace CardMoba.Client.GameLogic
             return _ctx?.GetPlayer(AiPlayerId);
         }
 
-        // ── 测试卡组（临时，后续从配置表读取） ──
+        // ══════════════════════════════════════════════════════════════
+        // 卡组创建（从配置加载）
+        // ══════════════════════════════════════════════════════════════
 
         /// <summary>
-        /// 创建一套测试卡组（15张牌，混合瞬策和定策）。
-        /// 使用新的 Effects 列表系统，符合 V4.0 结算机制。
+        /// 默认测试卡组的 CardId 列表（15张牌）。
+        /// 对应 StreamingAssets/Config/cards.json 中的卡牌定义。
         /// </summary>
-        private List<CardConfig> CreateTestDeck()
+        private static readonly int[] DefaultTestDeckIds = new int[]
+        {
+            // ═══ 瞬策牌 (8张) ═══
+            1001, 1001, 1001,    // 火球术 x3 (造成4点伤害)
+            1002, 1002,          // 雷霆一击 x2 (造成6点伤害)
+            1003, 1003,          // 快速格挡 x2 (获得3点护甲)
+            1004,                // 铁壁 x1 (获得5点护甲)
+            
+            // ═══ 定策牌 (7张) ═══
+            2001, 2001, 2001,    // 蓄力斩 x3 (8点伤害，延迟)
+            2002, 2002,          // 铁斩波 x2 (4护甲+3伤害)
+            2003,                // 见招拆招 x1 (2护甲+条件4护甲)
+        };
+
+        /// <summary>
+        /// 从配置文件创建默认测试卡组。
+        /// </summary>
+        private List<CardConfig> CreateDeckFromConfig()
+        {
+            return CreateDeckFromCardIds(DefaultTestDeckIds);
+        }
+
+        /// <summary>
+        /// 根据卡牌ID列表创建卡组。
+        /// </summary>
+        /// <param name="cardIds">卡牌ID数组</param>
+        /// <returns>卡牌配置列表（每个是独立副本）</returns>
+        private List<CardConfig> CreateDeckFromCardIds(int[] cardIds)
+        {
+            List<CardConfig> deck = new List<CardConfig>();
+            var configManager = CardConfigManager.Instance;
+
+            foreach (int cardId in cardIds)
+            {
+                // 使用 CloneCard 获取副本，避免修改原始配置
+                CardConfig card = configManager.CloneCard(cardId);
+                if (card != null)
+                {
+                    deck.Add(card);
+                }
+                else
+                {
+                    // 配置中不存在该卡牌，输出警告但继续
+                    OnLogMessage?.Invoke($"[警告] 卡牌配置不存在: {cardId}，已跳过");
+                }
+            }
+
+            // 如果配置加载失败导致卡组为空，使用后备硬编码卡组
+            if (deck.Count == 0)
+            {
+                OnLogMessage?.Invoke("[警告] 配置加载失败，使用后备硬编码卡组");
+                return CreateFallbackDeck();
+            }
+
+            return deck;
+        }
+
+        /// <summary>
+        /// 后备硬编码卡组（当配置加载失败时使用）。
+        /// </summary>
+        private List<CardConfig> CreateFallbackDeck()
         {
             List<CardConfig> deck = new List<CardConfig>();
 
-            // ═══ 瞬策牌 ═══
-
-            // 火球术 x3：造成4点伤害（瞬策）
-            for (int i = 0; i < 3; i++)
+            // 最小可用卡组：5张火球术
+            for (int i = 0; i < 5; i++)
             {
                 deck.Add(new CardConfig
                 {
-                    CardId = 1001,
-                    CardName = "火球术",
-                    Description = "造成4点伤害",
+                    CardId = 9999,
+                    CardName = "后备火球",
+                    Description = "造成3点伤害（后备卡）",
                     TrackType = CardTrackType.Instant,
                     Tags = CardTag.Damage,
                     TargetType = CardTargetType.CurrentEnemy,
@@ -317,161 +416,10 @@ namespace CardMoba.Client.GameLogic
                     Rarity = 1,
                     Effects = new List<CardEffect>
                     {
-                        new CardEffect { EffectType = EffectType.DealDamage, Value = 4 }
+                        new CardEffect { EffectType = EffectType.DealDamage, Value = 3 }
                     }
                 });
             }
-
-            // 雷霆一击 x2：造成7点伤害（瞬策）
-            for (int i = 0; i < 2; i++)
-            {
-                deck.Add(new CardConfig
-                {
-                    CardId = 1002,
-                    CardName = "雷霆一击",
-                    Description = "造成7点伤害",
-                    TrackType = CardTrackType.Instant,
-                    Tags = CardTag.Damage,
-                    TargetType = CardTargetType.CurrentEnemy,
-                    EnergyCost = 2,
-                    Rarity = 2,
-                    Effects = new List<CardEffect>
-                    {
-                        new CardEffect { EffectType = EffectType.DealDamage, Value = 7 }
-                    }
-                });
-            }
-
-            // 快速格挡 x2：获得3点护盾（瞬策）
-            for (int i = 0; i < 2; i++)
-            {
-                deck.Add(new CardConfig
-                {
-                    CardId = 1003,
-                    CardName = "快速格挡",
-                    Description = "获得3点护盾",
-                    TrackType = CardTrackType.Instant,
-                    Tags = CardTag.Defense,
-                    TargetType = CardTargetType.Self,
-                    EnergyCost = 1,
-                    Rarity = 1,
-                    Effects = new List<CardEffect>
-                    {
-                        new CardEffect { EffectType = EffectType.GainShield, Value = 3 }
-                    }
-                });
-            }
-
-            // ═══ 定策牌 ═══
-
-            // 蓄力斩 x3：造成8点伤害（定策，堆叠2层结算）
-            for (int i = 0; i < 3; i++)
-            {
-                deck.Add(new CardConfig
-                {
-                    CardId = 2001,
-                    CardName = "蓄力斩",
-                    Description = "造成8点伤害",
-                    TrackType = CardTrackType.Plan,
-                    Tags = CardTag.Damage,
-                    TargetType = CardTargetType.CurrentEnemy,
-                    EnergyCost = 2,
-                    Rarity = 2,
-                    Effects = new List<CardEffect>
-                    {
-                        new CardEffect { EffectType = EffectType.DealDamage, Value = 8 }
-                    }
-                });
-            }
-
-            // 铁壁 x2：获得5点护盾（定策，堆叠1层结算）
-            for (int i = 0; i < 2; i++)
-            {
-                deck.Add(new CardConfig
-                {
-                    CardId = 2002,
-                    CardName = "铁壁",
-                    Description = "获得5点护盾",
-                    TrackType = CardTrackType.Plan,
-                    Tags = CardTag.Defense,
-                    TargetType = CardTargetType.Self,
-                    EnergyCost = 1,
-                    Rarity = 1,
-                    Effects = new List<CardEffect>
-                    {
-                        new CardEffect { EffectType = EffectType.GainShield, Value = 5 }
-                    }
-                });
-            }
-
-            // 生命回复 x2：回复5点生命（定策，堆叠3层结算）
-            for (int i = 0; i < 2; i++)
-            {
-                deck.Add(new CardConfig
-                {
-                    CardId = 2003,
-                    CardName = "生命回复",
-                    Description = "回复5点生命",
-                    TrackType = CardTrackType.Plan,
-                    Tags = CardTag.Resource,
-                    TargetType = CardTargetType.Self,
-                    EnergyCost = 1,
-                    Rarity = 1,
-                    Effects = new List<CardEffect>
-                    {
-                        new CardEffect { EffectType = EffectType.Heal, Value = 5 }
-                    }
-                });
-            }
-
-            // 见招拆招 x1：反制敌方首张伤害牌（定策反制，本回合锁定，下回合堆叠0层触发）
-            deck.Add(new CardConfig
-            {
-                CardId = 2004,
-                CardName = "见招拆招",
-                Description = "反制敌方下回合的首张伤害牌",
-                TrackType = CardTrackType.Plan,
-                Tags = CardTag.Counter,
-                TargetType = CardTargetType.CurrentEnemy,
-                EnergyCost = 1,
-                Rarity = 2,
-                Effects = new List<CardEffect>
-                {
-                    new CardEffect { EffectType = EffectType.CounterFirstDamage, Value = 1 }
-                }
-            });
-
-            // ═══ 多效果卡牌示例 ═══
-
-            // 铁斩波 x1：获得4点护甲 + 造成5点伤害（多子类型，堆叠1层+堆叠2层分别结算）
-            deck.Add(new CardConfig
-            {
-                CardId = 2005,
-                CardName = "铁斩波",
-                Description = "获得4点护甲，造成5点伤害",
-                TrackType = CardTrackType.Plan,
-                Tags = CardTag.Damage | CardTag.Defense, // 多类型：伤害+防御
-                TargetType = CardTargetType.CurrentEnemy,
-                EnergyCost = 2,
-                Rarity = 2,
-                Effects = new List<CardEffect>
-                {
-                    // 堆叠1层：护甲给自己
-                    new CardEffect 
-                    { 
-                        EffectType = EffectType.GainArmor, 
-                        Value = 4,
-                        TargetOverride = CardTargetType.Self  // ← 核心修复：护甲作用于自身
-                    },
-                    // 堆叠2层：伤害给敌人（使用卡牌默认目标）
-                    new CardEffect 
-                    { 
-                        EffectType = EffectType.DealDamage, 
-                        Value = 5,
-                        TargetOverride = null  // 使用卡牌默认目标（敌方）
-                    }
-                }
-            });
 
             return deck;
         }

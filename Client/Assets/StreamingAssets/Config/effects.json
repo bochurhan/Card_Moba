@@ -1,0 +1,84 @@
+{
+  "version": "1.0.0",
+  "effects": [
+    {
+      "effectId": "E1001-1",
+      "effectType": 201,
+      "value": 4,
+      "duration": 0,
+      "description": "造成4点伤害"
+    },
+    {
+      "effectId": "E1002-1",
+      "effectType": 201,
+      "value": 6,
+      "duration": 0,
+      "description": "造成6点伤害"
+    },
+    {
+      "effectId": "E1003-1",
+      "effectType": 101,
+      "value": 3,
+      "duration": 0,
+      "description": "获得3点护甲"
+    },
+    {
+      "effectId": "E1004-1",
+      "effectType": 101,
+      "value": 5,
+      "duration": 0,
+      "description": "获得5点护甲"
+    },
+    {
+      "effectId": "E2001-1",
+      "effectType": 201,
+      "value": 8,
+      "duration": 0,
+      "isDelayed": true,
+      "description": "下回合造成8点伤害"
+    },
+    {
+      "effectId": "E2002-1",
+      "effectType": 101,
+      "value": 4,
+      "duration": 0,
+      "description": "获得4点护甲"
+    },
+    {
+      "effectId": "E2002-2",
+      "effectType": 201,
+      "value": 3,
+      "duration": 0,
+      "description": "造成3点伤害"
+    },
+    {
+      "effectId": "E2003-1",
+      "effectType": 101,
+      "value": 2,
+      "duration": 0,
+      "description": "获得2点护甲"
+    },
+    {
+      "effectId": "E2003-2",
+      "effectType": 211,
+      "value": 4,
+      "duration": 0,
+      "triggerCondition": "EnemyPlayedDamage",
+      "description": "若敌方打出伤害牌，额外获得4护甲"
+    },
+    {
+      "effectId": "E2004-1",
+      "effectType": 301,
+      "value": 5,
+      "duration": 0,
+      "description": "回复5点生命"
+    },
+    {
+      "effectId": "E3001-1",
+      "effectType": 401,
+      "value": 1,
+      "duration": 0,
+      "description": "反制1个伤害效果"
+    }
+  ]
+}

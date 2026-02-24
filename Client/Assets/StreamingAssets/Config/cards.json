@@ -1,0 +1,113 @@
+{
+  "version": "1.0.0",
+  "cards": [
+    {
+      "cardId": 1001,
+      "cardName": "火球术",
+      "description": "对当前敌人造成4点伤害",
+      "trackType": "Instant",
+      "targetType": "CurrentEnemy",
+      "tags": ["Damage"],
+      "energyCost": 1,
+      "rarity": 1,
+      "duration": 0,
+      "effectIds": ["E1001-1"]
+    },
+    {
+      "cardId": 1002,
+      "cardName": "雷霆一击",
+      "description": "对当前敌人造成6点伤害",
+      "trackType": "Instant",
+      "targetType": "CurrentEnemy",
+      "tags": ["Damage"],
+      "energyCost": 2,
+      "rarity": 1,
+      "duration": 0,
+      "effectIds": ["E1002-1"]
+    },
+    {
+      "cardId": 1003,
+      "cardName": "快速格挡",
+      "description": "获得3点护甲",
+      "trackType": "Instant",
+      "targetType": "Self",
+      "tags": ["Defense"],
+      "energyCost": 1,
+      "rarity": 1,
+      "duration": 0,
+      "effectIds": ["E1003-1"]
+    },
+    {
+      "cardId": 1004,
+      "cardName": "铁壁",
+      "description": "获得5点护甲",
+      "trackType": "Instant",
+      "targetType": "Self",
+      "tags": ["Defense"],
+      "energyCost": 2,
+      "rarity": 1,
+      "duration": 0,
+      "effectIds": ["E1004-1"]
+    },
+    {
+      "cardId": 2001,
+      "cardName": "蓄力斩",
+      "description": "下回合对当前敌人造成8点伤害",
+      "trackType": "Plan",
+      "targetType": "CurrentEnemy",
+      "tags": ["Damage"],
+      "energyCost": 2,
+      "rarity": 2,
+      "duration": 0,
+      "effectIds": ["E2001-1"]
+    },
+    {
+      "cardId": 2002,
+      "cardName": "铁斩波",
+      "description": "获得4点护甲，然后造成3点伤害",
+      "trackType": "Plan",
+      "targetType": "CurrentEnemy",
+      "tags": ["Damage", "Defense"],
+      "energyCost": 2,
+      "rarity": 2,
+      "duration": 0,
+      "effectIds": ["E2002-1", "E2002-2"]
+    },
+    {
+      "cardId": 2003,
+      "cardName": "见招拆招",
+      "description": "获得2点护甲。若敌方本回合打出伤害牌，额外获得4护甲",
+      "trackType": "Plan",
+      "targetType": "Self",
+      "tags": ["Counter", "Defense"],
+      "energyCost": 1,
+      "rarity": 2,
+      "duration": 0,
+      "effectIds": ["E2003-1", "E2003-2"]
+    },
+    {
+      "cardId": 2004,
+      "cardName": "生命回复",
+      "description": "回复5点生命值",
+      "trackType": "Plan",
+      "targetType": "Self",
+      "tags": ["Resource"],
+      "energyCost": 1,
+      "rarity": 1,
+      "duration": 0,
+      "effectIds": ["E2004-1"]
+    },
+    {
+      "cardId": 3001,
+      "cardName": "完美格挡",
+      "description": "反制敌方1个伤害效果",
+      "trackType": "Plan",
+      "targetType": "Self",
+      "tags": ["Counter"],
+      "energyCost": 1,
+      "rarity": 3,
+      "duration": 0,
+      "effectIds": ["E3001-1"]
+    }
+  ]
+}
