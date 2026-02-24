@@ -313,13 +313,17 @@ namespace CardMoba.BattleCore.RoundStateMachine
         /// 按设计文档 §4.2 阶段1：
         ///   同步执行固定抽牌、能量回满至上限、换路惩罚能量扣减、
         ///   持续buff/debuff生效，校验对局胜负条件等
+        /// 
+        /// 符合《定策牌结算机制 V4.0》：
+        ///   - 反制牌本回合锁定，下回合堆叠0层触发
+        ///   - 回合开始时处理 Buff/Debuff 持续时间
         /// </summary>
         /// <param name="ctx">战斗上下文</param>
         public void BeginNextRound(BattleContext ctx)
         {
             if (ctx.IsGameOver) return;
 
-            // 清空上回合数据（包括日志、锁定状态、定策队列）
+            // 清空上回合数据（会自动将反制牌转移到 PendingCounterCards）
             ctx.ClearRoundData();
 
             // 推进回合数
@@ -328,6 +332,15 @@ namespace CardMoba.BattleCore.RoundStateMachine
             // ── 阶段1：回合开始结算期 ──
             ctx.RoundLog.Add($"[RoundManager] ================================");
             ctx.RoundLog.Add($"[RoundManager] -- 第{ctx.CurrentRound}回合 - 回合开始 --");
+
+            // 调用 BattleContext 的回合开始处理（处理 Buff、控制效果等）
+            ctx.OnRoundStart();
+
+            // 检查是否有待触发的反制牌
+            if (ctx.PendingCounterCards.Count > 0)
+            {
+                ctx.RoundLog.Add($"[RoundManager] 上回合有 {ctx.PendingCounterCards.Count} 张反制牌待触发");
+            }
 
             for (int i = 0; i < ctx.Players.Count; i++)
             {
@@ -338,7 +351,18 @@ namespace CardMoba.BattleCore.RoundStateMachine
                 p.Energy = p.EnergyPerRound;
 
                 // 1b. TODO: 换路惩罚能量扣减（原型阶段暂不实现）
-                // 1c. TODO: 持续buff/debuff生效（原型阶段暂不实现）
+
+                // 1c. 打印 Buff/Debuff 状态
+                if (p.Strength != 0)
+                    ctx.RoundLog.Add($"[RoundManager] {p.PlayerName} 力量:{p.Strength}");
+                if (p.VulnerableStacks > 0)
+                    ctx.RoundLog.Add($"[RoundManager] {p.PlayerName} 易伤:{p.VulnerableStacks}层");
+                if (p.WeakStacks > 0)
+                    ctx.RoundLog.Add($"[RoundManager] {p.PlayerName} 虚弱:{p.WeakStacks}层");
+                if (p.IsSilenced)
+                    ctx.RoundLog.Add($"[RoundManager] {p.PlayerName} 沉默中（剩余{p.SilencedRounds}回合）");
+                if (p.IsStunned)
+                    ctx.RoundLog.Add($"[RoundManager] {p.PlayerName} 眩晕中（剩余{p.StunnedRounds}回合）");
 
                 // 1d. 固定抽牌（回合结束弃光手牌后，这里重新摸满）
                 int drawCount = DrawPerRound;
@@ -348,7 +372,6 @@ namespace CardMoba.BattleCore.RoundStateMachine
             }
 
             // 1e. TODO: 校验对局胜负条件（原型阶段在濒死判定期统一处理）
-            // 1f. TODO: 触发反制牌生效条件校验（原型阶段暂不实现）
         }
 
         // ── 辅助方法 ──

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using CardMoba.Protocol.Enums;
 
 namespace CardMoba.ConfigModels.Card
@@ -5,6 +6,11 @@ namespace CardMoba.ConfigModels.Card
     /// <summary>
     /// 卡牌静态配置 —— 定义一张卡牌的所有不变属性。
     /// 这是"配置表"里一行数据的 C# 映射，运行时只读。
+    /// 
+    /// 设计原则（符合《定策牌结算机制 V4.0》）：
+    /// - 一张卡牌可以有多个效果（Effects 列表）
+    /// - 每个效果独立归属到对应的结算堆叠层
+    /// - 单效果被反制不影响同卡牌其他效果
     /// </summary>
     public class CardConfig
     {
@@ -24,21 +30,52 @@ namespace CardMoba.ConfigModels.Card
         /// <summary>双轨类型：瞬策牌 or 定策牌</summary>
         public CardTrackType TrackType { get; set; }
 
-        /// <summary>功能子类型：伤害型/功能型/反制型/防御型</summary>
+        /// <summary>
+        /// 主子类型：决定卡牌的主要分类和UI展示
+        /// 注意：实际结算时以 Effects 列表中的效果类型为准
+        /// </summary>
         public CardSubType SubType { get; set; }
 
-        /// <summary>目标类型：决定这张牌作用于谁</summary>
+        /// <summary>目标类型：决定这张牌默认作用于谁</summary>
         public CardTargetType TargetType { get; set; }
+
+        /// <summary>卡牌标签：跨路生效、卡组循环、消耗等特殊属性</summary>
+        public CardTag Tags { get; set; } = CardTag.无;
 
         // ── 费用 ──
 
         /// <summary>能量消耗（每回合玩家获得固定能量，出牌消耗能量）</summary>
         public int EnergyCost { get; set; }
 
-        // ── 效果数值 ──
+        // ── 效果列表 ──
 
-        /// <summary>基础效果值（伤害牌=伤害量，防御牌=护盾量，功能牌=效果强度）</summary>
-        public int EffectValue { get; set; }
+        /// <summary>
+        /// 卡牌效果列表 —— 支持多子类型卡牌。
+        /// 
+        /// 例：「铁斩波」有两个效果：
+        /// - 效果1：获得4护甲（堆叠1层）
+        /// - 效果2：造成5点伤害（堆叠2层）
+        /// 
+        /// 结算时，两个效果会被拆分到各自的堆叠层分别结算。
+        /// </summary>
+        public List<CardEffect> Effects { get; set; } = new List<CardEffect>();
+
+        // ── 兼容性字段（保持旧代码兼容） ──
+
+        /// <summary>
+        /// [兼容] 基础效果值 —— 用于简单卡牌（只有一个效果时的快捷访问）
+        /// 新卡牌请使用 Effects 列表
+        /// </summary>
+        public int EffectValue
+        {
+            get => Effects.Count > 0 ? Effects[0].Value : 0;
+            set
+            {
+                if (Effects.Count == 0)
+                    Effects.Add(new CardEffect());
+                Effects[0].Value = value;
+            }
+        }
 
         /// <summary>效果持续回合数（0=即时生效无持续，>0=持续N回合的buff/debuff）</summary>
         public int Duration { get; set; }
@@ -47,5 +84,34 @@ namespace CardMoba.ConfigModels.Card
 
         /// <summary>稀有度等级（1=普通，2=稀有，3=史诗，4=传说）</summary>
         public int Rarity { get; set; } = 1;
+
+        // ── 便捷方法 ──
+
+        /// <summary>
+        /// 检查卡牌是否包含指定标签。
+        /// </summary>
+        public bool HasTag(CardTag tag)
+        {
+            return (Tags & tag) == tag;
+        }
+
+        /// <summary>
+        /// 检查卡牌是否为传说特殊牌。
+        /// </summary>
+        public bool IsLegendary => SubType == CardSubType.传说特殊 || Rarity == 4;
+
+        /// <summary>
+        /// 获取卡牌中属于指定堆叠层的所有效果。
+        /// </summary>
+        public List<CardEffect> GetEffectsForLayer(SettlementLayer layer)
+        {
+            List<CardEffect> result = new List<CardEffect>();
+            foreach (var effect in Effects)
+            {
+                if (effect.GetSettlementLayer() == layer)
+                    result.Add(effect);
+            }
+            return result;
+        }
     }
 }
