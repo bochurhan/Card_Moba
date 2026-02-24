@@ -449,7 +449,7 @@ namespace CardMoba.Client.GameLogic
                 CardName = "铁斩波",
                 Description = "获得4点护甲，造成5点伤害",
                 TrackType = CardTrackType.定策牌,
-                SubType = CardSubType.伤害, // 主类型用于UI显示
+                SubType = CardSubType.伤害 | CardSubType.防御, // 多类型：伤害+防御
                 TargetType = CardTargetType.SingleEnemy,
                 EnergyCost = 2,
                 Rarity = 2,

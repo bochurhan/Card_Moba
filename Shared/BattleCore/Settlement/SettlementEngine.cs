@@ -85,7 +85,7 @@ namespace CardMoba.BattleCore.Settlement
             foreach (var action in ctx.PendingPlanActions)
             {
                 // 跳过本回合新提交的反制牌（下回合才生效）
-                if (action.Card.SubType == CardSubType.反制)
+                if ((action.Card.SubType & CardSubType.反制) != 0)
                 {
                     ctx.RoundLog.Add($"[Layer0] 反制牌「{action.Card.CardName}」已锁定，下回合生效");
                     continue;
@@ -150,7 +150,8 @@ namespace CardMoba.BattleCore.Settlement
         {
             foreach (var action in ctx.PendingPlanActions)
             {
-                if (action.SourcePlayerId == playerId && action.Card.SubType == CardSubType.伤害)
+                // 使用 Flags 检查：只要包含"伤害"类型就匹配
+                if (action.SourcePlayerId == playerId && (action.Card.SubType & CardSubType.伤害) != 0)
                 {
                     return action;
                 }

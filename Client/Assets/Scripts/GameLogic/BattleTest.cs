@@ -313,14 +313,14 @@ namespace CardMoba.Client.GameLogic
                 });
             }
 
-            // 1张 多效果卡：铁斩（先获得护甲，再造成伤害）—— 验证四堆叠层机制
+            // 1张 多效果卡：铁斩（先获得护甲，再造成伤害）—— 验证四堆叠层机制和多类型系统
             deck.Add(new CardConfig
             {
                 CardId = 2005,
                 CardName = "铁斩",
                 Description = "先获得3点护甲，然后造成6点伤害",
                 TrackType = CardTrackType.定策牌,
-                SubType = CardSubType.伤害,  // 主类型为伤害
+                SubType = CardSubType.伤害 | CardSubType.防御,  // 多类型：伤害+防御
                 TargetType = CardTargetType.SingleEnemy,
                 EnergyCost = 2,
                 Rarity = 2,

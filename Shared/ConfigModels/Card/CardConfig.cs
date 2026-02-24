@@ -98,7 +98,7 @@ namespace CardMoba.ConfigModels.Card
         /// <summary>
         /// 检查卡牌是否为传说特殊牌。
         /// </summary>
-        public bool IsLegendary => SubType == CardSubType.传说特殊 || Rarity == 4;
+        public bool IsLegendary => (SubType & CardSubType.传说特殊) != 0 || Rarity == 4;
 
         /// <summary>
         /// 获取卡牌中属于指定堆叠层的所有效果。
