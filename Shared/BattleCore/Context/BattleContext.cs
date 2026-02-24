@@ -142,8 +142,8 @@ namespace CardMoba.BattleCore.Context
             PendingCounterCards.Clear();
             foreach (var action in PendingPlanActions)
             {
-                // 使用 Flags 检查：只要包含"反制"类型就转移
-                if ((action.Card.SubType & Protocol.Enums.CardSubType.反制) != 0)
+                // 使用 Flags 检查：只要包含"反制"标签就转移
+                if (action.Card.HasTag(Protocol.Enums.CardTag.Counter))
                 {
                     PendingCounterCards.Add(action);
                 }

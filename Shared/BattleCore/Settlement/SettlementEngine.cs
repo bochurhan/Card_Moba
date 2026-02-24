@@ -85,7 +85,7 @@ namespace CardMoba.BattleCore.Settlement
             foreach (var action in ctx.PendingPlanActions)
             {
                 // 跳过本回合新提交的反制牌（下回合才生效）
-                if ((action.Card.SubType & CardSubType.反制) != 0)
+                if (action.Card.HasTag(CardTag.Counter))
                 {
                     ctx.RoundLog.Add($"[Layer0] 反制牌「{action.Card.CardName}」已锁定，下回合生效");
                     continue;
@@ -150,8 +150,8 @@ namespace CardMoba.BattleCore.Settlement
         {
             foreach (var action in ctx.PendingPlanActions)
             {
-                // 使用 Flags 检查：只要包含"伤害"类型就匹配
-                if (action.SourcePlayerId == playerId && (action.Card.SubType & CardSubType.伤害) != 0)
+                // 使用 Flags 检查：只要包含"伤害"标签就匹配
+                if (action.SourcePlayerId == playerId && action.Card.HasTag(CardTag.Damage))
                 {
                     return action;
                 }
@@ -166,7 +166,7 @@ namespace CardMoba.BattleCore.Settlement
         {
             foreach (var effect in counterAction.Card.Effects)
             {
-                if (effect.EffectType == EffectType.反制并反弹)
+                if (effect.EffectType == EffectType.CounterAndReflect)
                 {
                     // 反弹伤害给原攻击者
                     var attacker = ctx.GetPlayer(targetCard.SourcePlayerId);
@@ -202,7 +202,7 @@ namespace CardMoba.BattleCore.Settlement
 
                 foreach (var effect in action.Card.Effects)
                 {
-                    if (effect.GetSettlementLayer() == SettlementLayer.防御数值层)
+                    if (effect.GetSettlementLayer() == SettlementLayer.DefenseModifier)
                     {
                         layer1Effects.Add(new EffectToResolve
                         {
@@ -261,7 +261,7 @@ namespace CardMoba.BattleCore.Settlement
 
                 foreach (var effect in action.Card.Effects)
                 {
-                    if (effect.EffectType == EffectType.造成伤害)
+                    if (effect.EffectType == EffectType.DealDamage)
                     {
                         // 计算最终伤害值（考虑力量、虚弱）
                         int baseDamage = effect.Value;
@@ -329,7 +329,7 @@ namespace CardMoba.BattleCore.Settlement
                             {
                                 SourcePlayerId = dmg.SourceId,
                                 TargetPlayerId = dmg.SourceId, // 吸血回复自己
-                                EffectType = EffectType.吸血,
+                                EffectType = EffectType.Lifesteal,
                                 Value = actualDamage,
                                 TriggerReason = $"「{dmg.CardName}」吸血"
                             });
@@ -374,7 +374,7 @@ namespace CardMoba.BattleCore.Settlement
         {
             foreach (var effect in card.Effects)
             {
-                if (effect.EffectType == EffectType.吸血)
+                if (effect.EffectType == EffectType.Lifesteal)
                     return true;
             }
             return false;
@@ -410,21 +410,21 @@ namespace CardMoba.BattleCore.Settlement
 
                 switch (trigger.EffectType)
                 {
-                    case EffectType.吸血:
+                    case EffectType.Lifesteal:
                         int healAmount = trigger.Value;
                         target.Hp += healAmount;
                         if (target.Hp > target.MaxHp) target.Hp = target.MaxHp;
                         ctx.RoundLog.Add($"[Layer2-Step2] {trigger.TriggerReason}，玩家{target.PlayerId}回复{healAmount}点生命");
                         break;
 
-                    case EffectType.反伤:
+                    case EffectType.Thorns:
                         int reflectDamage = trigger.Value;
                         target.Hp -= reflectDamage;
                         if (target.Hp < 0) target.Hp = 0;
                         ctx.RoundLog.Add($"[Layer2-Step2] {trigger.TriggerReason}，玩家{target.PlayerId}受到{reflectDamage}点反伤");
                         break;
 
-                    case EffectType.受击获得护甲:
+                    case EffectType.ArmorOnHit:
                         target.Armor += trigger.Value;
                         ctx.RoundLog.Add($"[Layer2-Step2] {trigger.TriggerReason}，玩家{target.PlayerId}获得{trigger.Value}点护甲");
                         break;
@@ -466,7 +466,7 @@ namespace CardMoba.BattleCore.Settlement
 
                 foreach (var effect in action.Card.Effects)
                 {
-                    if (effect.GetSettlementLayer() == SettlementLayer.收尾效果层)
+                    if (effect.GetSettlementLayer() == SettlementLayer.Utility)
                     {
                         ApplySingleEffect(ctx, action, effect, source);
                     }
@@ -528,7 +528,7 @@ namespace CardMoba.BattleCore.Settlement
             switch (effect.EffectType)
             {
                 // ── 防御与数值修正（堆叠1层） ──
-                case EffectType.获得护甲:
+                case EffectType.GainArmor:
                     if (effectTarget != null)
                     {
                         effectTarget.Armor += effect.Value;
@@ -536,7 +536,7 @@ namespace CardMoba.BattleCore.Settlement
                     }
                     break;
 
-                case EffectType.获得护盾:
+                case EffectType.GainShield:
                     if (effectTarget != null)
                     {
                         effectTarget.Shield += effect.Value;
@@ -544,7 +544,7 @@ namespace CardMoba.BattleCore.Settlement
                     }
                     break;
 
-                case EffectType.增加力量:
+                case EffectType.GainStrength:
                     if (effectTarget != null)
                     {
                         effectTarget.Strength += effect.Value;
@@ -552,7 +552,7 @@ namespace CardMoba.BattleCore.Settlement
                     }
                     break;
 
-                case EffectType.降低力量:
+                case EffectType.ReduceStrength:
                     if (effectTarget != null)
                     {
                         effectTarget.Strength -= effect.Value;
@@ -560,7 +560,7 @@ namespace CardMoba.BattleCore.Settlement
                     }
                     break;
 
-                case EffectType.易伤:
+                case EffectType.Vulnerable:
                     if (effectTarget != null)
                     {
                         effectTarget.VulnerableStacks += effect.Value;
@@ -568,7 +568,7 @@ namespace CardMoba.BattleCore.Settlement
                     }
                     break;
 
-                case EffectType.虚弱:
+                case EffectType.Weak:
                     if (effectTarget != null)
                     {
                         effectTarget.WeakStacks += effect.Value;
@@ -576,7 +576,7 @@ namespace CardMoba.BattleCore.Settlement
                     }
                     break;
 
-                case EffectType.伤害减免:
+                case EffectType.DamageReduction:
                     if (effectTarget != null)
                     {
                         effectTarget.DamageReductionPercent += effect.Value;
@@ -584,7 +584,7 @@ namespace CardMoba.BattleCore.Settlement
                     }
                     break;
 
-                case EffectType.无敌:
+                case EffectType.Invincible:
                     if (effectTarget != null)
                     {
                         effectTarget.IsInvincible = true;
@@ -593,7 +593,7 @@ namespace CardMoba.BattleCore.Settlement
                     break;
 
                 // ── 伤害（堆叠2层，通常在Step1处理，这里作为备用） ──
-                case EffectType.造成伤害:
+                case EffectType.DealDamage:
                     if (effectTarget != null && effectTarget.IsAlive)
                     {
                         int damage = source.CalculateOutgoingDamage(effect.Value);
@@ -605,7 +605,7 @@ namespace CardMoba.BattleCore.Settlement
                     break;
 
                 // ── 控制效果（堆叠3层） ──
-                case EffectType.沉默:
+                case EffectType.Silence:
                     if (effectTarget != null)
                     {
                         effectTarget.IsSilenced = true;
@@ -614,7 +614,7 @@ namespace CardMoba.BattleCore.Settlement
                     }
                     break;
 
-                case EffectType.眩晕:
+                case EffectType.Stun:
                     if (effectTarget != null)
                     {
                         effectTarget.IsStunned = true;
@@ -624,7 +624,7 @@ namespace CardMoba.BattleCore.Settlement
                     break;
 
                 // ── 资源效果（堆叠3层） ──
-                case EffectType.抽牌:
+                case EffectType.Draw:
                     // 抽牌效果作用于 effectTarget（通常是自己）
                     if (effectTarget != null)
                     {
@@ -633,7 +633,7 @@ namespace CardMoba.BattleCore.Settlement
                     }
                     break;
 
-                case EffectType.回复能量:
+                case EffectType.GainEnergy:
                     if (effectTarget != null)
                     {
                         effectTarget.Energy += effect.Value;
@@ -641,7 +641,7 @@ namespace CardMoba.BattleCore.Settlement
                     }
                     break;
 
-                case EffectType.回复生命:
+                case EffectType.Heal:
                     if (effectTarget != null)
                     {
                         effectTarget.Hp += effect.Value;
@@ -675,23 +675,23 @@ namespace CardMoba.BattleCore.Settlement
         {
             switch (targetType)
             {
-                case CardTargetType.无目标:
+                case CardTargetType.None:
                     return null;
                     
-                case CardTargetType.自身:
+                case CardTargetType.Self:
                     return source;
                     
-                case CardTargetType.敌方当前对手:
-                case CardTargetType.敌方任意:
+                case CardTargetType.CurrentEnemy:
+                case CardTargetType.AnyEnemy:
                     // 使用卡牌出牌时选择的目标
                     return ctx.GetPlayer(cardTargetId);
                     
-                case CardTargetType.友方任意:
+                case CardTargetType.AnyAlly:
                     // 使用卡牌出牌时选择的目标
                     return ctx.GetPlayer(cardTargetId);
                     
-                case CardTargetType.全体敌方:
-                case CardTargetType.全体友方:
+                case CardTargetType.AllEnemies:
+                case CardTargetType.AllAllies:
                     // AOE效果需要特殊处理，这里返回null
                     // AOE应该在调用处循环处理所有目标
                     ctx.RoundLog.Add($"[Warning] AOE目标类型应在调用处特殊处理");

@@ -48,22 +48,22 @@ namespace CardMoba.ConfigModels.Card
 
             // 100-199：堆叠1层（防御与数值修正）
             if (typeCode >= 100 && typeCode < 200)
-                return SettlementLayer.防御数值层;
+                return SettlementLayer.DefenseModifier;
 
             // 200-299：堆叠2层（主动伤害与触发式效果）
             if (typeCode >= 200 && typeCode < 300)
-                return SettlementLayer.伤害触发层;
+                return SettlementLayer.DamageTrigger;
 
             // 300-399：堆叠3层（控制、资源等收尾效果）
             if (typeCode >= 300 && typeCode < 400)
-                return SettlementLayer.收尾效果层;
+                return SettlementLayer.Utility;
 
             // 400-499：堆叠0层（反制效果）
             if (typeCode >= 400 && typeCode < 500)
-                return SettlementLayer.反制结算层;
+                return SettlementLayer.Counter;
 
             // 默认归入收尾效果层
-            return SettlementLayer.收尾效果层;
+            return SettlementLayer.Utility;
         }
 
         /// <summary>

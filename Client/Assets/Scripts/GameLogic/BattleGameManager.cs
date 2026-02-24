@@ -219,7 +219,7 @@ namespace CardMoba.Client.GameLogic
                     int targetId = GetTargetForCard(card, AiPlayerId, HumanPlayerId);
 
                     string result;
-                    if (card.TrackType == CardTrackType.瞬策牌)
+                    if (card.TrackType == CardTrackType.Instant)
                     {
                         result = _roundManager.PlayCard(_ctx, AiPlayerId, i, targetId);
                     }
@@ -246,13 +246,14 @@ namespace CardMoba.Client.GameLogic
         {
             switch (card.TargetType)
             {
-                case CardTargetType.SingleEnemy:
-                case CardTargetType.AllEnemiesInLane:
+                case CardTargetType.CurrentEnemy:
+                case CardTargetType.AnyEnemy:
+                case CardTargetType.AllEnemies:
                     return opponentId;
 
                 case CardTargetType.Self:
-                case CardTargetType.SingleAlly:
-                case CardTargetType.AllAlliesInLane:
+                case CardTargetType.AnyAlly:
+                case CardTargetType.AllAllies:
                     return selfId;
 
                 default:
@@ -309,14 +310,14 @@ namespace CardMoba.Client.GameLogic
                     CardId = 1001,
                     CardName = "火球术",
                     Description = "造成4点伤害",
-                    TrackType = CardTrackType.瞬策牌,
-                    SubType = CardSubType.伤害,
-                    TargetType = CardTargetType.SingleEnemy,
+                    TrackType = CardTrackType.Instant,
+                    Tags = CardTag.Damage,
+                    TargetType = CardTargetType.CurrentEnemy,
                     EnergyCost = 1,
                     Rarity = 1,
                     Effects = new List<CardEffect>
                     {
-                        new CardEffect { EffectType = EffectType.造成伤害, Value = 4 }
+                        new CardEffect { EffectType = EffectType.DealDamage, Value = 4 }
                     }
                 });
             }
@@ -329,14 +330,14 @@ namespace CardMoba.Client.GameLogic
                     CardId = 1002,
                     CardName = "雷霆一击",
                     Description = "造成7点伤害",
-                    TrackType = CardTrackType.瞬策牌,
-                    SubType = CardSubType.伤害,
-                    TargetType = CardTargetType.SingleEnemy,
+                    TrackType = CardTrackType.Instant,
+                    Tags = CardTag.Damage,
+                    TargetType = CardTargetType.CurrentEnemy,
                     EnergyCost = 2,
                     Rarity = 2,
                     Effects = new List<CardEffect>
                     {
-                        new CardEffect { EffectType = EffectType.造成伤害, Value = 7 }
+                        new CardEffect { EffectType = EffectType.DealDamage, Value = 7 }
                     }
                 });
             }
@@ -349,14 +350,14 @@ namespace CardMoba.Client.GameLogic
                     CardId = 1003,
                     CardName = "快速格挡",
                     Description = "获得3点护盾",
-                    TrackType = CardTrackType.瞬策牌,
-                    SubType = CardSubType.防御,
+                    TrackType = CardTrackType.Instant,
+                    Tags = CardTag.Defense,
                     TargetType = CardTargetType.Self,
                     EnergyCost = 1,
                     Rarity = 1,
                     Effects = new List<CardEffect>
                     {
-                        new CardEffect { EffectType = EffectType.获得护盾, Value = 3 }
+                        new CardEffect { EffectType = EffectType.GainShield, Value = 3 }
                     }
                 });
             }
@@ -371,14 +372,14 @@ namespace CardMoba.Client.GameLogic
                     CardId = 2001,
                     CardName = "蓄力斩",
                     Description = "造成8点伤害",
-                    TrackType = CardTrackType.定策牌,
-                    SubType = CardSubType.伤害,
-                    TargetType = CardTargetType.SingleEnemy,
+                    TrackType = CardTrackType.Plan,
+                    Tags = CardTag.Damage,
+                    TargetType = CardTargetType.CurrentEnemy,
                     EnergyCost = 2,
                     Rarity = 2,
                     Effects = new List<CardEffect>
                     {
-                        new CardEffect { EffectType = EffectType.造成伤害, Value = 8 }
+                        new CardEffect { EffectType = EffectType.DealDamage, Value = 8 }
                     }
                 });
             }
@@ -391,14 +392,14 @@ namespace CardMoba.Client.GameLogic
                     CardId = 2002,
                     CardName = "铁壁",
                     Description = "获得5点护盾",
-                    TrackType = CardTrackType.定策牌,
-                    SubType = CardSubType.防御,
+                    TrackType = CardTrackType.Plan,
+                    Tags = CardTag.Defense,
                     TargetType = CardTargetType.Self,
                     EnergyCost = 1,
                     Rarity = 1,
                     Effects = new List<CardEffect>
                     {
-                        new CardEffect { EffectType = EffectType.获得护盾, Value = 5 }
+                        new CardEffect { EffectType = EffectType.GainShield, Value = 5 }
                     }
                 });
             }
@@ -411,14 +412,14 @@ namespace CardMoba.Client.GameLogic
                     CardId = 2003,
                     CardName = "生命回复",
                     Description = "回复5点生命",
-                    TrackType = CardTrackType.定策牌,
-                    SubType = CardSubType.资源,
+                    TrackType = CardTrackType.Plan,
+                    Tags = CardTag.Resource,
                     TargetType = CardTargetType.Self,
                     EnergyCost = 1,
                     Rarity = 1,
                     Effects = new List<CardEffect>
                     {
-                        new CardEffect { EffectType = EffectType.回复生命, Value = 5 }
+                        new CardEffect { EffectType = EffectType.Heal, Value = 5 }
                     }
                 });
             }
@@ -429,14 +430,14 @@ namespace CardMoba.Client.GameLogic
                 CardId = 2004,
                 CardName = "见招拆招",
                 Description = "反制敌方下回合的首张伤害牌",
-                TrackType = CardTrackType.定策牌,
-                SubType = CardSubType.反制,
-                TargetType = CardTargetType.SingleEnemy,
+                TrackType = CardTrackType.Plan,
+                Tags = CardTag.Counter,
+                TargetType = CardTargetType.CurrentEnemy,
                 EnergyCost = 1,
                 Rarity = 2,
                 Effects = new List<CardEffect>
                 {
-                    new CardEffect { EffectType = EffectType.反制首张伤害牌, Value = 1 }
+                    new CardEffect { EffectType = EffectType.CounterFirstDamage, Value = 1 }
                 }
             });
 
@@ -448,9 +449,9 @@ namespace CardMoba.Client.GameLogic
                 CardId = 2005,
                 CardName = "铁斩波",
                 Description = "获得4点护甲，造成5点伤害",
-                TrackType = CardTrackType.定策牌,
-                SubType = CardSubType.伤害 | CardSubType.防御, // 多类型：伤害+防御
-                TargetType = CardTargetType.SingleEnemy,
+                TrackType = CardTrackType.Plan,
+                Tags = CardTag.Damage | CardTag.Defense, // 多类型：伤害+防御
+                TargetType = CardTargetType.CurrentEnemy,
                 EnergyCost = 2,
                 Rarity = 2,
                 Effects = new List<CardEffect>
@@ -458,14 +459,14 @@ namespace CardMoba.Client.GameLogic
                     // 堆叠1层：护甲给自己
                     new CardEffect 
                     { 
-                        EffectType = EffectType.获得护甲, 
+                        EffectType = EffectType.GainArmor, 
                         Value = 4,
-                        TargetOverride = CardTargetType.自身  // ← 核心修复：护甲作用于自身
+                        TargetOverride = CardTargetType.Self  // ← 核心修复：护甲作用于自身
                     },
                     // 堆叠2层：伤害给敌人（使用卡牌默认目标）
                     new CardEffect 
                     { 
-                        EffectType = EffectType.造成伤害, 
+                        EffectType = EffectType.DealDamage, 
                         Value = 5,
                         TargetOverride = null  // 使用卡牌默认目标（敌方）
                     }

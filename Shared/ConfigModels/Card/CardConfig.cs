@@ -31,16 +31,17 @@ namespace CardMoba.ConfigModels.Card
         public CardTrackType TrackType { get; set; }
 
         /// <summary>
-        /// 主子类型：决定卡牌的主要分类和UI展示
-        /// 注意：实际结算时以 Effects 列表中的效果类型为准
+        /// 卡牌标签（词条）：标记卡牌的用途分类和特殊行为。
+        /// 
+        /// 用途分类：Damage, Defense, Counter, Buff, Debuff, Control, Resource, Support, Legendary
+        /// 特殊行为：CrossLane, Recycle, Exhaust, Innate, Retain, Execute
+        /// 
+        /// 注意：实际结算层由 Effects 列表中的 EffectType 决定，而非 Tags。
         /// </summary>
-        public CardSubType SubType { get; set; }
+        public CardTag Tags { get; set; } = CardTag.None;
 
         /// <summary>目标类型：决定这张牌默认作用于谁</summary>
         public CardTargetType TargetType { get; set; }
-
-        /// <summary>卡牌标签：跨路生效、卡组循环、消耗等特殊属性</summary>
-        public CardTag Tags { get; set; } = CardTag.无;
 
         // ── 费用 ──
 
@@ -96,9 +97,9 @@ namespace CardMoba.ConfigModels.Card
         }
 
         /// <summary>
-        /// 检查卡牌是否为传说特殊牌。
+        /// 检查卡牌是否为传说牌。
         /// </summary>
-        public bool IsLegendary => (SubType & CardSubType.传说特殊) != 0 || Rarity == 4;
+        public bool IsLegendary => HasTag(CardTag.Legendary) || Rarity == 4;
 
         /// <summary>
         /// 获取卡牌中属于指定堆叠层的所有效果。

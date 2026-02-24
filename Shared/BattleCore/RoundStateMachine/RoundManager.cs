@@ -116,7 +116,7 @@ namespace CardMoba.BattleCore.RoundStateMachine
             if (handIndex < 0 || handIndex >= player.Hand.Count) return "错误：无效的手牌索引";
 
             CardConfig card = player.Hand[handIndex];
-            if (card.TrackType != CardTrackType.瞬策牌) return "错误：这不是瞬策牌，请使用提交定策牌";
+            if (card.TrackType != CardTrackType.Instant) return "错误：这不是瞬策牌，请使用提交定策牌";
             if (player.Energy < card.EnergyCost) return $"错误：能量不足（需要{card.EnergyCost}，当前{player.Energy}）";
 
             // ── 执行 ──
@@ -158,7 +158,7 @@ namespace CardMoba.BattleCore.RoundStateMachine
             if (handIndex < 0 || handIndex >= player.Hand.Count) return "错误：无效的手牌索引";
 
             CardConfig card = player.Hand[handIndex];
-            if (card.TrackType != CardTrackType.定策牌) return "错误：这不是定策牌，请使用打出瞬策牌";
+            if (card.TrackType != CardTrackType.Plan) return "错误：这不是定策牌，请使用打出瞬策牌";
             if (player.Energy < card.EnergyCost) return $"错误：能量不足（需要{card.EnergyCost}，当前{player.Energy}）";
 
             // ── 执行 ──

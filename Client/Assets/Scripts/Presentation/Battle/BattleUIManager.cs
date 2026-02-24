@@ -273,12 +273,12 @@ namespace CardMoba.Client.Presentation.Battle
             if (costText != null) costText.text = card.EnergyCost.ToString();
             if (descText != null) descText.text = card.Description;
             if (trackText != null)
-                trackText.text = card.TrackType == CardTrackType.瞬策牌 ? "【瞬策】" : "【定策】";
+                trackText.text = card.TrackType == CardTrackType.Instant ? "【瞬策】" : "【定策】";
 
             // 根据轨道类型设置背景色
             if (bgImage != null)
             {
-                if (card.TrackType == CardTrackType.瞬策牌)
+                if (card.TrackType == CardTrackType.Instant)
                     bgImage.color = new Color(0.85f, 0.55f, 0.25f, 1f); // 橙色 = 瞬策
                 else
                     bgImage.color = new Color(0.3f, 0.55f, 0.85f, 1f); // 蓝色 = 定策
@@ -341,7 +341,7 @@ namespace CardMoba.Client.Presentation.Battle
 
             // 根据牌的轨道类型决定操作
             string result;
-            if (card.TrackType == CardTrackType.瞬策牌)
+            if (card.TrackType == CardTrackType.Instant)
             {
                 result = _gameManager.PlayerPlayInstantCard(handIndex);
             }
