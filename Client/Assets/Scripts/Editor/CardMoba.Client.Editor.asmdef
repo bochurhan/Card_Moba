@@ -5,6 +5,7 @@
     "Unity.TextMeshPro",
     "CardMoba.BattleCore",
     "CardMoba.ConfigModels",
+    "CardMoba.Protocol",
     "CardMoba.Client.Presentation",
     "CardMoba.Client.GameLogic",
     "CardMoba.Client.Data",
