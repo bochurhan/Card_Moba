@@ -1,6 +1,7 @@
 # 结算规则详解
 
-**文档版本**：V1.0  
+**文档版本**：V3.1  
+**最后更新**：2025-02-25  
 **前置阅读**：[Overview.md](Overview.md)、[CardSystem.md](CardSystem.md)  
 **阅读时间**：10 分钟
 
@@ -19,7 +20,7 @@
 
 ---
 
-## 📊 四层结算模型
+## 📊 四层结算模型（V3.0）
 
 ### 层级定义
 
@@ -34,6 +35,32 @@
     ↓
     Layer 3: 功能层
 ```
+
+### EffectType → 层级映射
+
+#### V3.0 核心类型（1-10，优先使用）
+
+| EffectType | 名称 | 层级 |
+|------------|------|------|
+| `Counter = 1` | 反制 | Layer 0 |
+| `Damage = 2` | 伤害 | Layer 2 |
+| `Shield = 3` | 护盾 | Layer 1 |
+| `Heal = 4` | 治疗 | Layer 3 |
+| `Stun = 5` | 眩晕 | Layer 3 |
+| `Armor = 6` | 护甲 | Layer 1 |
+| `AttackBuff = 7` | 攻击强化 | Layer 1 |
+| `Reflect = 8` | 反伤 | Layer 1 |
+| `Vulnerable = 9` | 易伤 | Layer 3 |
+| `Draw = 10` | 抽牌 | Layer 3 |
+
+#### 旧版兼容类型（100+，保留兼容）
+
+| 编号范围 | 层级 | 包含效果 |
+|----------|------|----------|
+| 100-199 | Layer 1 | GainArmor(101), GainShield(102), Weak(116)... |
+| 200-299 | Layer 2 | DealDamage(201), Lifesteal(212), Thorns(211)... |
+| 300-399 | Layer 3 | GainEnergy(303), Silence(311), Discard(302)... |
+| 400-499 | Layer 0 | CounterCard(401), CounterFirstDamage(402)... |
 
 ### 详细说明
 
@@ -51,13 +78,18 @@
 ### 反制判定流程
 
 ```
-1. 收集所有本回合打出的反制卡（EffectType 100-199）
+1. 收集所有本回合打出的反制卡
+   - V3.0: EffectType == Counter (1)
+   - 兼容: EffectType 400-499
+   
 2. 收集所有可被反制的目标卡
+
 3. 对于每张反制卡：
    a. 检查是否存在匹配的目标
    b. 如果匹配成功：
-      - 标记目标卡为 "Countered = true"
-      - 执行惩罚效果（如 Counter_Punish）
+      - 标记目标卡为 "IsCountered = true"
+      - 执行惩罚效果（如有）
+      
 4. 被反制的卡牌不进入 Layer 1-3 结算
 ```
 
@@ -70,27 +102,34 @@
 | 反制定策牌 | `targetCard.TrackType == 定策牌` |
 | 反制指定卡 | `targetCard.CardId == specifiedId` |
 
-### 代码接口
+### 代码接口（V3.1）
 
 ```csharp
 /// <summary>
 /// 执行 Layer 0 反制结算
 /// </summary>
-public void ExecuteCounterPhase(BattleContext ctx, List<PlayedCard> allCards)
+private void ResolveLayer0_Counter(BattleContext ctx)
 {
-    var counterCards = allCards.Where(c => 
-        c.Config.GetPrimaryEffectType() >= 100 && 
-        c.Config.GetPrimaryEffectType() < 200);
+    var counterCards = ctx.PendingCounterCards;
     
-    foreach (var counter in counterCards)
+    foreach (var counterCard in counterCards)
     {
-        var targets = FindCounterTargets(ctx, counter, allCards);
-        foreach (var target in targets)
+        foreach (var targetCard in ctx.PendingPlanCards)
         {
-            target.IsCountered = true;
-            ApplyCounterPunishment(ctx, counter, target);
+            if (ShouldCounter(counterCard, targetCard))
+            {
+                targetCard.IsCountered = true;
+                ctx.CounteredCards.Add(targetCard);
+                
+                // 通过 Handler 执行反制效果
+                var handler = HandlerRegistry.GetHandler(EffectType.Counter);
+                handler?.Execute(ctx, counterCard, counterCard.Config.Effects[0], source);
+            }
         }
     }
+    
+    // 过滤未被反制的卡牌
+    ctx.ValidPlanCards = ctx.PendingPlanCards.Where(c => !c.IsCountered).ToList();
 }
 ```
 
@@ -100,12 +139,12 @@ public void ExecuteCounterPhase(BattleContext ctx, List<PlayedCard> allCards)
 
 ### 执行内容
 
-| 效果类型 | 说明 |
-|----------|------|
-| `Defense_Shield` | 添加护盾值到玩家状态 |
-| `Defense_Armor` | 增加护甲（减伤百分比） |
-| `Modify_Attack` | 修正攻击力（影响后续伤害计算） |
-| `Modify_Energy` | 修正能量（通常用于下回合） |
+| V3.0 类型 | 旧版类型 | 说明 |
+|-----------|----------|------|
+| `Shield (3)` | `GainShield (102)` | 添加护盾值到玩家状态 |
+| `Armor (6)` | `GainArmor (101)` | 增加护甲（减伤百分比） |
+| `AttackBuff (7)` | `GainStrength (111)` | 修正攻击力 |
+| `Reflect (8)` | `Thorns (211)` | 反伤效果 |
 
 ### 同步应用规则
 
@@ -113,28 +152,32 @@ public void ExecuteCounterPhase(BattleContext ctx, List<PlayedCard> allCards)
 
 ```csharp
 /// <summary>
-/// 执行 Layer 1 防御结算
+/// 执行 Layer 1 防御结算（V3.1）
 /// </summary>
-public void ExecuteDefensePhase(BattleContext ctx, List<PlayedCard> activeCards)
+private void ResolveLayer1_Defense(BattleContext ctx)
 {
-    // 收集所有防御效果
-    var defenseEffects = new Dictionary<int, DefenseModifier>();
+    var layer1Effects = new List<EffectToResolve>();
     
-    foreach (var card in activeCards.Where(c => !c.IsCountered))
+    foreach (var card in ctx.ValidPlanCards)
     {
         foreach (var effect in card.Config.Effects)
         {
-            if (effect.EffectType >= 200 && effect.EffectType < 300)
+            // 使用 V3.0 层级判断方法
+            if (effect.GetSettlementLayerV3() == 1)
             {
-                CollectDefenseEffect(defenseEffects, card, effect);
+                layer1Effects.Add(new EffectToResolve 
+                { 
+                    Card = card, 
+                    Effect = effect 
+                });
             }
         }
     }
     
     // 同时应用所有效果
-    foreach (var (playerId, modifier) in defenseEffects)
+    foreach (var item in layer1Effects)
     {
-        ctx.GetPlayer(playerId).ApplyModifier(modifier);
+        ExecuteEffect(ctx, item.Card, item.Effect);
     }
 }
 ```
@@ -156,51 +199,41 @@ public void ExecuteDefensePhase(BattleContext ctx, List<PlayedCard> activeCards)
 3. **同时扣血**：对所有目标同时应用伤害
 4. **处理触发**：反伤、吸血、濒死触发等
 
-### 同步扣血规则
+### 代码接口（V3.1）
 
 ```csharp
 /// <summary>
 /// 执行 Layer 2 伤害结算
 /// </summary>
-public void ExecuteDamagePhase(BattleContext ctx, List<PlayedCard> activeCards)
+private void ResolveLayer2_Damage(BattleContext ctx)
 {
-    // 1. 收集所有伤害
-    var damageMap = new Dictionary<int, int>(); // playerId -> totalDamage
+    // Step1: 收集并同步应用所有伤害
+    var damageMap = new Dictionary<string, int>();  // playerId → totalDamage
     
-    foreach (var card in activeCards.Where(c => !c.IsCountered))
+    foreach (var card in ctx.ValidPlanCards)
     {
         foreach (var effect in card.Config.Effects)
         {
-            if (effect.EffectType >= 300 && effect.EffectType < 400)
+            if (effect.GetSettlementLayerV3() == 2)
             {
-                var targets = ResolveTargets(ctx, card, effect);
-                foreach (var targetId in targets)
-                {
-                    int damage = CalculateDamage(ctx, card, effect, targetId);
-                    damageMap[targetId] = damageMap.GetValueOrDefault(targetId) + damage;
-                }
+                var handler = HandlerRegistry.GetHandler(effect.EffectType);
+                handler?.Execute(ctx, card, effect, ctx.GetPlayer(card.SourcePlayerId));
             }
         }
     }
     
-    // 2. 同时应用伤害
-    foreach (var (playerId, damage) in damageMap)
-    {
-        ctx.GetPlayer(playerId).TakeDamage(damage);
-    }
-    
-    // 3. 处理触发效果
-    ProcessTriggerEffects(ctx, damageMap);
+    // Step2: 处理触发效果（吸血、反伤）
+    ProcessTriggerEffects(ctx);
 }
 ```
 
 ### 触发效果处理
 
-| 触发类型 | 触发条件 | 效果 |
-|----------|----------|------|
-| 反伤 | 受到伤害时 | 对伤害来源造成固定/比例伤害 |
-| 吸血 | 造成伤害时 | 恢复固定/比例生命值 |
-| 濒死触发 | 生命值归零时 | 触发救生效果（如有） |
+| 触发类型 | EffectType | 触发条件 | 效果 |
+|----------|------------|----------|------|
+| 反伤 | `Reflect(8)`, `Thorns(211)` | 受到伤害时 | 对伤害来源造成固定/比例伤害 |
+| 吸血 | `Lifesteal(212)` | 造成伤害时 | 恢复固定/比例生命值 |
+| 濒死触发 | - | 生命值归零时 | 触发救生效果（如有） |
 
 ---
 
@@ -208,13 +241,14 @@ public void ExecuteDamagePhase(BattleContext ctx, List<PlayedCard> activeCards)
 
 ### 执行内容
 
-| 效果类型 | 说明 |
-|----------|------|
-| `Utility_Stun` | 晕眩（下回合无法操作） |
-| `Utility_Silence` | 沉默（下回合无法使用技能牌） |
-| `Utility_Draw` | 抽牌（定策牌中较少见） |
-| `Utility_EnergyGain` | 能量回复 |
-| `Legendary_Special` | 传说牌独特效果 |
+| V3.0 类型 | 旧版类型 | 说明 |
+|-----------|----------|------|
+| `Heal (4)` | - | 恢复生命值 |
+| `Stun (5)` | - | 晕眩（下回合无法操作） |
+| `Vulnerable (9)` | - | 易伤（受伤增加） |
+| `Draw (10)` | - | 抽牌 |
+| - | `Silence (311)` | 沉默（下回合无法使用技能牌） |
+| - | `GainEnergy (303)` | 能量回复 |
 
 ### 执行规则
 
@@ -256,26 +290,36 @@ public void ExecuteDamagePhase(BattleContext ctx, List<PlayedCard> activeCards)
     │
     ▼
 ┌───────────────────────────┐
+│  PreResolveTargets        │
+│  → 为所有卡牌解析目标        │
+└───────────────────────────┘
+    │
+    ▼
+┌───────────────────────────┐
 │  Layer 0: 反制结算          │
 │  → 标记被反制的卡牌          │
+│  → 输出 ValidPlanCards      │
 └───────────────────────────┘
     │
     ▼
 ┌───────────────────────────┐
 │  Layer 1: 防御/修正结算      │
 │  → 同时应用护盾/护甲/修正    │
+│  → GetSettlementLayerV3()==1│
 └───────────────────────────┘
     │
     ▼
 ┌───────────────────────────┐
 │  Layer 2: 伤害结算          │
 │  → 同时扣血 → 触发效果      │
+│  → GetSettlementLayerV3()==2│
 └───────────────────────────┘
     │
     ▼
 ┌───────────────────────────┐
 │  Layer 3: 功能效果结算       │
 │  → 控制/资源/传说           │
+│  → GetSettlementLayerV3()==3│
 └───────────────────────────┘
     │
     ▼
@@ -318,10 +362,20 @@ public void ExecuteDamagePhase(BattleContext ctx, List<PlayedCard> activeCards)
 
 ---
 
+## 📝 版本历史
+
+| 版本 | 日期 | 变更 |
+|------|------|------|
+| V3.1 | 2025-02-25 | 同步 V3.0 EffectType 体系；更新代码示例使用 GetSettlementLayerV3() |
+| V1.0 | 初始 | 基础结算规则文档 |
+
+---
+
 ## 📖 关联文档
 
 | 主题 | 文档 |
 |------|------|
 | 卡牌系统 | [CardSystem.md](CardSystem.md) |
-| 核心代码实现 | `Shared/BattleCore/Settlement/SettlementEngine.cs` |
-| 回合状态机 | `Shared/BattleCore/RoundStateMachine/` |
+| 核心代码解读 | [../TechGuide/BattleCore.md](../TechGuide/BattleCore.md) |
+| 代码位置 | `Shared/BattleCore/Settlement/SettlementEngine.cs` |
+| Handler 注册 | `Shared/BattleCore/Settlement/Handlers/HandlerRegistry.cs` |

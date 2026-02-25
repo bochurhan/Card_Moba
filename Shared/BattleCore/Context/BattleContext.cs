@@ -4,7 +4,6 @@ using CardMoba.BattleCore.Event;
 using CardMoba.BattleCore.Random;
 using CardMoba.BattleCore.Trigger;
 
-#pragma warning disable CS0618 // CardAction 已废弃，但 BattleContext 需要保持兼容
 #pragma warning disable CS8632 // nullable 注解警告
 
 namespace CardMoba.BattleCore.Context
@@ -79,9 +78,6 @@ namespace CardMoba.BattleCore.Context
         /// <summary>本回合出牌计数器（用于生成 PlayedCard.RuntimeId）</summary>
         public int CardPlayedCountThisRound { get; set; }
 
-        // [兼容旧代码] 定策牌操作列表
-        public List<CardAction> PendingPlanActions { get; set; } = new List<CardAction>();
-
         /// <summary>本回合已结算的所有操作日志（用于回放和UI展示）</summary>
         public List<string> RoundLog { get; set; } = new List<string>();
 
@@ -91,12 +87,7 @@ namespace CardMoba.BattleCore.Context
         /// 上回合提交的反制牌（本回合堆叠0层触发校验）
         /// 根据文档：反制牌本回合提交锁定，下回合堆叠0层触发
         /// </summary>
-        public List<CardAction> PendingCounterCards { get; set; } = new List<CardAction>();
-
-        /// <summary>
-        /// [兼容旧代码] 本回合被反制作废的卡牌操作
-        /// </summary>
-        public List<CardAction> CounteredActions { get; set; } = new List<CardAction>();
+        public List<PlayedCard> PendingCounterCards { get; set; } = new List<PlayedCard>();
 
         /// <summary>
         /// 本回合被反制作废的卡牌（用于动画展示和日志）
@@ -107,7 +98,7 @@ namespace CardMoba.BattleCore.Context
         /// 本回合有效的定策牌（未被反制、未被作废）
         /// 在堆叠0层结算完成后填充，供后续堆叠层使用
         /// </summary>
-        public List<CardAction> ValidPlanActions { get; set; } = new List<CardAction>();
+        public List<PlayedCard> ValidPlanCards { get; set; } = new List<PlayedCard>();
 
         // ── 触发式效果追踪 ──
 
@@ -221,19 +212,19 @@ namespace CardMoba.BattleCore.Context
         {
             // 将本回合的反制牌转移到跨回合存储
             PendingCounterCards.Clear();
-            foreach (var action in PendingPlanActions)
+            foreach (var card in PendingPlanCards)
             {
                 // 使用 Flags 检查：只要包含"反制"标签就转移
-                if (action.Card.HasTag(Protocol.Enums.CardTag.Counter))
+                if (card.Config.HasTag(Protocol.Enums.CardTag.Counter))
                 {
-                    PendingCounterCards.Add(action);
+                    PendingCounterCards.Add(card);
                 }
             }
 
             // 清空本回合数据
-            PendingPlanActions.Clear();
-            ValidPlanActions.Clear();
-            CounteredActions.Clear();
+            PendingPlanCards.Clear();
+            ValidPlanCards.Clear();
+            CounteredCards.Clear();
             PendingTriggerEffects.Clear();
             RoundLog.Clear();
             HasChainTriggeredThisRound = false;

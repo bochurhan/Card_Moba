@@ -88,67 +88,19 @@ namespace CardMoba.Client.Editor.CardEditor
     }
 
     /// <summary>
-    /// 效果编辑数据
+    /// 效果编辑数据 —— 直接使用 Shared 的 EffectType 枚举
     /// </summary>
     [Serializable]
     public class EffectEditData
     {
         public string EffectId = "";
         public int CardId;
-        public EffectTypeEnum EffectType = EffectTypeEnum.DealDamage;
+        /// <summary>效果类型 —— 使用 Shared/Protocol/Enums/EffectType</summary>
+        public EffectType EffectType = EffectType.DealDamage;
         public int Value;
         public int Duration;
         public string TargetOverride = "";
         public bool IsDelayed;
         public string Description = "";
-    }
-
-    /// <summary>
-    /// 效果类型枚举（带中文显示名）
-    /// </summary>
-    public enum EffectTypeEnum
-    {
-        [InspectorName("造成伤害")]
-        DealDamage = 201,
-        
-        [InspectorName("获得护盾")]
-        GainShield = 101,
-        
-        [InspectorName("获得护甲")]
-        GainArmor = 102,
-        
-        [InspectorName("回复生命")]
-        Heal = 301,
-        
-        [InspectorName("吸血(%)")]
-        Lifesteal = 302,
-        
-        [InspectorName("获得力量")]
-        GainStrength = 111,
-        
-        [InspectorName("反伤(%)")]
-        Thorns = 121,
-        
-        [InspectorName("易伤(%)")]
-        Vulnerable = 221,
-        
-        [InspectorName("反制伤害")]
-        CounterFirstDamage = 401,
-        
-        [InspectorName("抽牌")]
-        DrawCard = 501,
-        
-        [InspectorName("获得能量")]
-        GainEnergy = 502,
-    }
-
-    /// <summary>
-    /// InspectorName 属性（用于枚举显示名）
-    /// </summary>
-    [AttributeUsage(AttributeTargets.Field)]
-    public class InspectorNameAttribute : Attribute
-    {
-        public string DisplayName { get; }
-        public InspectorNameAttribute(string name) => DisplayName = name;
     }
 }

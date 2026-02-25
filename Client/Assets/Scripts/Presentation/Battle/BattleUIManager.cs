@@ -418,16 +418,17 @@ namespace CardMoba.Client.Presentation.Battle
         /// <summary>
         /// 显示游戏结束面板。
         /// </summary>
-        private void ShowGameOver(int winnerPlayerId)
+        private void ShowGameOver(int winnerTeamId)
         {
             if (_gameOverPanel != null)
                 _gameOverPanel.SetActive(true);
 
             if (_gameOverText != null)
             {
-                if (winnerPlayerId == GameLogic.BattleGameManager.HumanPlayerId)
+                // winnerTeamId: 1 = 玩家队伍, 2 = AI队伍, -1 = 平局
+                if (winnerTeamId == 1)
                     _gameOverText.text = "胜利! 你赢了!";
-                else if (winnerPlayerId == GameLogic.BattleGameManager.AiPlayerId)
+                else if (winnerTeamId == 2)
                     _gameOverText.text = "失败... 你输了";
                 else
                     _gameOverText.text = "平局!";

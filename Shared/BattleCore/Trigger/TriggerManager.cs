@@ -186,6 +186,69 @@ namespace CardMoba.BattleCore.Trigger
         }
 
         /// <summary>
+        /// 执行指定时机的所有触发器（使用预构建的 TriggerContext）。
+        /// </summary>
+        /// <param name="ctx">战斗上下文</param>
+        /// <param name="timing">触发时机</param>
+        /// <param name="triggerCtx">预构建的触发上下文</param>
+        /// <returns>是否有任何触发器执行</returns>
+        public bool FireTriggers(BattleContext ctx, TriggerTiming timing, TriggerContext triggerCtx)
+        {
+            if (!_triggersByTiming.TryGetValue(timing, out var triggers))
+                return false;
+
+            if (triggers.Count == 0)
+                return false;
+
+            bool anyExecuted = false;
+
+            // 复制列表以防止迭代时修改
+            var triggersToExecute = new List<TriggerInstance>(triggers);
+
+            foreach (var trigger in triggersToExecute)
+            {
+                // 检查是否应该移除
+                if (trigger.ShouldRemove)
+                    continue;
+
+                // 检查条件
+                if (trigger.Condition != null && !trigger.Condition(triggerCtx))
+                    continue;
+
+                // 执行效果
+                try
+                {
+                    trigger.Effect?.Invoke(triggerCtx);
+                    anyExecuted = true;
+
+                    // 减少触发次数
+                    if (trigger.RemainingTriggers > 0)
+                    {
+                        trigger.RemainingTriggers--;
+                    }
+
+                    OnTriggerExecuted?.Invoke(trigger, triggerCtx);
+
+                    // 检查是否应该取消后续处理
+                    if (triggerCtx.ShouldCancel)
+                    {
+                        break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // 记录错误但继续执行其他触发器
+                    System.Diagnostics.Debug.WriteLine($"[TriggerManager] 触发器执行异常: {trigger.TriggerId} - {ex.Message}");
+                }
+            }
+
+            // 清理应该移除的触发器
+            CleanupExpiredTriggers(timing);
+
+            return anyExecuted;
+        }
+
+        /// <summary>
         /// 执行指定时机的所有触发器，并返回是否被取消。
         /// </summary>
         /// <param name="ctx">战斗上下文</param>

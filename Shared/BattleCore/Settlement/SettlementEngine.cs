@@ -5,6 +5,8 @@ using CardMoba.BattleCore.Trigger;
 using CardMoba.ConfigModels.Card;
 using CardMoba.Protocol.Enums;
 
+#pragma warning disable CS8632 // nullable 注解警告
+
 namespace CardMoba.BattleCore.Settlement
 {
     /// <summary>
@@ -67,7 +69,7 @@ namespace CardMoba.BattleCore.Settlement
             }
 
             // 解析目标
-            card.ResolvedTargets = _targetResolver.Resolve(ctx, card, source);
+            card.ResolvedTargets = _targetResolver.Resolve(card, ctx);
 
             // ─────────────────────────────────────────────────────
             // 1. 触发 BeforePlayCard（反制牌在此时机检查）
@@ -192,7 +194,7 @@ namespace CardMoba.BattleCore.Settlement
                 var source = ctx.GetPlayer(card.SourcePlayerId);
                 if (source == null) continue;
 
-                card.ResolvedTargets = _targetResolver.Resolve(ctx, card, source);
+                card.ResolvedTargets = _targetResolver.Resolve(card, ctx);
             }
         }
 
@@ -214,21 +216,22 @@ namespace CardMoba.BattleCore.Settlement
             }
 
             // 筛选出本回合有效的定策牌（未被反制的）
-            ctx.ValidPlanActions.Clear();
-            foreach (var action in ctx.PendingPlanActions)
+            ctx.ValidPlanCards.Clear();
+            
+            foreach (var playedCard in ctx.PendingPlanCards)
             {
                 // 跳过本回合新提交的反制牌（下回合才生效）
-                if (action.Card.HasTag(CardTag.Counter))
+                if (playedCard.Config.HasTag(CardTag.Counter))
                 {
-                    ctx.RoundLog.Add($"[Layer0] 反制牌「{action.Card.CardName}」已锁定，下回合生效");
+                    ctx.RoundLog.Add($"[Layer0] 反制牌「{playedCard.Config.CardName}」已锁定，下回合生效");
                     continue;
                 }
 
-                // 检查是否被反制
+                // 检查是否被反制（通过 RuntimeId 匹配）
                 bool isCountered = false;
-                foreach (var countered in ctx.CounteredActions)
+                foreach (var counteredCard in ctx.CounteredCards)
                 {
-                    if (countered == action)
+                    if (counteredCard.RuntimeId == playedCard.RuntimeId)
                     {
                         isCountered = true;
                         break;
@@ -237,41 +240,47 @@ namespace CardMoba.BattleCore.Settlement
 
                 if (!isCountered)
                 {
-                    ctx.ValidPlanActions.Add(action);
+                    ctx.ValidPlanCards.Add(playedCard);
                 }
             }
 
-            ctx.RoundLog.Add($"[Layer0] 有效定策牌数量: {ctx.ValidPlanActions.Count}");
+            ctx.RoundLog.Add($"[Layer0] 有效定策牌数量: {ctx.ValidPlanCards.Count}");
         }
 
         /// <summary>
         /// 处理单张反制牌的效果。
         /// </summary>
-        private void ProcessCounterCard(BattleContext ctx, CardAction counterAction)
+        private void ProcessCounterCard(BattleContext ctx, PlayedCard counterCard)
         {
-            var source = ctx.GetPlayer(counterAction.SourcePlayerId);
+            var source = ctx.GetPlayer(counterCard.SourcePlayerId);
             if (source == null || !source.IsAlive) return;
 
             // 获取目标玩家（反制牌作用于敌方）
-            var target = ctx.GetPlayer(counterAction.TargetPlayerId);
+            string? targetPlayerId = counterCard.ResolvedTargets?.Count > 0 
+                ? counterCard.ResolvedTargets[0] 
+                : (counterCard.RawTargetGroup?.Count > 0 ? counterCard.RawTargetGroup[0] : null);
+            
+            if (string.IsNullOrEmpty(targetPlayerId)) return;
+            
+            var target = ctx.GetPlayer(targetPlayerId);
             if (target == null) return;
 
             // 查找目标玩家本回合提交的首张伤害牌
-            CardAction? targetCard = FindFirstDamageCard(ctx, target.PlayerId);
+            PlayedCard? targetDamageCard = FindFirstDamageCard(ctx, target.PlayerId);
 
-            if (targetCard != null)
+            if (targetDamageCard != null)
             {
                 // 反制成功：将目标卡牌标记为作废
-                ctx.CounteredActions.Add(targetCard);
-                ctx.RoundLog.Add($"[Layer0] 玩家{source.PlayerId}的反制牌「{counterAction.Card.CardName}」" +
-                    $"成功反制了玩家{target.PlayerId}的「{targetCard.Card.CardName}」！");
+                ctx.CounteredCards.Add(targetDamageCard);
+                ctx.RoundLog.Add($"[Layer0] 玩家{source.PlayerId}的反制牌「{counterCard.Config.CardName}」" +
+                    $"成功反制了玩家{target.PlayerId}的「{targetDamageCard.Config.CardName}」！");
 
                 // 执行反制牌的额外效果（如反伤）
-                ApplyCounterEffects(ctx, counterAction, targetCard);
+                ApplyCounterEffects(ctx, counterCard, targetDamageCard);
             }
             else
             {
-                ctx.RoundLog.Add($"[Layer0] 玩家{source.PlayerId}的反制牌「{counterAction.Card.CardName}」" +
+                ctx.RoundLog.Add($"[Layer0] 玩家{source.PlayerId}的反制牌「{counterCard.Config.CardName}」" +
                     $"未找到可反制的目标，效果落空");
             }
         }
@@ -279,14 +288,14 @@ namespace CardMoba.BattleCore.Settlement
         /// <summary>
         /// 查找指定玩家本回合提交的首张伤害牌。
         /// </summary>
-        private CardAction? FindFirstDamageCard(BattleContext ctx, string playerId)
+        private PlayedCard? FindFirstDamageCard(BattleContext ctx, string playerId)
         {
-            foreach (var action in ctx.PendingPlanActions)
+            foreach (var card in ctx.PendingPlanCards)
             {
                 // 使用 Flags 检查：只要包含"伤害"标签就匹配
-                if (action.SourcePlayerId == playerId && action.Card.HasTag(CardTag.Damage))
+                if (card.SourcePlayerId == playerId && card.Config.HasTag(CardTag.Damage))
                 {
-                    return action;
+                    return card;
                 }
             }
             return null;
@@ -295,9 +304,9 @@ namespace CardMoba.BattleCore.Settlement
         /// <summary>
         /// 应用反制牌的额外效果（如反伤）。
         /// </summary>
-        private void ApplyCounterEffects(BattleContext ctx, CardAction counterAction, CardAction targetCard)
+        private void ApplyCounterEffects(BattleContext ctx, PlayedCard counterCard, PlayedCard targetCard)
         {
-            foreach (var effect in counterAction.Card.Effects)
+            foreach (var effect in counterCard.Config.Effects)
             {
                 if (effect.EffectType == EffectType.CounterAndReflect)
                 {
@@ -305,7 +314,7 @@ namespace CardMoba.BattleCore.Settlement
                     var attacker = ctx.GetPlayer(targetCard.SourcePlayerId);
                     if (attacker != null && attacker.IsAlive)
                     {
-                        int reflectDamage = targetCard.Card.EffectValue;
+                        int reflectDamage = targetCard.Config.EffectValue;
                         attacker.Hp -= reflectDamage;
                         ctx.RoundLog.Add($"[Layer0] 反弹{reflectDamage}点伤害给玩家{attacker.PlayerId}");
                     }
@@ -328,18 +337,19 @@ namespace CardMoba.BattleCore.Settlement
             // 收集所有属于堆叠1层的效果
             List<EffectToResolve> layer1Effects = new List<EffectToResolve>();
 
-            foreach (var action in ctx.ValidPlanActions)
+            foreach (var card in ctx.ValidPlanCards)
             {
-                var source = ctx.GetPlayer(action.SourcePlayerId);
+                var source = ctx.GetPlayer(card.SourcePlayerId);
                 if (source == null || !source.IsAlive) continue;
 
-                foreach (var effect in action.Card.Effects)
+                foreach (var effect in card.Config.Effects)
                 {
-                    if (effect.GetSettlementLayer() == SettlementLayer.DefenseModifier)
+                    // V3.0: 使用层级编号而非枚举比较
+                    if (effect.GetSettlementLayerV3() == 1) // Layer 1: 防御与数值修正
                     {
                         layer1Effects.Add(new EffectToResolve
                         {
-                            Action = action,
+                            Card = card,
                             Effect = effect,
                             Source = source
                         });
@@ -350,7 +360,7 @@ namespace CardMoba.BattleCore.Settlement
             // 同步应用所有堆叠1层效果
             foreach (var item in layer1Effects)
             {
-                ApplySingleEffect(ctx, item.Action, item.Effect, item.Source);
+                ExecuteEffectLegacy(ctx, item.Card, item.Effect, item.Source);
             }
 
             ctx.RoundLog.Add($"[Layer1] 处理了 {layer1Effects.Count} 个防御/数值修正效果");
@@ -384,15 +394,22 @@ namespace CardMoba.BattleCore.Settlement
             // 收集所有伤害效果
             List<DamageToApply> damages = new List<DamageToApply>();
 
-            foreach (var action in ctx.ValidPlanActions)
+            foreach (var card in ctx.ValidPlanCards)
             {
-                var source = ctx.GetPlayer(action.SourcePlayerId);
+                var source = ctx.GetPlayer(card.SourcePlayerId);
                 if (source == null || !source.IsAlive) continue;
 
-                var target = ctx.GetPlayer(action.TargetPlayerId);
+                // 获取目标ID
+                string? targetId = card.ResolvedTargets?.Count > 0 
+                    ? card.ResolvedTargets[0] 
+                    : (card.RawTargetGroup?.Count > 0 ? card.RawTargetGroup[0] : null);
+                
+                if (string.IsNullOrEmpty(targetId)) continue;
+                
+                var target = ctx.GetPlayer(targetId);
                 if (target == null) continue;
 
-                foreach (var effect in action.Card.Effects)
+                foreach (var effect in card.Config.Effects)
                 {
                     if (effect.EffectType == EffectType.DealDamage)
                     {
@@ -406,8 +423,8 @@ namespace CardMoba.BattleCore.Settlement
                             TargetId = target.PlayerId,
                             BaseDamage = baseDamage,
                             FinalDamage = finalDamage,
-                            CardName = action.Card.CardName,
-                            HasLifesteal = HasLifestealEffect(action.Card)
+                            CardName = card.Config.CardName,
+                            HasLifesteal = HasLifestealEffect(card.Config)
                         });
                     }
                 }
@@ -590,18 +607,19 @@ namespace CardMoba.BattleCore.Settlement
         /// </summary>
         private void ResolveLayer3_SubPhase1_Normal(BattleContext ctx)
         {
-            foreach (var action in ctx.ValidPlanActions)
+            foreach (var card in ctx.ValidPlanCards)
             {
-                if (action.Card.IsLegendary) continue; // 传说牌在子阶段2处理
+                if (card.Config.IsLegendary) continue; // 传说牌在子阶段2处理
 
-                var source = ctx.GetPlayer(action.SourcePlayerId);
+                var source = ctx.GetPlayer(card.SourcePlayerId);
                 if (source == null || !source.IsAlive) continue;
 
-                foreach (var effect in action.Card.Effects)
+                foreach (var effect in card.Config.Effects)
                 {
-                    if (effect.GetSettlementLayer() == SettlementLayer.Utility)
+                    // V3.0: 使用层级编号而非枚举比较
+                    if (effect.GetSettlementLayerV3() == 3) // Layer 3: 功能/收尾
                     {
-                        ApplySingleEffect(ctx, action, effect, source);
+                        ExecuteEffectLegacy(ctx, card, effect, source);
                     }
                 }
             }
@@ -612,18 +630,18 @@ namespace CardMoba.BattleCore.Settlement
         /// </summary>
         private void ResolveLayer3_SubPhase2_Legendary(BattleContext ctx)
         {
-            foreach (var action in ctx.ValidPlanActions)
+            foreach (var card in ctx.ValidPlanCards)
             {
-                if (!action.Card.IsLegendary) continue;
+                if (!card.Config.IsLegendary) continue;
 
-                var source = ctx.GetPlayer(action.SourcePlayerId);
+                var source = ctx.GetPlayer(card.SourcePlayerId);
                 if (source == null || !source.IsAlive) continue;
 
-                ctx.RoundLog.Add($"[Layer3-Legendary] 传说牌「{action.Card.CardName}」专属结算");
+                ctx.RoundLog.Add($"[Layer3-Legendary] 传说牌「{card.Config.CardName}」专属结算");
 
-                foreach (var effect in action.Card.Effects)
+                foreach (var effect in card.Config.Effects)
                 {
-                    ApplySingleEffect(ctx, action, effect, source);
+                    ExecuteEffectLegacy(ctx, card, effect, source);
                 }
             }
         }
@@ -637,6 +655,8 @@ namespace CardMoba.BattleCore.Settlement
         /// </summary>
         private void ExecuteEffect(BattleContext ctx, PlayedCard card, CardEffect effect, PlayerBattleState source)
         {
+            ctx.RoundLog.Add($"[ExecuteEffect] 开始执行效果 - 类型:{effect.Type}, 值:{effect.Value}");
+            
             var handler = HandlerRegistry.GetHandler(effect.Type);
             if (handler == null)
             {
@@ -645,11 +665,16 @@ namespace CardMoba.BattleCore.Settlement
                 return;
             }
 
+            ctx.RoundLog.Add($"[ExecuteEffect] 找到Handler: {handler.GetType().Name}");
+
             // 获取效果目标列表
             var targets = card.ResolvedTargets;
+            ctx.RoundLog.Add($"[ExecuteEffect] 目标列表: {(targets != null ? string.Join(",", targets) : "null")}");
+            
             if (targets == null || targets.Count == 0)
             {
                 // 无目标效果（如自我增益、全局效果）
+                ctx.RoundLog.Add("[ExecuteEffect] 无目标效果，target=null");
                 handler.Execute(card, effect, source, null, ctx);
             }
             else
@@ -658,6 +683,7 @@ namespace CardMoba.BattleCore.Settlement
                 foreach (var targetId in targets)
                 {
                     var target = ctx.GetPlayer(targetId);
+                    ctx.RoundLog.Add($"[ExecuteEffect] 对目标 {targetId} 执行, 找到玩家: {target != null}");
                     handler.Execute(card, effect, source, target, ctx);
                 }
             }
@@ -804,24 +830,6 @@ namespace CardMoba.BattleCore.Settlement
             }
         }
 
-        /// <summary>
-        /// 应用单个效果（用于旧版 CardAction 兼容）。
-        /// </summary>
-        private void ApplySingleEffect(BattleContext ctx, CardAction action, CardEffect effect, PlayerBattleState source)
-        {
-            // 转换为 PlayedCard 并调用新版方法
-            var playedCard = action.ToPlayedCard();
-            playedCard.ResolvedTargets = new List<string>();
-            
-            // 如果有目标，添加到解析目标列表
-            if (!string.IsNullOrEmpty(action.TargetPlayerId))
-            {
-                playedCard.ResolvedTargets.Add(action.TargetPlayerId);
-            }
-
-            ExecuteEffectLegacy(ctx, playedCard, effect, source);
-        }
-
         // ══════════════════════════════════════════════════════════
         // 辅助数据结构
         // ══════════════════════════════════════════════════════════
@@ -831,7 +839,7 @@ namespace CardMoba.BattleCore.Settlement
         /// </summary>
         private class EffectToResolve
         {
-            public CardAction Action { get; set; } = null!;
+            public PlayedCard Card { get; set; } = null!;
             public CardEffect Effect { get; set; } = null!;
             public PlayerBattleState Source { get; set; } = null!;
         }

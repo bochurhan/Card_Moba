@@ -82,6 +82,7 @@ namespace CardMoba.Client.Data.ConfigData.JsonModels
 
     /// <summary>
     /// 单个效果的 JSON 数据（DTO）
+    /// V3.0 更新：新增 effectParams 支持复杂效果参数
     /// </summary>
     [Serializable]
     public class EffectJsonData
@@ -92,7 +93,7 @@ namespace CardMoba.Client.Data.ConfigData.JsonModels
         /// <summary>效果类型编号（决定结算层和行为）</summary>
         public int effectType;
 
-        /// <summary>效果数值</summary>
+        /// <summary>效果数值（主数值）</summary>
         public int value;
 
         /// <summary>持续回合数</summary>
@@ -109,5 +110,70 @@ namespace CardMoba.Client.Data.ConfigData.JsonModels
 
         /// <summary>效果描述（调试用）</summary>
         public string description;
+
+        // ═══════════════════════════════════════════════════════════
+        // V3.0 新增字段 - 支持 Handler 模块化架构
+        // ═══════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// 结算层级 (0-3)
+        /// 0=反制, 1=防御, 2=伤害, 3=功能
+        /// 若为空则由 effectType 自动推断
+        /// </summary>
+        public int layer;
+
+        /// <summary>
+        /// 效果参数（用于复杂效果）
+        /// 如：反伤效果 {"reflectPercent": 30}
+        ///     护甲效果 {"armorValue": 20, "duration": 2}
+        /// </summary>
+        public EffectParams effectParams;
+
+        /// <summary>
+        /// 子效果列表（用于组合效果）
+        /// 如：一张卡同时造成伤害和添加护盾
+        /// </summary>
+        public List<SubEffectData> subEffects;
+    }
+
+    /// <summary>
+    /// 效果参数（用于复杂效果的额外配置）
+    /// </summary>
+    [Serializable]
+    public class EffectParams
+    {
+        /// <summary>百分比值（用于反伤、吸血等）</summary>
+        public int percent;
+
+        /// <summary>次要数值（如额外护甲、额外伤害）</summary>
+        public int secondaryValue;
+
+        /// <summary>可反制的效果类型列表（用于反制牌）</summary>
+        public List<int> counterableTypes;
+
+        /// <summary>触发器类型（用于被动效果）</summary>
+        public string triggerType;
+
+        /// <summary>触发器参数</summary>
+        public string triggerParam;
+    }
+
+    /// <summary>
+    /// 子效果数据（用于组合效果）
+    /// </summary>
+    [Serializable]
+    public class SubEffectData
+    {
+        /// <summary>子效果类型</summary>
+        public int effectType;
+
+        /// <summary>子效果数值</summary>
+        public int value;
+
+        /// <summary>子效果目标（可选）</summary>
+        public string targetOverride;
+
+        /// <summary>子效果持续回合</summary>
+        public int duration;
     }
 }

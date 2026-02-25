@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using CardMoba.Protocol.Enums;
 
 namespace CardMoba.ConfigModels.Card
@@ -5,16 +6,20 @@ namespace CardMoba.ConfigModels.Card
     /// <summary>
     /// 卡牌单效果配置 —— 描述卡牌的一个独立效果。
     /// 
-    /// 一张卡牌可以有多个效果，每个效果：
-    /// - 有独立的效果类型（决定行为）
-    /// - 有独立的数值
-    /// - 根据效果类型自动归属到对应的结算堆叠层
+    /// V3.0 架构：
+    /// - 每个效果对应一个 Handler（由 EffectType 决定）
+    /// - 自动归属到 4 层结算栈 (0=反制, 1=防御, 2=伤害, 3=功能)
+    /// - 支持复杂效果参数和子效果组合
     /// 
     /// 这符合《定策牌结算机制》多子类型拆分铁律：
     /// "单效果被反制不影响同卡牌其他未被反制的效果正常结算"
     /// </summary>
     public class CardEffect
     {
+        // ═══════════════════════════════════════════════════════════
+        // 基础属性
+        // ═══════════════════════════════════════════════════════════
+
         /// <summary>效果类型（决定具体行为和所属堆叠层）</summary>
         public EffectType EffectType { get; set; }
 
@@ -44,33 +49,82 @@ namespace CardMoba.ConfigModels.Card
         /// </summary>
         public bool IsDelayed { get; set; }
 
+        // ═══════════════════════════════════════════════════════════
+        // V3.0 新增 - Handler 架构支持
+        // ═══════════════════════════════════════════════════════════
+
         /// <summary>
-        /// 获取该效果所属的结算堆叠层。
+        /// 效果参数（用于复杂效果的额外配置）
         /// </summary>
-        public SettlementLayer GetSettlementLayer()
+        public EffectParams Params { get; set; }
+
+        /// <summary>
+        /// 子效果列表（用于组合效果）
+        /// </summary>
+        public List<SubEffect> SubEffects { get; set; }
+
+        // ═══════════════════════════════════════════════════════════
+        // 方法
+        // ═══════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// 获取该效果所属的结算堆叠层（V3.0 四层架构）。
+        /// Layer 0: 反制 (Counter)
+        /// Layer 1: 防御 (Defense/Shield/Armor)
+        /// Layer 2: 伤害 (Damage)
+        /// Layer 3: 功能 (Utility - Heal, Stun, Draw, etc.)
+        /// </summary>
+        public int GetSettlementLayerV3()
         {
-            // 根据效果类型编号判断所属堆叠层
-            int typeCode = (int)EffectType;
-
-            // 100-199：堆叠1层（防御与数值修正）
-            if (typeCode >= 100 && typeCode < 200)
-                return SettlementLayer.DefenseModifier;
-
-            // 200-299：堆叠2层（主动伤害与触发式效果）
-            if (typeCode >= 200 && typeCode < 300)
-                return SettlementLayer.DamageTrigger;
-
-            // 300-399：堆叠3层（控制、资源等收尾效果）
-            if (typeCode >= 300 && typeCode < 400)
-                return SettlementLayer.Utility;
-
-            // 400-499：堆叠0层（反制效果）
-            if (typeCode >= 400 && typeCode < 500)
-                return SettlementLayer.Counter;
-
-            // 默认归入收尾效果层
-            return SettlementLayer.Utility;
+            // V3.0 新效果类型 (1-10)
+            return EffectType switch
+            {
+                // Layer 0: 反制
+                EffectType.Counter => 0,
+                
+                // Layer 1: 防御/修正
+                EffectType.Shield => 1,
+                EffectType.Armor => 1,
+                EffectType.AttackBuff => 1,
+                EffectType.Reflect => 1,
+                
+                // Layer 2: 伤害
+                EffectType.Damage => 2,
+                
+                // Layer 3: 功能
+                EffectType.Heal => 3,
+                EffectType.Stun => 3,
+                EffectType.Vulnerable => 3,
+                EffectType.Draw => 3,
+                
+                // 兼容旧版：根据编号范围判断
+                _ => GetLegacyLayer()
+            };
         }
+        
+        /// <summary>
+        /// 兼容旧版效果类型的层级判断
+        /// </summary>
+        private int GetLegacyLayer()
+        {
+            int typeCode = (int)EffectType;
+            
+            // 400-499: Layer 0 (反制)
+            if (typeCode >= 400 && typeCode < 500)
+                return 0;
+            
+            // 100-199: Layer 1 (防御)
+            if (typeCode >= 100 && typeCode < 200)
+                return 1;
+            
+            // 200-299: Layer 2 (伤害/触发)
+            if (typeCode >= 200 && typeCode < 300)
+                return 2;
+            
+            // 300-399: Layer 3 (功能)
+            return 3;
+        }
+
 
         /// <summary>
         /// 判断该效果是否为触发式效果（需要在堆叠2层步骤2处理）
@@ -81,5 +135,48 @@ namespace CardMoba.ConfigModels.Card
             // 210-299 为触发式效果
             return typeCode >= 210 && typeCode < 300;
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // V3.0 新增类型
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 效果参数 - 用于复杂效果的额外配置
+    /// </summary>
+    public class EffectParams
+    {
+        /// <summary>百分比值（用于反伤、吸血等）</summary>
+        public int Percent { get; set; }
+
+        /// <summary>次要数值（如额外护甲、额外伤害）</summary>
+        public int SecondaryValue { get; set; }
+
+        /// <summary>可反制的效果类型列表（用于反制牌）</summary>
+        public List<EffectType> CounterableTypes { get; set; }
+
+        /// <summary>触发器类型（用于被动效果）</summary>
+        public string TriggerType { get; set; }
+
+        /// <summary>触发器参数</summary>
+        public string TriggerParam { get; set; }
+    }
+
+    /// <summary>
+    /// 子效果 - 用于组合效果
+    /// </summary>
+    public class SubEffect
+    {
+        /// <summary>子效果类型</summary>
+        public EffectType EffectType { get; set; }
+
+        /// <summary>子效果数值</summary>
+        public int Value { get; set; }
+
+        /// <summary>子效果目标（可选）</summary>
+        public CardTargetType? TargetOverride { get; set; }
+
+        /// <summary>子效果持续回合</summary>
+        public int Duration { get; set; }
     }
 }

@@ -417,6 +417,7 @@ namespace CardMoba.Client.Data.ConfigData
 
         /// <summary>
         /// 将 JSON DTO 转换为 CardEffect 业务对象。
+        /// V3.0: 支持新增的 effectParams 和 subEffects 字段
         /// </summary>
         private CardEffect ConvertToCardEffect(EffectJsonData data)
         {
@@ -435,7 +436,75 @@ namespace CardMoba.Client.Data.ConfigData
                 effect.TargetOverride = ParseEnum(data.targetOverride, CardTargetType.Self);
             }
 
+            // V3.0: 处理结算层级（显式指定优先，否则自动推断）
+            if (data.layer > 0)
+            {
+                effect.Layer = (SettlementLayer)data.layer;
+            }
+
+            // V3.0: 处理效果参数
+            if (data.effectParams != null)
+            {
+                effect.Params = ConvertToEffectParams(data.effectParams);
+            }
+
+            // V3.0: 处理子效果列表
+            if (data.subEffects != null && data.subEffects.Count > 0)
+            {
+                effect.SubEffects = new List<SubEffect>();
+                foreach (var subData in data.subEffects)
+                {
+                    effect.SubEffects.Add(ConvertToSubEffect(subData));
+                }
+            }
+
             return effect;
+        }
+
+        /// <summary>
+        /// 将 JSON DTO 转换为 EffectParams 业务对象。
+        /// </summary>
+        private CardMoba.ConfigModels.Card.EffectParams ConvertToEffectParams(JsonModels.EffectParams data)
+        {
+            var result = new CardMoba.ConfigModels.Card.EffectParams
+            {
+                Percent = data.percent,
+                SecondaryValue = data.secondaryValue,
+                TriggerType = data.triggerType ?? string.Empty,
+                TriggerParam = data.triggerParam ?? string.Empty
+            };
+
+            // 转换可反制类型列表
+            if (data.counterableTypes != null && data.counterableTypes.Count > 0)
+            {
+                result.CounterableTypes = new List<EffectType>();
+                foreach (var typeCode in data.counterableTypes)
+                {
+                    result.CounterableTypes.Add((EffectType)typeCode);
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// 将 JSON DTO 转换为 SubEffect 业务对象。
+        /// </summary>
+        private SubEffect ConvertToSubEffect(SubEffectData data)
+        {
+            var result = new SubEffect
+            {
+                EffectType = (EffectType)data.effectType,
+                Value = data.value,
+                Duration = data.duration
+            };
+
+            if (!string.IsNullOrEmpty(data.targetOverride))
+            {
+                result.TargetOverride = ParseEnum(data.targetOverride, CardTargetType.Self);
+            }
+
+            return result;
         }
 
         /// <summary>

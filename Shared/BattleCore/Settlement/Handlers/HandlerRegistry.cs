@@ -1,3 +1,4 @@
+#pragma warning disable CS8632 // nullable reference types annotation
 using System.Collections.Generic;
 using CardMoba.Protocol.Enums;
 
@@ -28,40 +29,56 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             _handlers.Clear();
 
             // ══════════════════════════════════════════════════════════
-            // 堆叠0层：反制效果
+            // V3.0 核心效果类型 (1-10)
             // ══════════════════════════════════════════════════════════
+            
+            // Layer 0: 反制
             var counterHandler = new CounterHandler();
-            Register(EffectType.CounterCard, counterHandler);
-            Register(EffectType.CounterFirstDamage, counterHandler);
-            Register(EffectType.CounterAndReflect, counterHandler);
+            Register(EffectType.Counter, counterHandler);           // V3.0: 1
+            Register(EffectType.CounterCard, counterHandler);       // Legacy: 401
+            Register(EffectType.CounterFirstDamage, counterHandler);// Legacy: 402
+            Register(EffectType.CounterAndReflect, counterHandler); // Legacy: 403
 
-            // ══════════════════════════════════════════════════════════
-            // 堆叠1层：防御与数值修正
-            // ══════════════════════════════════════════════════════════
-            Register(EffectType.GainArmor, new ArmorHandler());
-            Register(EffectType.GainShield, new ShieldHandler());
-            Register(EffectType.GainStrength, new StrengthHandler());
-            Register(EffectType.ReduceStrength, new StrengthHandler());
-            Register(EffectType.Vulnerable, new VulnerableHandler());
-            Register(EffectType.Weak, new WeakHandler());
+            // Layer 1: 防御/修正
+            var shieldHandler = new ShieldHandler();
+            Register(EffectType.Shield, shieldHandler);            // V3.0: 3
+            Register(EffectType.GainShield, shieldHandler);        // Legacy: 102
+            
+            var armorHandler = new ArmorHandler();
+            Register(EffectType.Armor, armorHandler);              // V3.0: 6
+            Register(EffectType.GainArmor, armorHandler);          // Legacy: 101
+            
+            var strengthHandler = new StrengthHandler();
+            Register(EffectType.AttackBuff, strengthHandler);      // V3.0: 7
+            Register(EffectType.GainStrength, strengthHandler);    // Legacy: 111
+            Register(EffectType.ReduceStrength, strengthHandler);  // Legacy: 112
+            
+            Register(EffectType.Reflect, new ThornsHandler());     // V3.0: 8
+            Register(EffectType.Thorns, new ThornsHandler());      // Legacy: 211
+            
+            Register(EffectType.Vulnerable, new VulnerableHandler());  // V3.0: 9
+            Register(EffectType.Weak, new WeakHandler());          // Legacy: 116
             Register(EffectType.DamageReduction, new DamageReductionHandler());
             Register(EffectType.Invincible, new InvincibleHandler());
 
-            // ══════════════════════════════════════════════════════════
-            // 堆叠2层：伤害与触发式效果
-            // ══════════════════════════════════════════════════════════
-            Register(EffectType.DealDamage, new DamageHandler());
-            Register(EffectType.Lifesteal, new LifestealHandler());
-            Register(EffectType.Thorns, new ThornsHandler());
+            // Layer 2: 伤害
+            var damageHandler = new DamageHandler();
+            Register(EffectType.Damage, damageHandler);            // V3.0: 2
+            Register(EffectType.DealDamage, damageHandler);        // Legacy: 201
+            Register(EffectType.Lifesteal, new LifestealHandler());// Legacy: 212
 
-            // ══════════════════════════════════════════════════════════
-            // 堆叠3层：控制、资源、支援
-            // ══════════════════════════════════════════════════════════
-            Register(EffectType.Stun, new StunHandler());
-            Register(EffectType.Silence, new SilenceHandler());
-            Register(EffectType.Draw, new DrawHandler());
-            Register(EffectType.GainEnergy, new EnergyHandler());
-            Register(EffectType.Heal, new HealHandler());
+            // Layer 3: 功能
+            var stunHandler = new StunHandler();
+            Register(EffectType.Stun, stunHandler);                // V3.0: 5
+            
+            var healHandler = new HealHandler();
+            Register(EffectType.Heal, healHandler);                // V3.0: 4
+            
+            var drawHandler = new DrawHandler();
+            Register(EffectType.Draw, drawHandler);                // V3.0: 10
+            
+            Register(EffectType.Silence, new SilenceHandler());    // Legacy: 311
+            Register(EffectType.GainEnergy, new EnergyHandler());  // Legacy: 303
 
             _initialized = true;
         }

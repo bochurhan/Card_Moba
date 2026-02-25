@@ -119,17 +119,19 @@ namespace CardMoba.ConfigModels.Card
         public bool IsLegendary => HasTag(CardTag.Legendary) || Rarity == 4;
 
         /// <summary>
-        /// 获取卡牌中属于指定堆叠层的所有效果。
+        /// 获取卡牌中属于指定堆叠层的所有效果（V3.0）。
         /// </summary>
-        public List<CardEffect> GetEffectsForLayer(SettlementLayer layer)
+        /// <param name="layer">结算层级 (0-3)</param>
+        public List<CardEffect> GetEffectsForLayerV3(int layer)
         {
             List<CardEffect> result = new List<CardEffect>();
             foreach (var effect in Effects)
             {
-                if (effect.GetSettlementLayer() == layer)
+                if (effect.GetSettlementLayerV3() == layer)
                     result.Add(effect);
             }
             return result;
         }
+
     }
 }

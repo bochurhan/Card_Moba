@@ -60,6 +60,9 @@ namespace CardMoba.BattleCore.RoundStateMachine
             int maxHp = 30,
             int energyPerRound = 3)
         {
+            // 确保 Handler 注册中心已初始化
+            Settlement.Handlers.HandlerRegistry.Initialize();
+
             BattleContext ctx = new BattleContext();
 
             // 创建玩家1（队伍1）
@@ -136,7 +139,7 @@ namespace CardMoba.BattleCore.RoundStateMachine
                 SourcePlayerId = playerId,
                 Config = card,
                 RuntimeId = $"{playerId}_{ctx.CurrentRound}_{handIndex}",
-                ResolvedTargets = new List<string> { targetPlayerId }
+                RawTargetGroup = new List<string> { targetPlayerId }
             };
 
             // 瞬策牌：立即结算
@@ -180,7 +183,7 @@ namespace CardMoba.BattleCore.RoundStateMachine
                 SourcePlayerId = playerId,
                 Config = card,
                 RuntimeId = $"{playerId}_{ctx.CurrentRound}_{handIndex}_plan",
-                ResolvedTargets = new List<string> { targetPlayerId }
+                RawTargetGroup = new List<string> { targetPlayerId }
             };
 
             // 定策牌：加入待结算队列，回合末统一结算
@@ -233,7 +236,7 @@ namespace CardMoba.BattleCore.RoundStateMachine
 
             // ── 阶段5：定策牌统一结算期 ──
             ctx.RoundLog.Add($"[RoundManager] -- 第{ctx.CurrentRound}回合 - 定策牌结算期 --");
-            ctx.RoundLog.Add($"[RoundManager] 待结算定策牌数量：{ctx.PendingPlanActions.Count}张");
+            ctx.RoundLog.Add($"[RoundManager] 待结算定策牌数量：{ctx.PendingPlanCards.Count}张");
 
             _settlement.ResolvePlanCards(ctx);
 

@@ -42,11 +42,11 @@ namespace CardMoba.Client.GameLogic
         private RoundManager _roundManager;
         private BattleContext _ctx;
 
-        /// <summary>人类玩家的ID</summary>
-        public const int HumanPlayerId = 1;
+        /// <summary>人类玩家的ID（字符串，与BattleCore保持一致）</summary>
+        public const string HumanPlayerId = "player1";
 
-        /// <summary>AI玩家的ID</summary>
-        public const int AiPlayerId = 2;
+        /// <summary>AI玩家的ID（字符串，与BattleCore保持一致）</summary>
+        public const string AiPlayerId = "player2";
 
         // ── 公开属性（供UI层读取） ──
 
@@ -78,8 +78,8 @@ namespace CardMoba.Client.GameLogic
             List<CardConfig> deck1 = CreateDeckFromConfig();
             List<CardConfig> deck2 = CreateDeckFromConfig();
 
-            // 初始化对局
-            _ctx = _roundManager.InitBattle(deck1, deck2);
+            // 初始化对局（使用新的API签名）
+            _ctx = _roundManager.InitBattle(HumanPlayerId, AiPlayerId, deck1, deck2);
 
             // 输出初始化日志
             FlushLogs();
@@ -106,7 +106,7 @@ namespace CardMoba.Client.GameLogic
                 ? CreateDeckFromCardIds(aiDeckIds) 
                 : CreateDeckFromConfig();
 
-            _ctx = _roundManager.InitBattle(deck1, deck2);
+            _ctx = _roundManager.InitBattle(HumanPlayerId, AiPlayerId, deck1, deck2);
             FlushLogs();
 
             IsPlayerTurn = true;
@@ -141,7 +141,7 @@ namespace CardMoba.Client.GameLogic
 
             // 瞬策牌默认目标为对手
             CardConfig card = player.Hand[handIndex];
-            int targetId = GetTargetForCard(card, HumanPlayerId, AiPlayerId);
+            string targetId = GetTargetForCard(card, HumanPlayerId, AiPlayerId);
 
             string result = _roundManager.PlayCard(_ctx, HumanPlayerId, handIndex, targetId);
 
@@ -149,10 +149,10 @@ namespace CardMoba.Client.GameLogic
             OnLogMessage?.Invoke($"你 → {result}");
             OnStateChanged?.Invoke();
 
-            // 检查游戏结束
+            // 检查游戏结束（使用 WinnerTeamId）
             if (_ctx.IsGameOver)
             {
-                OnGameOver?.Invoke(_ctx.WinnerPlayerId);
+                OnGameOver?.Invoke(_ctx.WinnerTeamId);
             }
 
             return result;
@@ -171,7 +171,7 @@ namespace CardMoba.Client.GameLogic
             if (player == null) return "错误：玩家不存在";
 
             CardConfig card = player.Hand[handIndex];
-            int targetId = GetTargetForCard(card, HumanPlayerId, AiPlayerId);
+            string targetId = GetTargetForCard(card, HumanPlayerId, AiPlayerId);
 
             string result = _roundManager.CommitPlanCard(_ctx, HumanPlayerId, handIndex, targetId);
 
@@ -204,7 +204,7 @@ namespace CardMoba.Client.GameLogic
 
             if (_ctx.IsGameOver)
             {
-                OnGameOver?.Invoke(_ctx.WinnerPlayerId);
+                OnGameOver?.Invoke(_ctx.WinnerTeamId);
                 return;
             }
 
@@ -220,7 +220,7 @@ namespace CardMoba.Client.GameLogic
 
             if (_ctx.IsGameOver)
             {
-                OnGameOver?.Invoke(_ctx.WinnerPlayerId);
+                OnGameOver?.Invoke(_ctx.WinnerTeamId);
                 return;
             }
 
@@ -255,7 +255,7 @@ namespace CardMoba.Client.GameLogic
                     CardConfig card = ai.Hand[i];
                     if (ai.Energy < card.EnergyCost) continue;
 
-                    int targetId = GetTargetForCard(card, AiPlayerId, HumanPlayerId);
+                    string targetId = GetTargetForCard(card, AiPlayerId, HumanPlayerId);
 
                     string result;
                     if (card.TrackType == CardTrackType.Instant)
@@ -279,9 +279,9 @@ namespace CardMoba.Client.GameLogic
         // ── 辅助方法 ──
 
         /// <summary>
-        /// 根据卡牌目标类型决定目标玩家。
+        /// 根据卡牌目标类型决定目标玩家ID。
         /// </summary>
-        private int GetTargetForCard(CardConfig card, int selfId, int opponentId)
+        private string GetTargetForCard(CardConfig card, string selfId, string opponentId)
         {
             switch (card.TargetType)
             {

@@ -4,13 +4,54 @@ namespace CardMoba.Protocol.Enums
     /// 卡牌效果类型 —— 定义单个效果的具体行为类型。
     /// Card effect type — Defines the specific behavior of a single effect.
     /// 
-    /// 一张卡牌可以有多个效果，每个效果有独立的类型。
+    /// V3.0 架构：
+    /// - 1-10: 核心效果类型（对应 Handler）
+    /// - 100+: 旧版细分类型（兼容保留）
+    /// 
     /// 效果按照所属堆叠层分别结算，符合《定策牌结算机制》多子类型拆分铁律。
     /// </summary>
     public enum EffectType
     {
         /// <summary>无效果/占位 (None/Placeholder)</summary>
         None = 0,
+
+        // ═══════════════════════════════════════════════════════════
+        // V3.0 核心效果类型 (对应 Handler)
+        // ═══════════════════════════════════════════════════════════
+
+        /// <summary>反制 (Counter) - Layer 0</summary>
+        Counter = 1,
+
+        /// <summary>伤害 (Damage) - Layer 2</summary>
+        Damage = 2,
+
+        /// <summary>护盾 (Shield) - Layer 1</summary>
+        Shield = 3,
+
+        /// <summary>治疗 (Heal) - Layer 3</summary>
+        Heal = 4,
+
+        /// <summary>眩晕 (Stun) - Layer 3</summary>
+        Stun = 5,
+
+        /// <summary>护甲 (Armor) - Layer 1</summary>
+        Armor = 6,
+
+        /// <summary>增益攻击力 (Attack Modifier) - Layer 1</summary>
+        AttackBuff = 7,
+
+        /// <summary>反伤 (Thorns/Reflect) - Layer 1</summary>
+        Reflect = 8,
+
+        /// <summary>易伤 (Vulnerable) - Layer 3</summary>
+        Vulnerable = 9,
+
+        /// <summary>抽牌 (Draw) - Layer 3</summary>
+        Draw = 10,
+
+        // ═══════════════════════════════════════════════════════════
+        // 旧版细分类型 (向后兼容)
+        // ═══════════════════════════════════════════════════════════
 
         // ── 堆叠1层：防御与数值修正 ──
 
@@ -38,8 +79,6 @@ namespace CardMoba.Protocol.Enums
         /// <summary>穿透（无视目标护甲）(Pierce: ignores target's armor)</summary>
         Pierce = 114,
 
-        /// <summary>易伤（目标受到的伤害增加）(Vulnerable: target takes increased damage)</summary>
-        Vulnerable = 115,
 
         /// <summary>虚弱（目标造成的伤害减少）(Weak: target deals reduced damage)</summary>
         Weak = 116,
@@ -69,7 +108,8 @@ namespace CardMoba.Protocol.Enums
         // ── 堆叠3层-普通效果 ──
 
         /// <summary>抽牌（从牌库抽取卡牌）(Draw: draws cards from deck)</summary>
-        Draw = 301,
+        [System.Obsolete("V3.0: 使用 Draw = 10")]
+        DrawCards = 301,
 
         /// <summary>弃牌（弃置手牌）(Discard: discards cards from hand)</summary>
         Discard = 302,
@@ -78,13 +118,15 @@ namespace CardMoba.Protocol.Enums
         GainEnergy = 303,
 
         /// <summary>回复生命 (Heal HP)</summary>
-        Heal = 304,
+        [System.Obsolete("V3.0: 使用 Heal = 4")]
+        HealHp = 304,
 
         /// <summary>沉默（禁止使用技能牌）(Silence: prevents using skill cards)</summary>
         Silence = 311,
 
         /// <summary>眩晕（跳过操作回合）(Stun: skips action phase)</summary>
-        Stun = 312,
+        [System.Obsolete("V3.0: 使用 Stun = 5")]
+        StunTarget = 312,
 
         /// <summary>减速（行动顺序降低）(Slow: reduces action priority)</summary>
         Slow = 313,

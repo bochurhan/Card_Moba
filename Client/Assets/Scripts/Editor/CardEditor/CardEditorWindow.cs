@@ -420,8 +420,8 @@ namespace CardMoba.Client.Editor.CardEditor
 
             EditorGUI.indentLevel++;
 
-            // 效果类型（下拉框）
-            effect.EffectType = (EffectTypeEnum)EditorGUILayout.EnumPopup("效果类型", effect.EffectType);
+            // 效果类型（下拉框）—— 使用 Shared 的 EffectType 枚举
+            effect.EffectType = (EffectType)EditorGUILayout.EnumPopup("效果类型", effect.EffectType);
             
             // 数值
             effect.Value = EditorGUILayout.IntField("数值", effect.Value);
@@ -456,17 +456,27 @@ namespace CardMoba.Client.Editor.CardEditor
         {
             string desc = effect.EffectType switch
             {
-                EffectTypeEnum.DealDamage => $"造成{effect.Value}点伤害",
-                EffectTypeEnum.GainShield => $"获得{effect.Value}点护盾",
-                EffectTypeEnum.GainArmor => $"获得{effect.Value}点护甲",
-                EffectTypeEnum.Heal => $"回复{effect.Value}点生命",
-                EffectTypeEnum.Lifesteal => $"吸血{effect.Value}%",
-                EffectTypeEnum.GainStrength => $"获得{effect.Value}点力量",
-                EffectTypeEnum.Thorns => $"反伤{effect.Value}%",
-                EffectTypeEnum.Vulnerable => $"易伤{effect.Value}%",
-                EffectTypeEnum.CounterFirstDamage => "反制敌方首张伤害牌",
-                EffectTypeEnum.DrawCard => $"抽{effect.Value}张牌",
-                EffectTypeEnum.GainEnergy => $"获得{effect.Value}点能量",
+                // V3.0 核心类型
+                EffectType.Damage => $"造成{effect.Value}点伤害",
+                EffectType.Shield => $"获得{effect.Value}点护盾",
+                EffectType.Armor => $"获得{effect.Value}点护甲",
+                EffectType.Heal => $"回复{effect.Value}点生命",
+                EffectType.Counter => "反制敌方效果",
+                EffectType.AttackBuff => $"获得{effect.Value}点力量",
+                EffectType.Reflect => $"反伤{effect.Value}%",
+                EffectType.Vulnerable => $"易伤{effect.Value}%",
+                EffectType.Stun => $"眩晕{effect.Value}回合",
+                EffectType.Draw => $"抽{effect.Value}张牌",
+                // 旧版兼容类型
+                EffectType.DealDamage => $"造成{effect.Value}点伤害",
+                EffectType.GainArmor => $"获得{effect.Value}点护甲",
+                EffectType.GainShield => $"获得{effect.Value}点护盾",
+                EffectType.GainStrength => $"获得{effect.Value}点力量",
+                EffectType.Thorns => $"反伤{effect.Value}%",
+                EffectType.Lifesteal => $"吸血{effect.Value}%",
+                EffectType.CounterFirstDamage => "反制敌方首张伤害牌",
+                EffectType.CounterCard => "反制目标卡牌",
+                EffectType.GainEnergy => $"获得{effect.Value}点能量",
                 _ => $"{effect.EffectType}: {effect.Value}"
             };
 
@@ -606,7 +616,7 @@ namespace CardMoba.Client.Editor.CardEditor
             {
                 EffectId = effectId,
                 CardId = card.CardId,
-                EffectType = EffectTypeEnum.DealDamage,
+                EffectType = EffectType.DealDamage,  // 使用 V3.0 兼容类型
                 Value = 5,
                 Duration = 0
             };
@@ -721,9 +731,9 @@ namespace CardMoba.Client.Editor.CardEditor
                                 int.TryParse(idPart, out effect.CardId);
                             }
 
-                            // 解析 EffectType
-                            if (Enum.IsDefined(typeof(EffectTypeEnum), e.effectType))
-                                effect.EffectType = (EffectTypeEnum)e.effectType;
+                            // 解析 EffectType —— 使用 Shared 的 EffectType 枚举
+                            if (Enum.IsDefined(typeof(EffectType), e.effectType))
+                                effect.EffectType = (EffectType)e.effectType;
 
                             _effects.Add(effect);
                         }
@@ -949,7 +959,7 @@ namespace CardMoba.Client.Editor.CardEditor
                         Message = $"效果数值为负: {effect.EffectId} = {effect.Value}"
                     });
                 }
-                if (effect.Value > 100 && effect.EffectType != EffectTypeEnum.Thorns && effect.EffectType != EffectTypeEnum.Lifesteal)
+                if (effect.Value > 100 && effect.EffectType != EffectType.Thorns && effect.EffectType != EffectType.Lifesteal)
                 {
                     _validationErrors.Add(new ValidationError
                     {
@@ -1193,42 +1203,45 @@ namespace CardMoba.Client.Editor.CardEditor
             return value;
         }
 
-        private EffectTypeEnum ParseEffectType(string name)
+        /// <summary>
+        /// 从字符串解析 EffectType（支持 V3.0 核心类型和旧版兼容类型）
+        /// </summary>
+        private EffectType ParseEffectType(string name)
         {
             return name.ToLowerInvariant() switch
             {
-                "dealdamage" => EffectTypeEnum.DealDamage,
-                "gainshield" => EffectTypeEnum.GainShield,
-                "gainarmor" => EffectTypeEnum.GainArmor,
-                "heal" => EffectTypeEnum.Heal,
-                "lifesteal" => EffectTypeEnum.Lifesteal,
-                "gainstrength" => EffectTypeEnum.GainStrength,
-                "thorns" => EffectTypeEnum.Thorns,
-                "vulnerable" => EffectTypeEnum.Vulnerable,
-                "counterfirstdamage" => EffectTypeEnum.CounterFirstDamage,
-                "drawcard" => EffectTypeEnum.DrawCard,
-                "gainenergy" => EffectTypeEnum.GainEnergy,
-                _ => EffectTypeEnum.DealDamage
+                // V3.0 核心类型
+                "damage" => EffectType.Damage,
+                "shield" => EffectType.Shield,
+                "armor" => EffectType.Armor,
+                "heal" => EffectType.Heal,
+                "counter" => EffectType.Counter,
+                "attackbuff" => EffectType.AttackBuff,
+                "reflect" => EffectType.Reflect,
+                "vulnerable" => EffectType.Vulnerable,
+                "stun" => EffectType.Stun,
+                "draw" => EffectType.Draw,
+                // 旧版兼容类型
+                "dealdamage" => EffectType.DealDamage,
+                "gainshield" => EffectType.GainShield,
+                "gainarmor" => EffectType.GainArmor,
+                "lifesteal" => EffectType.Lifesteal,
+                "gainstrength" => EffectType.GainStrength,
+                "thorns" => EffectType.Thorns,
+                "counterfirstdamage" => EffectType.CounterFirstDamage,
+                "countercard" => EffectType.CounterCard,
+                "drawcard" or "drawcards" => EffectType.Draw,
+                "gainenergy" => EffectType.GainEnergy,
+                _ => EffectType.DealDamage
             };
         }
 
-        private string GetEffectTypeName(EffectTypeEnum type)
+        /// <summary>
+        /// 将 EffectType 转换为字符串名称（用于 CSV 导出）
+        /// </summary>
+        private string GetEffectTypeName(EffectType type)
         {
-            return type switch
-            {
-                EffectTypeEnum.DealDamage => "DealDamage",
-                EffectTypeEnum.GainShield => "GainShield",
-                EffectTypeEnum.GainArmor => "GainArmor",
-                EffectTypeEnum.Heal => "Heal",
-                EffectTypeEnum.Lifesteal => "Lifesteal",
-                EffectTypeEnum.GainStrength => "GainStrength",
-                EffectTypeEnum.Thorns => "Thorns",
-                EffectTypeEnum.Vulnerable => "Vulnerable",
-                EffectTypeEnum.CounterFirstDamage => "CounterFirstDamage",
-                EffectTypeEnum.DrawCard => "DrawCard",
-                EffectTypeEnum.GainEnergy => "GainEnergy",
-                _ => "Unknown"
-            };
+            return type.ToString();  // 直接使用枚举名
         }
 
         // ══════════════════════════════════════════════════════════════════
