@@ -43,6 +43,8 @@ namespace CardMoba.BattleCore.RoundStateMachine
         /// <summary>
         /// 初始化一场1v1对战，返回完整的战斗上下文。
         /// </summary>
+        /// <param name="player1Id">玩家1的ID</param>
+        /// <param name="player2Id">玩家2的ID</param>
         /// <param name="player1Deck">玩家1的卡组</param>
         /// <param name="player2Deck">玩家2的卡组</param>
         /// <param name="startHandSize">初始手牌数量（默认5张）</param>
@@ -50,6 +52,8 @@ namespace CardMoba.BattleCore.RoundStateMachine
         /// <param name="energyPerRound">每回合能量恢复量（默认3）</param>
         /// <returns>初始化完毕的战斗上下文</returns>
         public BattleContext InitBattle(
+            string player1Id,
+            string player2Id,
             List<CardConfig> player1Deck,
             List<CardConfig> player2Deck,
             int startHandSize = 5,
@@ -58,11 +62,12 @@ namespace CardMoba.BattleCore.RoundStateMachine
         {
             BattleContext ctx = new BattleContext();
 
-            // 创建玩家1
+            // 创建玩家1（队伍1）
             PlayerBattleState p1 = new PlayerBattleState
             {
-                PlayerId = 1,
+                PlayerId = player1Id,
                 PlayerName = "玩家1",
+                TeamId = 1,
                 Hp = maxHp,
                 MaxHp = maxHp,
                 Energy = energyPerRound,
@@ -70,11 +75,12 @@ namespace CardMoba.BattleCore.RoundStateMachine
                 Deck = new List<CardConfig>(player1Deck),
             };
 
-            // 创建玩家2
+            // 创建玩家2（队伍2）
             PlayerBattleState p2 = new PlayerBattleState
             {
-                PlayerId = 2,
+                PlayerId = player2Id,
                 PlayerName = "玩家2",
+                TeamId = 2,
                 Hp = maxHp,
                 MaxHp = maxHp,
                 Energy = energyPerRound,
@@ -106,7 +112,7 @@ namespace CardMoba.BattleCore.RoundStateMachine
         /// <param name="handIndex">手牌中的索引位置</param>
         /// <param name="targetPlayerId">目标玩家ID</param>
         /// <returns>操作结果描述（成功/失败原因）</returns>
-        public string PlayCard(BattleContext ctx, int playerId, int handIndex, int targetPlayerId)
+        public string PlayCard(BattleContext ctx, string playerId, int handIndex, string targetPlayerId)
         {
             // ── 校验 ──
             PlayerBattleState? player = ctx.GetPlayer(playerId);
@@ -124,15 +130,17 @@ namespace CardMoba.BattleCore.RoundStateMachine
             player.Hand.RemoveAt(handIndex);
             player.DiscardPile.Add(card);
 
-            CardAction action = new CardAction
+            // 创建 PlayedCard 用于结算
+            PlayedCard playedCard = new PlayedCard
             {
                 SourcePlayerId = playerId,
-                TargetPlayerId = targetPlayerId,
-                Card = card,
+                Config = card,
+                RuntimeId = $"{playerId}_{ctx.CurrentRound}_{handIndex}",
+                ResolvedTargets = new List<string> { targetPlayerId }
             };
 
             // 瞬策牌：立即结算
-            _settlement.ResolveInstantCard(ctx, action);
+            _settlement.ResolveInstantCard(ctx, playedCard);
 
             // 检查游戏结束
             CheckGameOver(ctx);
@@ -148,7 +156,7 @@ namespace CardMoba.BattleCore.RoundStateMachine
         /// <param name="handIndex">手牌中的索引位置</param>
         /// <param name="targetPlayerId">目标玩家ID</param>
         /// <returns>操作结果描述</returns>
-        public string CommitPlanCard(BattleContext ctx, int playerId, int handIndex, int targetPlayerId)
+        public string CommitPlanCard(BattleContext ctx, string playerId, int handIndex, string targetPlayerId)
         {
             // ── 校验 ──
             PlayerBattleState? player = ctx.GetPlayer(playerId);
@@ -166,15 +174,17 @@ namespace CardMoba.BattleCore.RoundStateMachine
             player.Hand.RemoveAt(handIndex);
             player.DiscardPile.Add(card);
 
-            CardAction action = new CardAction
+            // 创建 PlayedCard 用于定策牌结算
+            PlayedCard playedCard = new PlayedCard
             {
                 SourcePlayerId = playerId,
-                TargetPlayerId = targetPlayerId,
-                Card = card,
+                Config = card,
+                RuntimeId = $"{playerId}_{ctx.CurrentRound}_{handIndex}_plan",
+                ResolvedTargets = new List<string> { targetPlayerId }
             };
 
             // 定策牌：加入待结算队列，回合末统一结算
-            ctx.PendingPlanActions.Add(action);
+            ctx.PendingPlanCards.Add(playedCard);
             ctx.RoundLog.Add($"[RoundManager] 玩家{playerId}暗置了一张定策牌");
 
             return $"成功：提交定策牌「{card.CardName}」（回合末结算）";
@@ -186,7 +196,7 @@ namespace CardMoba.BattleCore.RoundStateMachine
         /// <param name="ctx">战斗上下文</param>
         /// <param name="playerId">玩家ID</param>
         /// <returns>操作结果描述</returns>
-        public string LockOperation(BattleContext ctx, int playerId)
+        public string LockOperation(BattleContext ctx, string playerId)
         {
             PlayerBattleState? player = ctx.GetPlayer(playerId);
             if (player == null) return "错误：玩家不存在";
@@ -240,7 +250,7 @@ namespace CardMoba.BattleCore.RoundStateMachine
 
             if (ctx.IsGameOver)
             {
-                ctx.RoundLog.Add($"[RoundManager] 对局结束！胜者：{(ctx.WinnerPlayerId == -1 ? "平局" : "玩家" + ctx.WinnerPlayerId)}");
+                ctx.RoundLog.Add($"[RoundManager] 对局结束！胜者：{(ctx.WinnerTeamId == -1 ? "平局" : "队伍" + ctx.WinnerTeamId)}");
                 return;
             }
 
@@ -413,39 +423,36 @@ namespace CardMoba.BattleCore.RoundStateMachine
 
         /// <summary>
         /// 检查是否有玩家阵亡，如果有则结束对局。
+        /// 1v1 模式：根据玩家索引判定，玩家0 = 队伍1，玩家1 = 队伍2
+        /// 3v3 模式：待扩展，需检查整队存活状态
         /// </summary>
         private void CheckGameOver(BattleContext ctx)
         {
-            bool p1Alive = false;
-            bool p2Alive = false;
-            int lastAliveId = -1;
+            // 1v1 简化处理：假设 Players[0] 是队伍1，Players[1] 是队伍2
+            if (ctx.Players.Count < 2) return;
 
-            for (int i = 0; i < ctx.Players.Count; i++)
-            {
-                if (ctx.Players[i].IsAlive)
-                {
-                    lastAliveId = ctx.Players[i].PlayerId;
-                    if (ctx.Players[i].PlayerId == 1) p1Alive = true;
-                    else p2Alive = true;
-                }
-            }
+            PlayerBattleState p1 = ctx.Players[0];
+            PlayerBattleState p2 = ctx.Players[1];
+
+            bool p1Alive = p1.IsAlive;
+            bool p2Alive = p2.IsAlive;
 
             if (!p1Alive || !p2Alive)
             {
                 ctx.IsGameOver = true;
                 if (p1Alive && !p2Alive)
                 {
-                    ctx.WinnerPlayerId = 1;
-                    ctx.RoundLog.Add("[RoundManager] 玩家2阵亡，玩家1获胜！");
+                    ctx.WinnerTeamId = p1.TeamId;
+                    ctx.RoundLog.Add($"[RoundManager] {p2.PlayerName}阵亡，{p1.PlayerName}获胜！");
                 }
                 else if (!p1Alive && p2Alive)
                 {
-                    ctx.WinnerPlayerId = 2;
-                    ctx.RoundLog.Add("[RoundManager] 玩家1阵亡，玩家2获胜！");
+                    ctx.WinnerTeamId = p2.TeamId;
+                    ctx.RoundLog.Add($"[RoundManager] {p1.PlayerName}阵亡，{p2.PlayerName}获胜！");
                 }
                 else
                 {
-                    ctx.WinnerPlayerId = -1; // 双方同时阵亡 = 平局
+                    ctx.WinnerTeamId = -1; // 双方同时阵亡 = 平局
                     ctx.RoundLog.Add("[RoundManager] 双方同归于尽，平局！");
                 }
             }
@@ -456,24 +463,24 @@ namespace CardMoba.BattleCore.RoundStateMachine
         /// </summary>
         private void DetermineWinnerByHp(BattleContext ctx)
         {
-            PlayerBattleState? p1 = ctx.GetPlayer(1);
-            PlayerBattleState? p2 = ctx.GetPlayer(2);
+            if (ctx.Players.Count < 2) return;
 
-            if (p1 == null || p2 == null) return;
+            PlayerBattleState p1 = ctx.Players[0];
+            PlayerBattleState p2 = ctx.Players[1];
 
             if (p1.Hp > p2.Hp)
             {
-                ctx.WinnerPlayerId = 1;
-                ctx.RoundLog.Add($"[RoundManager] 回合上限到达！玩家1(HP:{p1.Hp}) > 玩家2(HP:{p2.Hp})，玩家1获胜！");
+                ctx.WinnerTeamId = p1.TeamId;
+                ctx.RoundLog.Add($"[RoundManager] 回合上限到达！{p1.PlayerName}(HP:{p1.Hp}) > {p2.PlayerName}(HP:{p2.Hp})，{p1.PlayerName}获胜！");
             }
             else if (p2.Hp > p1.Hp)
             {
-                ctx.WinnerPlayerId = 2;
-                ctx.RoundLog.Add($"[RoundManager] 回合上限到达！玩家2(HP:{p2.Hp}) > 玩家1(HP:{p1.Hp})，玩家2获胜！");
+                ctx.WinnerTeamId = p2.TeamId;
+                ctx.RoundLog.Add($"[RoundManager] 回合上限到达！{p2.PlayerName}(HP:{p2.Hp}) > {p1.PlayerName}(HP:{p1.Hp})，{p2.PlayerName}获胜！");
             }
             else
             {
-                ctx.WinnerPlayerId = -1;
+                ctx.WinnerTeamId = -1;
                 ctx.RoundLog.Add($"[RoundManager] 回合上限到达！双方HP相同({p1.Hp})，平局！");
             }
         }
