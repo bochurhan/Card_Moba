@@ -21,27 +21,25 @@
 
 ### 🎨 GameDesign/ — 游戏设计文档（策划向）
 
-| 文档 | 说明 | 适合人群 |
-|------|------|----------|
-| [Overview.md](GameDesign/Overview.md) | **核心玩法概述**（5分钟了解游戏） | 所有人 |
-| [CoreGameplay.md](GameDesign/CoreGameplay.md) | 完整对局流程与回合规则 | 策划/开发 |
-| [CardSystem.md](GameDesign/CardSystem.md) | 卡牌分类、边界规则、卡组循环 | 策划/开发 |
-| [LaneSystem.md](GameDesign/LaneSystem.md) | 分路规则、换路、死亡支援 | 策划/开发 |
-| [CentralTower.md](GameDesign/CentralTower.md) | 中枢塔 PVE 系统详解 | 策划/开发 |
-| [SettlementRules.md](GameDesign/SettlementRules.md) | 定策牌结算的完整规则 | 开发 |
-| [FutureIdeas.md](GameDesign/FutureIdeas.md) | 分路优化方向（长期规划） | 策划 |
+| 文档 | 说明 | 状态 |
+|------|------|------|
+| [Overview.md](GameDesign/Overview.md) | **核心玩法概述**（5分钟了解游戏） | ✅ 完成 |
+| [CardSystem.md](GameDesign/CardSystem.md) | 卡牌分类、标签体系、效果类型 | ✅ 完成 |
+| [SettlementRules.md](GameDesign/SettlementRules.md) | 四层结算模型详解 | ✅ 完成 |
+| [LaneSystem.md](GameDesign/LaneSystem.md) | 分路规则、换路、支援机制 | ✅ 完成 |
+| [CentralTower.md](GameDesign/CentralTower.md) | 中枢塔 PVE + BOSS 系统 | ✅ 完成 |
 
 ### 🔧 TechGuide/ — 技术开发指南（开发向）
 
-| 文档 | 说明 | 适合人群 |
-|------|------|----------|
-| [QuickStart.md](TechGuide/QuickStart.md) | **5分钟快速入门**（必读） | 新人开发者 |
-| [Architecture.md](TechGuide/Architecture.md) | 项目架构与分层设计 | 开发 |
-| [BattleCore.md](TechGuide/BattleCore.md) | 核心结算引擎详解 | 开发 |
-| [ClientDev.md](TechGuide/ClientDev.md) | 客户端开发规范与模块 | 客户端开发 |
-| [ServerDev.md](TechGuide/ServerDev.md) | 后台服务架构与实现 | 后台开发 |
-| [ConfigSystem.md](TechGuide/ConfigSystem.md) | 配置系统使用说明 | 开发 |
-| [Tools.md](TechGuide/Tools.md) | 开发工具使用手册 | 开发 |
+| 文档 | 说明 | 状态 |
+|------|------|------|
+| [QuickStart.md](TechGuide/QuickStart.md) | **5分钟快速入门**（必读） | ✅ 完成 |
+| [BattleCore.md](TechGuide/BattleCore.md) | 核心结算引擎详解 | ✅ 完成 |
+| Architecture.md | 项目架构与分层设计 | ⏳ 待补充 |
+| ClientDev.md | 客户端开发规范与模块 | ⏳ 待补充 |
+| ServerDev.md | 后台服务架构与实现 | ⏳ 待补充 |
+| ConfigSystem.md | 配置系统使用说明 | ⏳ 待补充 |
+| Tools.md | 开发工具使用手册 | ⏳ 待补充 |
 
 ### 📡 API/ — 接口与协议文档
 
