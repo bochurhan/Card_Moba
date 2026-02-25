@@ -1,12 +1,14 @@
 using System.Collections.Generic;
 using CardMoba.BattleCore.Context;
+using CardMoba.BattleCore.Settlement.Handlers;
+using CardMoba.BattleCore.Trigger;
 using CardMoba.ConfigModels.Card;
 using CardMoba.Protocol.Enums;
 
 namespace CardMoba.BattleCore.Settlement
 {
     /// <summary>
-    /// 结算引擎 V2.0 —— 完全符合《定策牌结算机制 V4.0》的 4 堆叠层结算系统。
+    /// 结算引擎 V3.0 —— 基于模块化 Handler 的 4 堆叠层结算系统。
     /// 
     /// 结算顺序（永久不可颠倒）：
     /// - 堆叠0层：反制效果结算层（上回合反制牌触发校验）
@@ -18,35 +20,152 @@ namespace CardMoba.BattleCore.Settlement
     ///   - 子阶段1：控制/资源/支援类效果
     ///   - 子阶段2：传说特殊牌专属结算
     /// 
-    /// 核心铁律：
-    /// - 公平性：跨阵营效果同步结算，无先后手
-    /// - 连锁封顶：触发效果不再触发新的连锁
-    /// - 结算与表现解耦：先完成全量预结算，再播放动画
+    /// V3.0 改动：
+    /// - 使用模块化 Handler 替代巨型 switch/case
+    /// - 集成 TargetResolver 处理复杂目标解析（AOE、跨路等）
+    /// - 支持 PlayedCard 运行时卡牌追踪
+    /// - PlayerId 统一使用 string 类型
     /// </summary>
     public class SettlementEngine
     {
-        // ── 瞬策牌结算（操作期内立即执行） ──
+        private readonly TargetResolver _targetResolver = new();
+
+        /// <summary>
+        /// 初始化结算引擎，注册所有效果处理器。
+        /// 应在对战开始前调用一次。
+        /// </summary>
+        public void Initialize()
+        {
+            HandlerRegistry.Initialize();
+        }
+
+        // ══════════════════════════════════════════════════════════
+        // 瞬策牌结算（操作期内立即执行）
+        // ══════════════════════════════════════════════════════════
 
         /// <summary>
         /// 立即结算一张瞬策牌的效果。
+        /// 
+        /// 完整触发链：
+        /// 1. BeforePlayCard 触发（可被反制牌取消）
+        /// 2. 如果未被取消，执行卡牌效果
+        /// 3. AfterPlayCard 触发（出牌后效果）
+        /// 4. 如果被取消，触发 OnCardCountered
         /// </summary>
-        public void ResolveInstantCard(BattleContext ctx, CardAction action)
+        /// <param name="ctx">战斗上下文</param>
+        /// <param name="card">待结算的瞬策牌</param>
+        /// <returns>卡牌是否成功生效（未被反制）</returns>
+        public bool ResolveInstantCard(BattleContext ctx, PlayedCard card)
         {
-            ctx.RoundLog.Add($"[瞬策牌] 玩家{action.SourcePlayerId}打出「{action.Card.CardName}」");
-            ApplyCardEffects(ctx, action, isInstant: true);
+            ctx.RoundLog.Add($"[瞬策牌] 玩家{card.SourcePlayerId}打出「{card.Config.CardName}」");
+
+            var source = ctx.GetPlayer(card.SourcePlayerId);
+            if (source == null || !source.IsAlive)
+            {
+                ctx.RoundLog.Add($"[瞬策牌] 来源玩家无效或已死亡，跳过");
+                return false;
+            }
+
+            // 解析目标
+            card.ResolvedTargets = _targetResolver.Resolve(ctx, card, source);
+
+            // ─────────────────────────────────────────────────────
+            // 1. 触发 BeforePlayCard（反制牌在此时机检查）
+            // ─────────────────────────────────────────────────────
+            bool cancelled = false;
+            if (ctx.TriggerManager != null)
+            {
+                ctx.TriggerManager.FireTriggers(
+                    ctx,
+                    TriggerTiming.BeforePlayCard,
+                    sourcePlayerId: card.SourcePlayerId,
+                    targetPlayerId: card.ResolvedTargets?.Count > 0 ? card.ResolvedTargets[0] : null,
+                    value: 0,
+                    relatedCard: card,
+                    out cancelled
+                );
+            }
+
+            // ─────────────────────────────────────────────────────
+            // 2. 检查是否被反制
+            // ─────────────────────────────────────────────────────
+            if (cancelled)
+            {
+                ctx.RoundLog.Add($"[瞬策牌] 「{card.Config.CardName}」被反制，效果取消！");
+
+                // 触发 OnCardCountered
+                if (ctx.TriggerManager != null)
+                {
+                    ctx.TriggerManager.FireTriggers(
+                        ctx,
+                        TriggerTiming.OnCardCountered,
+                        sourcePlayerId: card.SourcePlayerId,
+                        relatedCard: card
+                    );
+                }
+
+                // 记录事件
+                ctx.EventRecorder?.RecordEvent(new Event.BattleEvent
+                {
+                    EventType = Event.BattleEventType.CardCountered,
+                    Round = ctx.CurrentRound,
+                    SourcePlayerId = card.SourcePlayerId,
+                    Description = $"「{card.Config.CardName}」被反制"
+                });
+
+                return false;
+            }
+
+            // ─────────────────────────────────────────────────────
+            // 3. 执行卡牌效果
+            // ─────────────────────────────────────────────────────
+            foreach (var effect in card.Config.Effects)
+            {
+                ExecuteEffect(ctx, card, effect, source);
+            }
+
+            // ─────────────────────────────────────────────────────
+            // 4. 触发 AfterPlayCard（出牌后效果）
+            // ─────────────────────────────────────────────────────
+            if (ctx.TriggerManager != null)
+            {
+                ctx.TriggerManager.FireTriggers(
+                    ctx,
+                    TriggerTiming.AfterPlayCard,
+                    sourcePlayerId: card.SourcePlayerId,
+                    targetPlayerId: card.ResolvedTargets?.Count > 0 ? card.ResolvedTargets[0] : null,
+                    relatedCard: card
+                );
+            }
+
+            // 记录事件
+            ctx.EventRecorder?.RecordEvent(new Event.BattleEvent
+            {
+                EventType = Event.BattleEventType.CardPlayed,
+                Round = ctx.CurrentRound,
+                SourcePlayerId = card.SourcePlayerId,
+                Description = $"打出瞬策牌「{card.Config.CardName}」"
+            });
+
+            return true;
         }
 
-        // ── 定策牌统一结算入口 ──
+        // ══════════════════════════════════════════════════════════
+        // 定策牌统一结算入口
+        // ══════════════════════════════════════════════════════════
 
         /// <summary>
         /// 按 4 堆叠层顺序结算本回合所有已提交的定策牌。
         /// </summary>
         public void ResolvePlanCards(BattleContext ctx)
         {
-            if (ctx.PendingPlanActions.Count == 0 && ctx.PendingCounterCards.Count == 0)
+            if (ctx.PendingPlanCards.Count == 0)
                 return;
 
             ctx.RoundLog.Add($"[Settlement] ═══ 回合{ctx.CurrentRound} 定策牌结算开始 ═══");
+
+            // 预处理：为所有待结算卡牌解析目标
+            PreResolveTargets(ctx);
 
             // 堆叠0层：反制效果结算
             ResolveLayer0_Counter(ctx);
@@ -61,6 +180,20 @@ namespace CardMoba.BattleCore.Settlement
             ResolveLayer3_Utility(ctx);
 
             ctx.RoundLog.Add($"[Settlement] ═══ 回合{ctx.CurrentRound} 定策牌结算结束 ═══");
+        }
+
+        /// <summary>
+        /// 预处理：为所有待结算卡牌解析目标。
+        /// </summary>
+        private void PreResolveTargets(BattleContext ctx)
+        {
+            foreach (var card in ctx.PendingPlanCards)
+            {
+                var source = ctx.GetPlayer(card.SourcePlayerId);
+                if (source == null) continue;
+
+                card.ResolvedTargets = _targetResolver.Resolve(ctx, card, source);
+            }
         }
 
         // ══════════════════════════════════════════════════════════
@@ -496,36 +629,53 @@ namespace CardMoba.BattleCore.Settlement
         }
 
         // ══════════════════════════════════════════════════════════
-        // 通用效果应用方法
+        // 核心效果执行方法 (V3.0 Handler 架构)
         // ══════════════════════════════════════════════════════════
 
         /// <summary>
-        /// 应用卡牌的所有效果（用于瞬策牌）。
+        /// 执行单个效果 —— 通过 Handler 注册中心分发。
         /// </summary>
-        private void ApplyCardEffects(BattleContext ctx, CardAction action, bool isInstant)
+        private void ExecuteEffect(BattleContext ctx, PlayedCard card, CardEffect effect, PlayerBattleState source)
         {
-            var source = ctx.GetPlayer(action.SourcePlayerId);
-            if (source == null) return;
-
-            foreach (var effect in action.Card.Effects)
+            var handler = HandlerRegistry.GetHandler(effect.Type);
+            if (handler == null)
             {
-                ApplySingleEffect(ctx, action, effect, source);
+                ctx.RoundLog.Add($"[Warning] 未找到效果处理器: {effect.Type}，尝试使用旧版处理");
+                ExecuteEffectLegacy(ctx, card, effect, source);
+                return;
+            }
+
+            // 获取效果目标列表
+            var targets = card.ResolvedTargets;
+            if (targets == null || targets.Count == 0)
+            {
+                // 无目标效果（如自我增益、全局效果）
+                handler.Execute(card, effect, source, null, ctx);
+            }
+            else
+            {
+                // 对每个目标执行效果
+                foreach (var targetId in targets)
+                {
+                    var target = ctx.GetPlayer(targetId);
+                    handler.Execute(card, effect, source, target, ctx);
+                }
             }
         }
 
         /// <summary>
-        /// 应用单个效果。
+        /// 旧版效果执行方法 —— 作为 Handler 缺失时的备用。
         /// </summary>
-        private void ApplySingleEffect(BattleContext ctx, CardAction action, CardEffect effect, PlayerBattleState source)
+        private void ExecuteEffectLegacy(BattleContext ctx, PlayedCard card, CardEffect effect, PlayerBattleState source)
         {
-            // ══════════════════════════════════════════════════════════
-            // 核心修复：正确处理 TargetOverride
-            // - 如果效果指定了 TargetOverride，使用它来确定目标
-            // - 否则使用卡牌出牌时选择的目标
-            // ══════════════════════════════════════════════════════════
-            PlayerBattleState? effectTarget = ResolveEffectTarget(ctx, action, effect, source);
+            // 获取第一个目标
+            PlayerBattleState? effectTarget = null;
+            if (card.ResolvedTargets != null && card.ResolvedTargets.Count > 0)
+            {
+                effectTarget = ctx.GetPlayer(card.ResolvedTargets[0]);
+            }
 
-            switch (effect.EffectType)
+            switch (effect.Type)
             {
                 // ── 防御与数值修正（堆叠1层） ──
                 case EffectType.GainArmor:
@@ -592,7 +742,7 @@ namespace CardMoba.BattleCore.Settlement
                     }
                     break;
 
-                // ── 伤害（堆叠2层，通常在Step1处理，这里作为备用） ──
+                // ── 伤害（堆叠2层） ──
                 case EffectType.DealDamage:
                     if (effectTarget != null && effectTarget.IsAlive)
                     {
@@ -625,10 +775,8 @@ namespace CardMoba.BattleCore.Settlement
 
                 // ── 资源效果（堆叠3层） ──
                 case EffectType.Draw:
-                    // 抽牌效果作用于 effectTarget（通常是自己）
                     if (effectTarget != null)
                     {
-                        // TODO: 实现抽牌逻辑
                         ctx.RoundLog.Add($"[Effect] 玩家{effectTarget.PlayerId}抽{effect.Value}张牌");
                     }
                     break;
@@ -649,56 +797,10 @@ namespace CardMoba.BattleCore.Settlement
                         ctx.RoundLog.Add($"[Effect] 玩家{effectTarget.PlayerId}回复{effect.Value}点生命");
                     }
                     break;
-            }
-        }
-
-        /// <summary>
-        /// 解析效果的实际目标。
-        /// 优先使用效果的 TargetOverride，否则使用卡牌出牌时选择的目标。
-        /// </summary>
-        private PlayerBattleState? ResolveEffectTarget(BattleContext ctx, CardAction action, CardEffect effect, PlayerBattleState source)
-        {
-            // 如果效果指定了目标覆盖类型
-            if (effect.TargetOverride.HasValue)
-            {
-                return ResolveTargetByType(ctx, source, action.TargetPlayerId, effect.TargetOverride.Value);
-            }
-            
-            // 否则使用卡牌默认目标
-            return ctx.GetPlayer(action.TargetPlayerId);
-        }
-
-        /// <summary>
-        /// 根据目标类型枚举解析实际目标玩家。
-        /// </summary>
-        private PlayerBattleState? ResolveTargetByType(BattleContext ctx, PlayerBattleState source, int cardTargetId, CardTargetType targetType)
-        {
-            switch (targetType)
-            {
-                case CardTargetType.None:
-                    return null;
-                    
-                case CardTargetType.Self:
-                    return source;
-                    
-                case CardTargetType.CurrentEnemy:
-                case CardTargetType.AnyEnemy:
-                    // 使用卡牌出牌时选择的目标
-                    return ctx.GetPlayer(cardTargetId);
-                    
-                case CardTargetType.AnyAlly:
-                    // 使用卡牌出牌时选择的目标
-                    return ctx.GetPlayer(cardTargetId);
-                    
-                case CardTargetType.AllEnemies:
-                case CardTargetType.AllAllies:
-                    // AOE效果需要特殊处理，这里返回null
-                    // AOE应该在调用处循环处理所有目标
-                    ctx.RoundLog.Add($"[Warning] AOE目标类型应在调用处特殊处理");
-                    return null;
                     
                 default:
-                    return ctx.GetPlayer(cardTargetId);
+                    ctx.RoundLog.Add($"[Warning] 未处理的效果类型: {effect.Type}");
+                    break;
             }
         }
 

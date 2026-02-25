@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using CardMoba.BattleCore.Buff;
 using CardMoba.ConfigModels.Card;
 
 namespace CardMoba.BattleCore.Context
@@ -13,14 +14,17 @@ namespace CardMoba.BattleCore.Context
     /// </summary>
     public class PlayerBattleState
     {
-        /// <summary>玩家ID（用于区分不同玩家）</summary>
-        public int PlayerId { get; set; }
+        /// <summary>玩家ID（字符串，用于区分不同玩家）</summary>
+        public string PlayerId { get; set; } = string.Empty;
 
         /// <summary>玩家显示名称</summary>
         public string PlayerName { get; set; } = string.Empty;
 
         /// <summary>所属队伍ID（0 或 1）</summary>
         public int TeamId { get; set; }
+
+        /// <summary>玩家所在分路索引（0=上路, 1=中路, 2=下路, -1=决战期）</summary>
+        public int LaneIndex { get; set; } = -1;
 
         // ── 生存属性 ──
 
@@ -52,6 +56,39 @@ namespace CardMoba.BattleCore.Context
 
         /// <summary>是否无敌（完全免疫伤害）</summary>
         public bool IsInvincible { get; set; }
+
+        /// <summary>无敌剩余回合数</summary>
+        public int InvincibleRounds { get; set; }
+
+        /// <summary>是否处于易伤状态（与 VulnerableStacks 不同，这是布尔状态）</summary>
+        public bool IsVulnerable { get; set; }
+
+        /// <summary>易伤状态剩余回合数</summary>
+        public int VulnerableRounds { get; set; }
+
+        /// <summary>是否处于虚弱状态</summary>
+        public bool IsWeak { get; set; }
+
+        /// <summary>虚弱状态剩余回合数</summary>
+        public int WeakRounds { get; set; }
+
+        /// <summary>伤害减免数值</summary>
+        public int DamageReduction { get; set; }
+
+        /// <summary>伤害减免剩余回合数</summary>
+        public int DamageReductionRounds { get; set; }
+
+        /// <summary>吸血百分比</summary>
+        public int LifestealPercent { get; set; }
+
+        /// <summary>吸血剩余回合数</summary>
+        public int LifestealRounds { get; set; }
+
+        /// <summary>反伤数值</summary>
+        public int ThornsValue { get; set; }
+
+        /// <summary>反伤剩余回合数</summary>
+        public int ThornsRounds { get; set; }
 
         // ── 资源属性 ──
 
@@ -242,38 +279,15 @@ namespace CardMoba.BattleCore.Context
 
         private void ApplyBuffEffect(BuffInstance buff)
         {
-            // 根据 Buff 类型应用效果
-            // 这里可以扩展更多类型
+            // 由 BuffManager 统一管理，此处为兼容性保留
         }
 
         private void RemoveBuffEffect(BuffInstance buff)
         {
-            // 根据 Buff 类型移除效果
-            // 这里可以扩展更多类型
+            // 由 BuffManager 统一管理，此处为兼容性保留
         }
     }
 
-    /// <summary>
-    /// Buff 实例 —— 表示一个正在生效的增益/减益效果。
-    /// </summary>
-    public class BuffInstance
-    {
-        /// <summary>Buff 唯一标识（用于判断同名叠加）</summary>
-        public string BuffId { get; set; } = string.Empty;
-
-        /// <summary>Buff 显示名称</summary>
-        public string BuffName { get; set; } = string.Empty;
-
-        /// <summary>效果数值</summary>
-        public int Value { get; set; }
-
-        /// <summary>剩余回合数（0 表示永久）</summary>
-        public int RemainingRounds { get; set; }
-
-        /// <summary>来源玩家ID</summary>
-        public int SourcePlayerId { get; set; }
-
-        /// <summary>是否为增益（false 表示减益）</summary>
-        public bool IsBuff { get; set; } = true;
-    }
+    // 注意：BuffInstance 已迁移到 CardMoba.BattleCore.Buff.BuffInstance
+    // 此处使用 using CardMoba.BattleCore.Buff; 引用
 }

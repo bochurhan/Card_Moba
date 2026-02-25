@@ -18,6 +18,12 @@ namespace CardMoba.ConfigModels.Card
         /// <summary>效果类型（决定具体行为和所属堆叠层）</summary>
         public EffectType EffectType { get; set; }
 
+        /// <summary>效果类型简写（等同于 EffectType）</summary>
+        public EffectType Type => EffectType;
+
+        /// <summary>效果所属结算层（可在配置中显式指定，未指定则自动推断）</summary>
+        public SettlementLayer Layer { get; set; } = SettlementLayer.Utility;
+
         /// <summary>效果数值（伤害量、护甲量、抽牌数等）</summary>
         public int Value { get; set; }
 

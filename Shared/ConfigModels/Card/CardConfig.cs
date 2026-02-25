@@ -43,6 +43,23 @@ namespace CardMoba.ConfigModels.Card
         /// <summary>目标类型：决定这张牌默认作用于谁</summary>
         public CardTargetType TargetType { get; set; }
 
+        /// <summary>
+        /// 效果生效范围 —— 决定目标解析方式。
+        /// 
+        /// - Self: 自身
+        /// - SingleEnemy/SingleAlly: 需要玩家选择单个目标
+        /// - CurrentLaneEnemies/AllEnemies: AOE，由 TargetResolver 自动解析
+        /// - SpecifiedLane: 跨路支援时指定目标路
+        /// </summary>
+        public EffectRange EffectRange { get; set; } = EffectRange.SingleEnemy;
+
+        /// <summary>
+        /// 卡牌所属结算层 —— 显式声明，不再依赖 EffectType ID 推断。
+        /// 
+        /// 对于多效果卡牌（跨层），以主要效果的层为准，其他效果在该层之后依次结算。
+        /// </summary>
+        public SettlementLayer Layer { get; set; } = SettlementLayer.DamageTrigger;
+
         // ── 费用 ──
 
         /// <summary>能量消耗（每回合玩家获得固定能量，出牌消耗能量）</summary>
