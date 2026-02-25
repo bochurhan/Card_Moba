@@ -4,6 +4,9 @@ using CardMoba.BattleCore.Event;
 using CardMoba.BattleCore.Random;
 using CardMoba.BattleCore.Trigger;
 
+#pragma warning disable CS0618 // CardAction 已废弃，但 BattleContext 需要保持兼容
+#pragma warning disable CS8632 // nullable 注解警告
+
 namespace CardMoba.BattleCore.Context
 {
     /// <summary>
@@ -91,9 +94,14 @@ namespace CardMoba.BattleCore.Context
         public List<CardAction> PendingCounterCards { get; set; } = new List<CardAction>();
 
         /// <summary>
-        /// 本回合被反制作废的卡牌操作（用于动画展示和日志）
+        /// [兼容旧代码] 本回合被反制作废的卡牌操作
         /// </summary>
         public List<CardAction> CounteredActions { get; set; } = new List<CardAction>();
+
+        /// <summary>
+        /// 本回合被反制作废的卡牌（用于动画展示和日志）
+        /// </summary>
+        public List<PlayedCard> CounteredCards { get; set; } = new List<PlayedCard>();
 
         /// <summary>
         /// 本回合有效的定策牌（未被反制、未被作废）

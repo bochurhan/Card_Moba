@@ -1,6 +1,8 @@
 using CardMoba.BattleCore.Context;
 using CardMoba.ConfigModels.Card;
 
+#pragma warning disable CS8632 // nullable 注解警告在非 nullable 上下文中使用
+
 namespace CardMoba.BattleCore.Settlement.Handlers
 {
     /// <summary>
