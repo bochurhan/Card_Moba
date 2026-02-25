@@ -254,6 +254,9 @@ namespace CardMoba.BattleCore.Settlement.Handlers
 
     /// <summary>
     /// 抽牌效果处理器 —— 处理 Draw 效果。
+    /// 采用杀戮尖塔风格的抽牌机制：
+    /// - 从牌库抽牌，不足时自动洗入弃牌堆继续抽
+    /// - 手牌达到上限（10张）时停止抽牌
     /// </summary>
     public class DrawHandler : IEffectHandler
     {
@@ -272,15 +275,32 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             }
 
             int drawCount = effect.Value > 0 ? effect.Value : 1;
+            int handBefore = drawTarget.Hand.Count;
 
-            // TODO: 实际抽牌逻辑需要与牌组系统交互
-            // 这里只记录日志，具体实现需要在 DeckManager 中
-            ctx.RoundLog.Add($"[DrawHandler] 玩家{drawTarget.PlayerId}抽{drawCount}张牌");
+            // 调用 PlayerBattleState 的抽牌方法
+            int actualDrawn = drawTarget.DrawCards(drawCount, ctx.Random);
+
+            // 记录日志
+            if (actualDrawn == drawCount)
+            {
+                ctx.RoundLog.Add($"[DrawHandler] 玩家{drawTarget.PlayerId}抽{actualDrawn}张牌（手牌：{handBefore}→{drawTarget.Hand.Count}）");
+            }
+            else if (actualDrawn > 0)
+            {
+                string reason = drawTarget.Hand.Count >= PlayerBattleState.MaxHandSize ? "手牌已满" : "牌库弃牌堆均空";
+                ctx.RoundLog.Add($"[DrawHandler] 玩家{drawTarget.PlayerId}尝试抽{drawCount}张，实际抽{actualDrawn}张（{reason}）");
+            }
+            else
+            {
+                string reason = drawTarget.Hand.Count >= PlayerBattleState.MaxHandSize ? "手牌已满" : "牌库弃牌堆均空";
+                ctx.RoundLog.Add($"[DrawHandler] 玩家{drawTarget.PlayerId}无法抽牌（{reason}）");
+            }
         }
     }
 
     /// <summary>
     /// 能量效果处理器 —— 处理 GainEnergy 效果。
+    /// 能量可以临时超过上限（本回合有效），下回合开始时恢复到 MaxEnergy。
     /// </summary>
     public class EnergyHandler : IEffectHandler
     {
@@ -299,9 +319,11 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             }
 
             int energyAmount = effect.Value;
+            int energyBefore = energyTarget.Energy;
             energyTarget.Energy += energyAmount;
 
-            ctx.RoundLog.Add($"[EnergyHandler] 玩家{energyTarget.PlayerId}获得{energyAmount}点能量（当前能量：{energyTarget.Energy}）");
+            // 能量可以临时超过上限，下回合开始时会重置为 MaxEnergy
+            ctx.RoundLog.Add($"[EnergyHandler] 玩家{energyTarget.PlayerId}获得{energyAmount}点能量（{energyBefore}→{energyTarget.Energy}）");
         }
     }
 }

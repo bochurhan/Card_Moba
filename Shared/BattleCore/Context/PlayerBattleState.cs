@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using CardMoba.BattleCore.Buff;
+using CardMoba.BattleCore.Random;
 using CardMoba.ConfigModels.Card;
 
 namespace CardMoba.BattleCore.Context
@@ -14,6 +15,20 @@ namespace CardMoba.BattleCore.Context
     /// </summary>
     public class PlayerBattleState
     {
+        // ══════════════════════════════════════════════════════════
+        // 常量
+        // ══════════════════════════════════════════════════════════
+
+        /// <summary>最大手牌数量</summary>
+        public const int MaxHandSize = 10;
+
+        /// <summary>默认能量上限（回合开始时恢复到此值）</summary>
+        public const int DefaultMaxEnergy = 3;
+
+        // ══════════════════════════════════════════════════════════
+        // 玩家基础信息
+        // ══════════════════════════════════════════════════════════
+
         /// <summary>玩家ID（字符串，用于区分不同玩家）</summary>
         public string PlayerId { get; set; } = string.Empty;
 
@@ -95,8 +110,14 @@ namespace CardMoba.BattleCore.Context
         /// <summary>当前能量（每回合恢复，出牌消耗）</summary>
         public int Energy { get; set; }
 
-        /// <summary>每回合能量恢复量</summary>
+        /// <summary>
+        /// 每回合能量恢复量（已废弃，使用 MaxEnergy 替代）。
+        /// </summary>
+        [System.Obsolete("使用 MaxEnergy 替代")]
         public int EnergyPerRound { get; set; }
+
+        /// <summary>能量上限（回合开始时恢复到此值）</summary>
+        public int MaxEnergy { get; set; } = DefaultMaxEnergy;
 
         // ── 卡牌区域 ──
 
@@ -218,11 +239,14 @@ namespace CardMoba.BattleCore.Context
         }
 
         /// <summary>
-        /// 处理回合开始时的状态更新（Buff 持续时间、控制效果等）。
+        /// 处理回合开始时的状态更新（能量恢复、Buff 持续时间、控制效果等）。
         /// </summary>
         public void OnRoundStart()
         {
             ResetRoundStats();
+
+            // 恢复能量到上限
+            Energy = MaxEnergy;
 
             // 处理沉默
             if (IsSilenced && SilencedRounds > 0)
@@ -286,6 +310,138 @@ namespace CardMoba.BattleCore.Context
         {
             // 由 BuffManager 统一管理，此处为兼容性保留
         }
+
+        // ══════════════════════════════════════════════════════════
+        // 牌组操作方法
+        // ══════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// 从牌库抽牌（杀戮尖塔风格）。
+        /// 如果牌库不足，自动将弃牌堆洗入牌库继续抽。
+        /// 如果手牌已满，停止抽牌。
+        /// </summary>
+        /// <param name="count">要抽的牌数</param>
+        /// <param name="random">确定性随机数生成器</param>
+        /// <returns>实际抽到的牌数</returns>
+        public int DrawCards(int count, SeededRandom random)
+        {
+            if (count <= 0) return 0;
+
+            int drawn = 0;
+            for (int i = 0; i < count; i++)
+            {
+                // 手牌已满，停止抽牌
+                if (Hand.Count >= MaxHandSize)
+                    break;
+
+                // 牌库为空，尝试洗入弃牌堆
+                if (Deck.Count == 0)
+                {
+                    ShuffleDiscardIntoDeck(random);
+                    // 如果洗入后仍然为空，停止抽牌
+                    if (Deck.Count == 0)
+                        break;
+                }
+
+                // 从牌库顶抽一张牌
+                var card = Deck[0];
+                Deck.RemoveAt(0);
+                Hand.Add(card);
+                drawn++;
+            }
+
+            return drawn;
+        }
+
+        /// <summary>
+        /// 将弃牌堆洗入牌库。
+        /// 使用 Fisher-Yates 确定性洗牌算法。
+        /// </summary>
+        /// <param name="random">确定性随机数生成器</param>
+        public void ShuffleDiscardIntoDeck(SeededRandom random)
+        {
+            if (DiscardPile.Count == 0) return;
+
+            // 将弃牌堆所有牌加入牌库
+            Deck.AddRange(DiscardPile);
+            DiscardPile.Clear();
+
+            // 使用 SeededRandom 的 Shuffle 方法确保确定性
+            random.Shuffle(Deck);
+        }
+
+        /// <summary>
+        /// 将一张卡牌丢弃到弃牌堆。
+        /// </summary>
+        /// <param name="card">要丢弃的卡牌</param>
+        /// <returns>是否成功丢弃</returns>
+        public bool DiscardCard(CardConfig card)
+        {
+            if (card == null) return false;
+
+            // 从手牌中移除
+            if (Hand.Remove(card))
+            {
+                DiscardPile.Add(card);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// 将一张卡牌从手牌打出到弃牌堆（出牌时调用）。
+        /// </summary>
+        /// <param name="card">打出的卡牌</param>
+        /// <returns>是否成功打出</returns>
+        public bool PlayCard(CardConfig card)
+        {
+            // 打出的牌也进入弃牌堆（与丢弃相同）
+            return DiscardCard(card);
+        }
+
+        /// <summary>
+        /// 随机丢弃指定数量的手牌。
+        /// </summary>
+        /// <param name="count">要丢弃的数量</param>
+        /// <param name="random">确定性随机数生成器</param>
+        /// <returns>实际丢弃的牌数</returns>
+        public int DiscardRandomCards(int count, SeededRandom random)
+        {
+            if (count <= 0 || Hand.Count == 0) return 0;
+
+            int toDiscard = System.Math.Min(count, Hand.Count);
+            int discarded = 0;
+
+            for (int i = 0; i < toDiscard; i++)
+            {
+                if (Hand.Count == 0) break;
+
+                // 随机选择一张手牌
+                int index = random.Next(Hand.Count);
+                var card = Hand[index];
+                Hand.RemoveAt(index);
+                DiscardPile.Add(card);
+                discarded++;
+            }
+
+            return discarded;
+        }
+
+        /// <summary>
+        /// 获取当前手牌数量。
+        /// </summary>
+        public int HandCount => Hand.Count;
+
+        /// <summary>
+        /// 获取当前牌库数量。
+        /// </summary>
+        public int DeckCount => Deck.Count;
+
+        /// <summary>
+        /// 获取弃牌堆数量。
+        /// </summary>
+        public int DiscardCount => DiscardPile.Count;
     }
 
     // 注意：BuffInstance 已迁移到 CardMoba.BattleCore.Buff.BuffInstance
