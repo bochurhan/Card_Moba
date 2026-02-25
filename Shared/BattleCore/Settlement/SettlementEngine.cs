@@ -279,7 +279,7 @@ namespace CardMoba.BattleCore.Settlement
         /// <summary>
         /// 查找指定玩家本回合提交的首张伤害牌。
         /// </summary>
-        private CardAction? FindFirstDamageCard(BattleContext ctx, int playerId)
+        private CardAction? FindFirstDamageCard(BattleContext ctx, string playerId)
         {
             foreach (var action in ctx.PendingPlanActions)
             {
@@ -414,8 +414,8 @@ namespace CardMoba.BattleCore.Settlement
             }
 
             // 同步应用所有伤害（先计算，后统一应用）
-            Dictionary<int, int> hpChanges = new Dictionary<int, int>();
-            Dictionary<int, int> shieldChanges = new Dictionary<int, int>();
+            Dictionary<string, int> hpChanges = new Dictionary<string, int>();
+            Dictionary<string, int> shieldChanges = new Dictionary<string, int>();
 
             foreach (var player in ctx.Players)
             {
@@ -476,7 +476,7 @@ namespace CardMoba.BattleCore.Settlement
             // 统一应用所有变化
             foreach (var player in ctx.Players)
             {
-                int pid = player.PlayerId;
+                string pid = player.PlayerId;
 
                 if (shieldChanges[pid] != 0)
                 {
@@ -804,6 +804,24 @@ namespace CardMoba.BattleCore.Settlement
             }
         }
 
+        /// <summary>
+        /// 应用单个效果（用于旧版 CardAction 兼容）。
+        /// </summary>
+        private void ApplySingleEffect(BattleContext ctx, CardAction action, CardEffect effect, PlayerBattleState source)
+        {
+            // 转换为 PlayedCard 并调用新版方法
+            var playedCard = action.ToPlayedCard();
+            playedCard.ResolvedTargets = new List<string>();
+            
+            // 如果有目标，添加到解析目标列表
+            if (!string.IsNullOrEmpty(action.TargetPlayerId))
+            {
+                playedCard.ResolvedTargets.Add(action.TargetPlayerId);
+            }
+
+            ExecuteEffectLegacy(ctx, playedCard, effect, source);
+        }
+
         // ══════════════════════════════════════════════════════════
         // 辅助数据结构
         // ══════════════════════════════════════════════════════════
@@ -823,8 +841,8 @@ namespace CardMoba.BattleCore.Settlement
         /// </summary>
         private class DamageToApply
         {
-            public int SourceId { get; set; }
-            public int TargetId { get; set; }
+            public string SourceId { get; set; } = string.Empty;
+            public string TargetId { get; set; } = string.Empty;
             public int BaseDamage { get; set; }
             public int FinalDamage { get; set; }
             public string CardName { get; set; } = string.Empty;
