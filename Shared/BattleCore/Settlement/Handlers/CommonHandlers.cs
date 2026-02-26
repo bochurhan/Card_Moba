@@ -1,3 +1,4 @@
+using CardMoba.BattleCore.Buff;
 using CardMoba.BattleCore.Context;
 using CardMoba.ConfigModels.Card;
 
@@ -5,9 +6,14 @@ using CardMoba.ConfigModels.Card;
 
 namespace CardMoba.BattleCore.Settlement.Handlers
 {
+    // ═══════════════════════════════════════════════════════════
+    // 护甲 Handler —— 瞬时护甲不走 BuffManager（立即修改属性）；
+    // 若需要"持续几回合的护甲增益"请走 BuffType.Armor 路径。
+    // ═══════════════════════════════════════════════════════════
+
     /// <summary>
-    /// 护甲效果处理器 —— 处理 GainArmor 效果。
-    /// 护甲减少收到的伤害（百分比或固定值）。
+    /// 护甲效果处理器 —— 处理 GainArmor 效果（瞬时加甲）。
+    /// AppliesBuff = true 时走 BuffManager（持续护甲）；否则直接修改属性。
     /// </summary>
     public class ArmorHandler : IEffectHandler
     {
@@ -25,16 +31,45 @@ namespace CardMoba.BattleCore.Settlement.Handlers
                 return;
             }
 
-            int armorAmount = effect.Value;
-            armorTarget.Armor += armorAmount;
-
-            ctx.RoundLog.Add($"[ArmorHandler] 玩家{armorTarget.PlayerId}获得{armorAmount}点护甲（当前护甲：{armorTarget.Armor}）");
+            if (effect.AppliesBuff)
+            {
+                int duration = effect.Duration > 0 ? effect.Duration : 1;
+                var mgr = ctx.GetBuffManager(armorTarget.PlayerId);
+                if (mgr == null)
+                {
+                    ctx.RoundLog.Add($"[ArmorHandler] 找不到玩家{armorTarget.PlayerId}的BuffManager");
+                    return;
+                }
+                mgr.AddBuff(new BuffInstance
+                {
+                    BuffId          = $"armor_{source.PlayerId}",
+                    BuffType        = BuffType.Armor,
+                    SourceId        = source.PlayerId,
+                    Value           = effect.Value,
+                    Stacks          = 1,
+                    RemainingRounds = duration,
+                    IsPermanent     = false,
+                    IsDispellable   = effect.IsBuffDispellable,
+                    TriggerTiming   = BuffTriggerTiming.None,
+                    StackRule       = effect.BuffStackRule,
+                });
+                ctx.RoundLog.Add($"[ArmorHandler] 玩家{armorTarget.PlayerId}获得持续护甲{effect.Value}点，持续{duration}回合");
+            }
+            else
+            {
+                armorTarget.Armor += effect.Value;
+                ctx.RoundLog.Add($"[ArmorHandler] 玩家{armorTarget.PlayerId}获得{effect.Value}点护甲（当前：{armorTarget.Armor}）");
+            }
         }
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // 力量 Handler —— Buff 类型，走 BuffManager
+    // ═══════════════════════════════════════════════════════════
+
     /// <summary>
-    /// 力量效果处理器 —— 处理 GainStrength / ReduceStrength 效果。
-    /// 力量影响造成的伤害。
+    /// 力量效果处理器 —— 处理 AttackBuff / AttackDebuff。
+    /// 通过 BuffManager 施加 Strength Buff，由 BuffManager 管理属性修正和衰减。
     /// </summary>
     public class StrengthHandler : IEffectHandler
     {
@@ -52,20 +87,49 @@ namespace CardMoba.BattleCore.Settlement.Handlers
                 return;
             }
 
-            int change = effect.Value;
-            if (effect.Type == Protocol.Enums.EffectType.ReduceStrength)
-            {
-                change = -change;
-            }
+            int change = effect.EffectType == Protocol.Enums.EffectType.AttackDebuff
+                ? -effect.Value
+                : effect.Value;
 
-            strengthTarget.Strength += change;
-            ctx.RoundLog.Add($"[StrengthHandler] 玩家{strengthTarget.PlayerId}力量变化{change:+#;-#;0}（当前力量：{strengthTarget.Strength}）");
+            if (effect.AppliesBuff)
+            {
+                int duration = effect.Duration > 0 ? effect.Duration : 1;
+                var mgr = ctx.GetBuffManager(strengthTarget.PlayerId);
+                if (mgr == null)
+                {
+                    ctx.RoundLog.Add($"[StrengthHandler] 找不到玩家{strengthTarget.PlayerId}的BuffManager");
+                    return;
+                }
+                mgr.AddBuff(new BuffInstance
+                {
+                    BuffId          = $"strength_{source.PlayerId}",
+                    BuffType        = BuffType.Strength,
+                    SourceId        = source.PlayerId,
+                    Value           = change,
+                    Stacks          = 1,
+                    RemainingRounds = duration,
+                    IsPermanent     = false,
+                    IsDispellable   = effect.IsBuffDispellable,
+                    TriggerTiming   = BuffTriggerTiming.None,
+                    StackRule       = effect.BuffStackRule,
+                });
+                ctx.RoundLog.Add($"[StrengthHandler] 玩家{strengthTarget.PlayerId}力量变化{change:+#;-#;0}（持续{duration}回合）");
+            }
+            else
+            {
+                strengthTarget.Strength += change;
+                ctx.RoundLog.Add($"[StrengthHandler] 玩家{strengthTarget.PlayerId}力量变化{change:+#;-#;0}（当前：{strengthTarget.Strength}）");
+            }
         }
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // 易伤 Handler —— 控制类 Buff，必须走 BuffManager
+    // ═══════════════════════════════════════════════════════════
+
     /// <summary>
     /// 易伤效果处理器 —— 处理 Vulnerable 效果。
-    /// 易伤状态下受到伤害增加。
+    /// 通过 BuffManager 施加易伤状态，统一管理 VulnerableStacks 和 IsVulnerable。
     /// </summary>
     public class VulnerableHandler : IEffectHandler
     {
@@ -83,16 +147,39 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             }
 
             int duration = effect.Duration > 0 ? effect.Duration : 1;
-            target.IsVulnerable = true;
-            target.VulnerableRounds = duration;
+            var stackRule = effect.AppliesBuff ? effect.BuffStackRule : BuffStackRule.StackValue;
 
-            ctx.RoundLog.Add($"[VulnerableHandler] 玩家{target.PlayerId}获得易伤{duration}回合");
+            var mgr = ctx.GetBuffManager(target.PlayerId);
+            if (mgr == null)
+            {
+                ctx.RoundLog.Add($"[VulnerableHandler] 找不到玩家{target.PlayerId}的BuffManager，易伤失败");
+                return;
+            }
+
+            mgr.AddBuff(new BuffInstance
+            {
+                BuffId          = $"vulnerable_{source.PlayerId}",
+                BuffType        = BuffType.Vulnerable,
+                SourceId        = source.PlayerId,
+                Value           = effect.Value > 0 ? effect.Value : 1,
+                Stacks          = 1,
+                RemainingRounds = duration,
+                IsPermanent     = false,
+                IsDispellable   = effect.AppliesBuff ? effect.IsBuffDispellable : true,
+                TriggerTiming   = BuffTriggerTiming.None,
+                StackRule       = stackRule,
+            });
+            ctx.RoundLog.Add($"[VulnerableHandler] 玩家{target.PlayerId}获得易伤{duration}回合（来源：{source.PlayerId}）");
         }
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // 虚弱 Handler —— 控制类 Buff，必须走 BuffManager
+    // ═══════════════════════════════════════════════════════════
+
     /// <summary>
     /// 虚弱效果处理器 —— 处理 Weak 效果。
-    /// 虚弱状态下造成伤害降低。
+    /// 通过 BuffManager 施加虚弱状态，统一管理 WeakStacks 和 IsWeak。
     /// </summary>
     public class WeakHandler : IEffectHandler
     {
@@ -110,15 +197,39 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             }
 
             int duration = effect.Duration > 0 ? effect.Duration : 1;
-            target.IsWeak = true;
-            target.WeakRounds = duration;
+            var stackRule = effect.AppliesBuff ? effect.BuffStackRule : BuffStackRule.StackValue;
 
-            ctx.RoundLog.Add($"[WeakHandler] 玩家{target.PlayerId}获得虚弱{duration}回合");
+            var mgr = ctx.GetBuffManager(target.PlayerId);
+            if (mgr == null)
+            {
+                ctx.RoundLog.Add($"[WeakHandler] 找不到玩家{target.PlayerId}的BuffManager，虚弱失败");
+                return;
+            }
+
+            mgr.AddBuff(new BuffInstance
+            {
+                BuffId          = $"weak_{source.PlayerId}",
+                BuffType        = BuffType.Weak,
+                SourceId        = source.PlayerId,
+                Value           = effect.Value > 0 ? effect.Value : 1,
+                Stacks          = 1,
+                RemainingRounds = duration,
+                IsPermanent     = false,
+                IsDispellable   = effect.AppliesBuff ? effect.IsBuffDispellable : true,
+                TriggerTiming   = BuffTriggerTiming.None,
+                StackRule       = stackRule,
+            });
+            ctx.RoundLog.Add($"[WeakHandler] 玩家{target.PlayerId}获得虚弱{duration}回合（来源：{source.PlayerId}）");
         }
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // 伤害减免 Handler —— 持续 Buff，走 BuffManager
+    // ═══════════════════════════════════════════════════════════
+
     /// <summary>
     /// 伤害减免处理器 —— 处理 DamageReduction 效果。
+    /// 通过 BuffManager 施加减免状态，由 ApplyBuffModifiers 写入 DamageReductionPercent。
     /// </summary>
     public class DamageReductionHandler : IEffectHandler
     {
@@ -129,23 +240,46 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             PlayerBattleState? target,
             BattleContext ctx)
         {
-            var dmgReduceTarget = target ?? source;
-            if (!dmgReduceTarget.IsAlive)
+            var dmgTarget = target ?? source;
+            if (!dmgTarget.IsAlive)
             {
-                ctx.RoundLog.Add($"[DamageReductionHandler] 目标玩家{dmgReduceTarget.PlayerId}已死亡，伤害减免无效");
+                ctx.RoundLog.Add($"[DamageReductionHandler] 目标玩家{dmgTarget.PlayerId}已死亡，伤害减免无效");
                 return;
             }
 
             int duration = effect.Duration > 0 ? effect.Duration : 1;
-            dmgReduceTarget.DamageReduction = effect.Value;
-            dmgReduceTarget.DamageReductionRounds = duration;
 
-            ctx.RoundLog.Add($"[DamageReductionHandler] 玩家{dmgReduceTarget.PlayerId}获得{effect.Value}%伤害减免，持续{duration}回合");
+            var mgr = ctx.GetBuffManager(dmgTarget.PlayerId);
+            if (mgr == null)
+            {
+                ctx.RoundLog.Add($"[DamageReductionHandler] 找不到玩家{dmgTarget.PlayerId}的BuffManager");
+                return;
+            }
+
+            mgr.AddBuff(new BuffInstance
+            {
+                BuffId          = $"dmgred_{source.PlayerId}",
+                BuffType        = BuffType.DamageReduction,
+                SourceId        = source.PlayerId,
+                Value           = effect.Value,
+                Stacks          = 1,
+                RemainingRounds = duration,
+                IsPermanent     = false,
+                IsDispellable   = effect.AppliesBuff ? effect.IsBuffDispellable : true,
+                TriggerTiming   = BuffTriggerTiming.None,
+                StackRule       = effect.AppliesBuff ? effect.BuffStackRule : BuffStackRule.KeepHighest,
+            });
+            ctx.RoundLog.Add($"[DamageReductionHandler] 玩家{dmgTarget.PlayerId}获得{effect.Value}%伤害减免，持续{duration}回合");
         }
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // 无敌 Handler —— 持续 Buff，走 BuffManager
+    // ═══════════════════════════════════════════════════════════
+
     /// <summary>
     /// 无敌效果处理器 —— 处理 Invincible 效果。
+    /// 通过 BuffManager 施加无敌状态，由 ApplyBuffModifiers 写入 IsInvincible。
     /// </summary>
     public class InvincibleHandler : IEffectHandler
     {
@@ -164,16 +298,39 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             }
 
             int duration = effect.Duration > 0 ? effect.Duration : 1;
-            invTarget.IsInvincible = true;
-            invTarget.InvincibleRounds = duration;
 
+            var mgr = ctx.GetBuffManager(invTarget.PlayerId);
+            if (mgr == null)
+            {
+                ctx.RoundLog.Add($"[InvincibleHandler] 找不到玩家{invTarget.PlayerId}的BuffManager");
+                return;
+            }
+
+            mgr.AddBuff(new BuffInstance
+            {
+                BuffId          = $"invincible_{source.PlayerId}",
+                BuffType        = BuffType.Invincible,
+                SourceId        = source.PlayerId,
+                Value           = 0,
+                Stacks          = 1,
+                RemainingRounds = duration,
+                IsPermanent     = false,
+                IsDispellable   = effect.AppliesBuff ? effect.IsBuffDispellable : true,
+                TriggerTiming   = BuffTriggerTiming.None,
+                StackRule       = effect.AppliesBuff ? effect.BuffStackRule : BuffStackRule.RefreshDuration,
+            });
             ctx.RoundLog.Add($"[InvincibleHandler] 玩家{invTarget.PlayerId}获得无敌{duration}回合");
         }
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // 吸血 Handler —— 触发式 Buff，走 BuffManager
+    // ═══════════════════════════════════════════════════════════
+
     /// <summary>
     /// 吸血效果处理器 —— 处理 Lifesteal 效果。
-    /// 为玩家附加吸血 Buff。
+    /// 通过 BuffManager 注册 OnDamageDealt 触发型 Buff，
+    /// 由 BuffManager.TriggerBuffEffect 在伤害结算后执行治疗。
     /// </summary>
     public class LifestealHandler : IEffectHandler
     {
@@ -192,15 +349,39 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             }
 
             int duration = effect.Duration > 0 ? effect.Duration : 1;
-            lsTarget.LifestealPercent = effect.Value;
-            lsTarget.LifestealRounds = duration;
 
+            var mgr = ctx.GetBuffManager(lsTarget.PlayerId);
+            if (mgr == null)
+            {
+                ctx.RoundLog.Add($"[LifestealHandler] 找不到玩家{lsTarget.PlayerId}的BuffManager");
+                return;
+            }
+
+            mgr.AddBuff(new BuffInstance
+            {
+                BuffId          = $"lifesteal_{source.PlayerId}",
+                BuffType        = BuffType.Lifesteal,
+                SourceId        = source.PlayerId,
+                Value           = effect.Value,     // 吸血百分比
+                Stacks          = 1,
+                RemainingRounds = duration,
+                IsPermanent     = false,
+                IsDispellable   = effect.AppliesBuff ? effect.IsBuffDispellable : true,
+                TriggerTiming   = BuffTriggerTiming.OnDamageDealt,
+                StackRule       = effect.AppliesBuff ? effect.BuffStackRule : BuffStackRule.RefreshDuration,
+            });
             ctx.RoundLog.Add($"[LifestealHandler] 玩家{lsTarget.PlayerId}获得{effect.Value}%吸血，持续{duration}回合");
         }
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // 反伤 Handler —— 触发式 Buff，走 BuffManager
+    // ═══════════════════════════════════════════════════════════
+
     /// <summary>
     /// 反伤效果处理器 —— 处理 Thorns 效果。
+    /// 通过 BuffManager 注册 OnDamageTaken 触发型 Buff，
+    /// 由 BuffManager.TriggerBuffEffect 在受到伤害后执行反伤。
     /// </summary>
     public class ThornsHandler : IEffectHandler
     {
@@ -219,15 +400,38 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             }
 
             int duration = effect.Duration > 0 ? effect.Duration : 1;
-            thornsTarget.ThornsValue = effect.Value;
-            thornsTarget.ThornsRounds = duration;
 
+            var mgr = ctx.GetBuffManager(thornsTarget.PlayerId);
+            if (mgr == null)
+            {
+                ctx.RoundLog.Add($"[ThornsHandler] 找不到玩家{thornsTarget.PlayerId}的BuffManager");
+                return;
+            }
+
+            mgr.AddBuff(new BuffInstance
+            {
+                BuffId          = $"thorns_{source.PlayerId}",
+                BuffType        = BuffType.Thorns,
+                SourceId        = source.PlayerId,
+                Value           = effect.Value,     // 反伤固定值
+                Stacks          = 1,
+                RemainingRounds = duration,
+                IsPermanent     = false,
+                IsDispellable   = effect.AppliesBuff ? effect.IsBuffDispellable : true,
+                TriggerTiming   = BuffTriggerTiming.OnDamageTaken,
+                StackRule       = effect.AppliesBuff ? effect.BuffStackRule : BuffStackRule.StackValue,
+            });
             ctx.RoundLog.Add($"[ThornsHandler] 玩家{thornsTarget.PlayerId}获得{effect.Value}点反伤，持续{duration}回合");
         }
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // 沉默 Handler —— 控制类 Buff，走 BuffManager
+    // ═══════════════════════════════════════════════════════════
+
     /// <summary>
     /// 沉默效果处理器 —— 处理 Silence 效果。
+    /// 通过 BuffManager 施加沉默状态，由 ApplyBuffModifiers 写入 IsSilenced。
     /// </summary>
     public class SilenceHandler : IEffectHandler
     {
@@ -245,18 +449,139 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             }
 
             int duration = effect.Duration > 0 ? effect.Duration : 1;
-            target.IsSilenced = true;
-            target.SilencedRounds = duration;
 
-            ctx.RoundLog.Add($"[SilenceHandler] 玩家{target.PlayerId}被沉默{duration}回合");
+            var mgr = ctx.GetBuffManager(target.PlayerId);
+            if (mgr == null)
+            {
+                ctx.RoundLog.Add($"[SilenceHandler] 找不到玩家{target.PlayerId}的BuffManager，沉默失败");
+                return;
+            }
+
+            mgr.AddBuff(new BuffInstance
+            {
+                BuffId          = $"silence_{source.PlayerId}",
+                BuffType        = BuffType.Silence,
+                SourceId        = source.PlayerId,
+                Value           = 0,
+                Stacks          = 1,
+                RemainingRounds = duration,
+                IsPermanent     = false,
+                IsDispellable   = effect.AppliesBuff ? effect.IsBuffDispellable : true,
+                TriggerTiming   = BuffTriggerTiming.None,
+                StackRule       = effect.AppliesBuff ? effect.BuffStackRule : BuffStackRule.RefreshDuration,
+            });
+            ctx.RoundLog.Add($"[SilenceHandler] 玩家{target.PlayerId}被沉默{duration}回合（来源：{source.PlayerId}）");
         }
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // 减速 Handler —— 控制类 Buff（暂时通过 Root 近似），走 BuffManager
+    // ═══════════════════════════════════════════════════════════
+
     /// <summary>
-    /// 抽牌效果处理器 —— 处理 Draw 效果。
-    /// 采用杀戮尖塔风格的抽牌机制：
-    /// - 从牌库抽牌，不足时自动洗入弃牌堆继续抽
-    /// - 手牌达到上限（10张）时停止抽牌
+    /// 减速效果处理器 —— 处理 Slow 效果。
+    /// 通过 BuffManager 施加减速状态，由 RoundManager 读取 IsSlowed 决定行动优先级。
+    /// </summary>
+    public class SlowHandler : IEffectHandler
+    {
+        public void Execute(
+            PlayedCard card,
+            CardEffect effect,
+            PlayerBattleState source,
+            PlayerBattleState? target,
+            BattleContext ctx)
+        {
+            if (target == null || !target.IsAlive)
+            {
+                ctx.RoundLog.Add($"[SlowHandler] 目标无效，减速施加失败");
+                return;
+            }
+
+            int duration = effect.Duration > 0 ? effect.Duration : 1;
+
+            var mgr = ctx.GetBuffManager(target.PlayerId);
+            if (mgr == null)
+            {
+                ctx.RoundLog.Add($"[SlowHandler] 找不到玩家{target.PlayerId}的BuffManager，减速失败");
+                return;
+            }
+
+            // Slow 暂时映射到 Root（禁锢换路），未来若有独立 Slow BuffType 可替换
+            mgr.AddBuff(new BuffInstance
+            {
+                BuffId          = $"slow_{source.PlayerId}",
+                BuffType        = BuffType.Root,
+                SourceId        = source.PlayerId,
+                Value           = 0,
+                Stacks          = 1,
+                RemainingRounds = duration,
+                IsPermanent     = false,
+                IsDispellable   = effect.AppliesBuff ? effect.IsBuffDispellable : true,
+                TriggerTiming   = BuffTriggerTiming.None,
+                StackRule       = effect.AppliesBuff ? effect.BuffStackRule : BuffStackRule.RefreshDuration,
+            });
+            // Root BuffType 的 ApplyBuffModifiers 暂未覆盖 IsSlowed，临时直写
+            target.IsSlowed = true;
+            ctx.RoundLog.Add($"[SlowHandler] 玩家{target.PlayerId}被减速{duration}回合（来源：{source.PlayerId}）");
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 受击获甲 Handler —— 触发式 Buff，走 BuffManager
+    // ═══════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 受击获甲处理器 —— 处理 ArmorOnHit 效果。
+    /// 通过 BuffManager 注册 OnDamageTaken 触发型 Buff，受伤时自动获甲。
+    /// </summary>
+    public class ArmorOnHitHandler : IEffectHandler
+    {
+        public void Execute(
+            PlayedCard card,
+            CardEffect effect,
+            PlayerBattleState source,
+            PlayerBattleState? target,
+            BattleContext ctx)
+        {
+            var buffTarget = target ?? source;
+            if (!buffTarget.IsAlive)
+            {
+                ctx.RoundLog.Add($"[ArmorOnHitHandler] 目标玩家{buffTarget.PlayerId}已死亡，受击获甲无效");
+                return;
+            }
+
+            int duration = effect.Duration > 0 ? effect.Duration : 1;
+
+            var mgr = ctx.GetBuffManager(buffTarget.PlayerId);
+            if (mgr == null)
+            {
+                ctx.RoundLog.Add($"[ArmorOnHitHandler] 找不到玩家{buffTarget.PlayerId}的BuffManager");
+                return;
+            }
+
+            mgr.AddBuff(new BuffInstance
+            {
+                BuffId          = $"armoronhit_{source.PlayerId}",
+                BuffType        = BuffType.Armor,
+                SourceId        = source.PlayerId,
+                Value           = effect.Value,
+                Stacks          = 1,
+                RemainingRounds = duration,
+                IsPermanent     = false,
+                IsDispellable   = effect.AppliesBuff ? effect.IsBuffDispellable : true,
+                TriggerTiming   = BuffTriggerTiming.OnDamageTaken,  // 受伤时触发
+                StackRule       = effect.AppliesBuff ? effect.BuffStackRule : BuffStackRule.Independent,
+            });
+            ctx.RoundLog.Add($"[ArmorOnHitHandler] 玩家{buffTarget.PlayerId}获得受击获甲{effect.Value}点，持续{duration}回合");
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 以下 Handler 为瞬时效果，不走 BuffManager，保持直写
+    // ═══════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 抽牌效果处理器 —— 处理 Draw 效果（瞬时，无 Buff）。
     /// </summary>
     public class DrawHandler : IEffectHandler
     {
@@ -276,11 +601,8 @@ namespace CardMoba.BattleCore.Settlement.Handlers
 
             int drawCount = effect.Value > 0 ? effect.Value : 1;
             int handBefore = drawTarget.Hand.Count;
-
-            // 调用 PlayerBattleState 的抽牌方法
             int actualDrawn = drawTarget.DrawCards(drawCount, ctx.Random);
 
-            // 记录日志
             if (actualDrawn == drawCount)
             {
                 ctx.RoundLog.Add($"[DrawHandler] 玩家{drawTarget.PlayerId}抽{actualDrawn}张牌（手牌：{handBefore}→{drawTarget.Hand.Count}）");
@@ -299,8 +621,7 @@ namespace CardMoba.BattleCore.Settlement.Handlers
     }
 
     /// <summary>
-    /// 能量效果处理器 —— 处理 GainEnergy 效果。
-    /// 能量可以临时超过上限（本回合有效），下回合开始时恢复到 MaxEnergy。
+    /// 能量效果处理器 —— 处理 GainEnergy 效果（瞬时，无 Buff）。
     /// </summary>
     public class EnergyHandler : IEffectHandler
     {
@@ -318,12 +639,44 @@ namespace CardMoba.BattleCore.Settlement.Handlers
                 return;
             }
 
-            int energyAmount = effect.Value;
-            int energyBefore = energyTarget.Energy;
-            energyTarget.Energy += energyAmount;
+            int before = energyTarget.Energy;
+            energyTarget.Energy += effect.Value;
+            ctx.RoundLog.Add($"[EnergyHandler] 玩家{energyTarget.PlayerId}获得{effect.Value}点能量（{before}→{energyTarget.Energy}）");
+        }
+    }
 
-            // 能量可以临时超过上限，下回合开始时会重置为 MaxEnergy
-            ctx.RoundLog.Add($"[EnergyHandler] 玩家{energyTarget.PlayerId}获得{energyAmount}点能量（{energyBefore}→{energyTarget.Energy}）");
+    /// <summary>
+    /// 弃牌效果处理器 —— 处理 Discard 效果（瞬时，无 Buff）。
+    /// </summary>
+    public class DiscardHandler : IEffectHandler
+    {
+        public void Execute(
+            PlayedCard card,
+            CardEffect effect,
+            PlayerBattleState source,
+            PlayerBattleState? target,
+            BattleContext ctx)
+        {
+            var discardTarget = target ?? source;
+            if (!discardTarget.IsAlive)
+            {
+                ctx.RoundLog.Add($"[DiscardHandler] 目标玩家{discardTarget.PlayerId}已死亡，弃牌无效");
+                return;
+            }
+
+            int discardCount = effect.Value > 0 ? effect.Value : 1;
+            int actualDiscarded = 0;
+
+            for (int i = 0; i < discardCount && discardTarget.Hand.Count > 0; i++)
+            {
+                int lastIndex = discardTarget.Hand.Count - 1;
+                var discardedCard = discardTarget.Hand[lastIndex];
+                discardTarget.Hand.RemoveAt(lastIndex);
+                discardTarget.Discard.Add(discardedCard);
+                actualDiscarded++;
+            }
+
+            ctx.RoundLog.Add($"[DiscardHandler] 玩家{discardTarget.PlayerId}弃置{actualDiscarded}张牌");
         }
     }
 }

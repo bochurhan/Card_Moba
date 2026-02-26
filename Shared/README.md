@@ -14,10 +14,14 @@ Shared/
 │   ├── RoundStateMachine/   # 回合状态机（7个阶段严格流转）
 │   │                        #   回合开始结算→操作窗口期→指令锁定→
 │   │                        #   统一结算→濒死判定→回合结束
-│   ├── CardEffects/         # 卡牌效果系统
-│   │   ├── Components/      # 效果组件（造成伤害、抽牌、叠buff、反制等）
-│   │   └── Pipeline/        # 结算优先级引擎（按优先级顺序结算）
-│   ├── Settlement/          # 结算核心逻辑（全量结算、结算日志生成）
+│   ├── Settlement/          # 结算核心逻辑
+│   │   ├── Handlers/        # 模块化效果处理器（每种 EffectType 对应一个 Handler）
+│   │   ├── SettlementEngine.cs  # 4层结算引擎（Counter→Defense→Damage→Utility）
+│   │   ├── DamageHelper.cs      # 伤害计算（护盾→护甲→扣血→濒死标记）
+│   │   └── TargetResolver.cs    # 目标解析
+│   ├── Buff/                # Buff 系统（持续多回合的叠层状态）
+│   ├── Trigger/             # 触发系统（条件触发的响应逻辑）
+│   ├── Event/               # 事件记录（只记录，不参与结算）
 │   ├── Context/             # 对局上下文（管理所有玩家状态、场景状态、回合信息）
 │   └── Random/              # 固定种子伪随机数生成器（结算可复现）
 │

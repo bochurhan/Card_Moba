@@ -105,6 +105,18 @@ namespace CardMoba.BattleCore.Context
         /// <summary>反伤剩余回合数</summary>
         public int ThornsRounds { get; set; }
 
+        /// <summary>受击获甲数值（受到伤害时获得的护甲量）</summary>
+        public int ArmorOnHitValue { get; set; }
+
+        /// <summary>受击获甲剩余回合数</summary>
+        public int ArmorOnHitRounds { get; set; }
+
+        /// <summary>是否处于减速状态</summary>
+        public bool IsSlowed { get; set; }
+
+        /// <summary>减速剩余回合数</summary>
+        public int SlowedRounds { get; set; }
+
         // ── 资源属性 ──
 
         /// <summary>当前能量（每回合恢复，出牌消耗）</summary>

@@ -78,5 +78,8 @@ namespace CardMoba.Protocol.Enums
 
         /// <summary>斩杀：对低血量目标有额外效果 (Execute: bonus effect against low HP targets)</summary>
         Execute = 1 << 14,    // 16384
+
+        /// <summary>反弹：反制牌附带效果，将被反制卡牌的伤害反弹给攻击者 (Reflect: bounces countered card's damage back to attacker)</summary>
+        Reflect = 1 << 15,    // 32768
     }
 }
