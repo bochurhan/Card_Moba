@@ -2,64 +2,16 @@
   "version": "1.0.0",
   "cards": [
     {
-      "cardId": 1001,
-      "cardName": "火球术",
-      "description": "对敌人造成4点伤害",
-      "trackType": "Instant",
-      "targetType": "CurrentEnemy",
-      "tags": [
-        "Damage"
-      ],
-      "energyCost": 1,
-      "rarity": 1,
-      "duration": 0,
-      "effectIds": [
-        "E1001-1"
-      ]
-    },
-    {
-      "cardId": 1002,
-      "cardName": "雷霆一击",
-      "description": "凝聚雷电造成7点伤害",
-      "trackType": "Instant",
-      "targetType": "CurrentEnemy",
-      "tags": [
-        "Damage"
-      ],
-      "energyCost": 2,
-      "rarity": 2,
-      "duration": 0,
-      "effectIds": [
-        "E1002-1"
-      ]
-    },
-    {
-      "cardId": 1003,
-      "cardName": "快速格挡",
-      "description": "获得3点护盾",
-      "trackType": "Instant",
-      "targetType": "Self",
-      "tags": [
-        "Defense"
-      ],
-      "energyCost": 1,
-      "rarity": 1,
-      "duration": 0,
-      "effectIds": [
-        "E1003-1"
-      ]
-    },
-    {
       "cardId": 2001,
-      "cardName": "蓄力斩",
-      "description": "蓄力后造成8点伤害",
+      "cardName": "打击",
+      "description": "造成6点伤害",
       "trackType": "Plan",
       "targetType": "CurrentEnemy",
       "tags": [
         "Damage"
       ],
-      "energyCost": 2,
-      "rarity": 2,
+      "energyCost": 1,
+      "rarity": 1,
       "duration": 0,
       "effectIds": [
         "E2001-1"
@@ -67,12 +19,12 @@
     },
     {
       "cardId": 2002,
-      "cardName": "铁壁",
-      "description": "获得5点护盾",
+      "cardName": "打击",
+      "description": "造成6点伤害",
       "trackType": "Plan",
-      "targetType": "Self",
+      "targetType": "CurrentEnemy",
       "tags": [
-        "Defense"
+        "Damage"
       ],
       "energyCost": 1,
       "rarity": 1,
@@ -83,12 +35,12 @@
     },
     {
       "cardId": 2003,
-      "cardName": "生命回复",
-      "description": "恢复5点生命值",
+      "cardName": "打击",
+      "description": "造成6点伤害",
       "trackType": "Plan",
-      "targetType": "Self",
+      "targetType": "CurrentEnemy",
       "tags": [
-        "Resource"
+        "Damage"
       ],
       "energyCost": 1,
       "rarity": 1,
@@ -99,15 +51,15 @@
     },
     {
       "cardId": 2004,
-      "cardName": "见招拆招",
-      "description": "反制敌方下回合首张伤害牌",
+      "cardName": "打击",
+      "description": "造成6点伤害",
       "trackType": "Plan",
       "targetType": "CurrentEnemy",
       "tags": [
-        "Counter"
+        "Damage"
       ],
       "energyCost": 1,
-      "rarity": 2,
+      "rarity": 1,
       "duration": 0,
       "effectIds": [
         "E2004-1"
@@ -115,33 +67,31 @@
     },
     {
       "cardId": 2005,
-      "cardName": "铁斩波",
-      "description": "获得4护甲并造成5点伤害",
+      "cardName": "打击",
+      "description": "造成6点伤害",
       "trackType": "Plan",
       "targetType": "CurrentEnemy",
       "tags": [
-        "Damage",
-        "Defense"
+        "Damage"
       ],
-      "energyCost": 2,
-      "rarity": 2,
+      "energyCost": 1,
+      "rarity": 1,
       "duration": 0,
       "effectIds": [
-        "E2005-1",
-        "E2005-2"
+        "E2005-1"
       ]
     },
     {
       "cardId": 2006,
-      "cardName": "战意激昂",
-      "description": "获得2点力量",
+      "cardName": "防御",
+      "description": "获得5点护盾",
       "trackType": "Plan",
       "targetType": "Self",
       "tags": [
-        "Buff"
+        "Defense"
       ],
       "energyCost": 1,
-      "rarity": 2,
+      "rarity": 1,
       "duration": 0,
       "effectIds": [
         "E2006-1"
@@ -149,33 +99,31 @@
     },
     {
       "cardId": 2007,
-      "cardName": "暗影吞噬",
-      "description": "造成6点伤害并吸血30%",
+      "cardName": "防御",
+      "description": "获得5点护盾",
       "trackType": "Plan",
-      "targetType": "CurrentEnemy",
+      "targetType": "Self",
       "tags": [
-        "Damage"
+        "Defense"
       ],
-      "energyCost": 3,
-      "rarity": 3,
+      "energyCost": 1,
+      "rarity": 1,
       "duration": 0,
       "effectIds": [
-        "E2007-1",
-        "E2007-2"
+        "E2007-1"
       ]
     },
     {
       "cardId": 2008,
-      "cardName": "致命打击",
-      "description": "造成12点伤害",
+      "cardName": "防御",
+      "description": "获得5点护盾",
       "trackType": "Plan",
-      "targetType": "CurrentEnemy",
+      "targetType": "Self",
       "tags": [
-        "Damage",
-        "Exhaust"
+        "Defense"
       ],
-      "energyCost": 4,
-      "rarity": 3,
+      "energyCost": 1,
+      "rarity": 1,
       "duration": 0,
       "effectIds": [
         "E2008-1"
@@ -183,35 +131,117 @@
     },
     {
       "cardId": 2009,
-      "cardName": "荆棘甲",
-      "description": "获得4护甲并附带反伤",
+      "cardName": "防御",
+      "description": "获得5点护盾",
       "trackType": "Plan",
       "targetType": "Self",
       "tags": [
         "Defense"
       ],
-      "energyCost": 3,
-      "rarity": 3,
+      "energyCost": 1,
+      "rarity": 1,
       "duration": 0,
       "effectIds": [
-        "E2009-1",
-        "E2009-2"
+        "E2009-1"
       ]
     },
     {
       "cardId": 2010,
-      "cardName": "弱化诅咒",
-      "description": "使敌人易伤2回合",
+      "cardName": "防御",
+      "description": "获得5点护盾",
       "trackType": "Plan",
-      "targetType": "CurrentEnemy",
+      "targetType": "Self",
       "tags": [
-        "Debuff"
+        "Defense"
       ],
-      "energyCost": 2,
-      "rarity": 2,
+      "energyCost": 1,
+      "rarity": 1,
       "duration": 0,
       "effectIds": [
         "E2010-1"
+      ]
+    },
+    {
+      "cardId": 2011,
+      "cardName": "观察弱点",
+      "description": "若目标本回合使用了伤害定策牌，自身获得2点力量",
+      "trackType": "Plan",
+      "targetType": "CurrentEnemy",
+      "tags": [
+        "Buff"
+      ],
+      "energyCost": 1,
+      "rarity": 2,
+      "duration": 0,
+      "effectIds": [
+        "E2011-1"
+      ]
+    },
+    {
+      "cardId": 2012,
+      "cardName": "死亡收割",
+      "description": "对当前分路全体敌方造成3点伤害，未被护盾格挡的伤害回复等量生命",
+      "trackType": "Plan",
+      "targetType": "AllEnemies",
+      "tags": [
+        "Damage"
+      ],
+      "energyCost": 2,
+      "rarity": 3,
+      "duration": 0,
+      "effectIds": [
+        "E2012-1",
+        "E2012-2"
+      ]
+    },
+    {
+      "cardId": 2013,
+      "cardName": "飞剑回旋镖",
+      "description": "随机造成3点伤害4次，每次随机选择一名敌人",
+      "trackType": "Plan",
+      "targetType": "AnyEnemy",
+      "tags": [
+        "Damage"
+      ],
+      "energyCost": 1,
+      "rarity": 2,
+      "duration": 0,
+      "effectIds": [
+        "E2013-1"
+      ]
+    },
+    {
+      "cardId": 1001,
+      "cardName": "战斗专注",
+      "description": "抽3张牌，本回合剩余时间不能再抽牌",
+      "trackType": "Instant",
+      "targetType": "Self",
+      "tags": [
+        "Resource"
+      ],
+      "energyCost": 0,
+      "rarity": 2,
+      "duration": 0,
+      "effectIds": [
+        "E1001-1",
+        "E1001-2"
+      ]
+    },
+    {
+      "cardId": 1002,
+      "cardName": "突破极限",
+      "description": "使你的力量翻倍",
+      "trackType": "Instant",
+      "targetType": "Self",
+      "tags": [
+        "Buff",
+        "Exhaust"
+      ],
+      "energyCost": 1,
+      "rarity": 3,
+      "duration": 0,
+      "effectIds": [
+        "E1002-1"
       ]
     }
   ]

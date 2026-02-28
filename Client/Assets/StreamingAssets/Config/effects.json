@@ -1,123 +1,134 @@
 {
-  "version": "3.0.0",
+  "version": "1.0.0",
   "effects": [
     {
-      "effectId": "E1001-1",
-      "effectType": 2,
-      "value": 4,
-      "duration": 0,
-      "layer": 2,
-      "description": "造成4点伤害"
-    },
-    {
-      "effectId": "E1002-1",
-      "effectType": 2,
-      "value": 7,
-      "duration": 0,
-      "layer": 2,
-      "description": "造成7点伤害"
-    },
-    {
-      "effectId": "E1003-1",
-      "effectType": 3,
-      "value": 3,
-      "duration": 0,
-      "layer": 1,
-      "description": "获得3点护盾"
-    },
-    {
       "effectId": "E2001-1",
-      "effectType": 201,
-      "value": 8,
+      "effectType": 10,
+      "value": 6,
       "duration": 0,
-      "description": "造成8点伤害"
+      "description": "造成 6 点伤害"
     },
     {
       "effectId": "E2002-1",
-      "effectType": 102,
-      "value": 5,
+      "effectType": 10,
+      "value": 6,
       "duration": 0,
-      "description": "获得5点护盾"
+      "description": "造成 6 点伤害"
     },
     {
       "effectId": "E2003-1",
-      "effectType": 4,
-      "value": 5,
+      "effectType": 10,
+      "value": 6,
       "duration": 0,
-      "description": "回复5点生命"
+      "description": "造成 6 点伤害"
     },
     {
       "effectId": "E2004-1",
-      "effectType": 1,
-      "value": 1,
+      "effectType": 10,
+      "value": 6,
       "duration": 0,
-      "isDelayed": true,
-      "description": "反制敌方首张伤害牌"
+      "description": "造成 6 点伤害"
     },
     {
       "effectId": "E2005-1",
-      "effectType": 102,
-      "value": 4,
+      "effectType": 10,
+      "value": 6,
       "duration": 0,
-      "targetOverride": "Self",
-      "description": "获得4点护甲"
-    },
-    {
-      "effectId": "E2005-2",
-      "effectType": 201,
-      "value": 5,
-      "duration": 0,
-      "description": "造成5点伤害"
+      "description": "造成 6 点伤害"
     },
     {
       "effectId": "E2006-1",
-      "effectType": 111,
-      "value": 2,
+      "effectType": 2,
+      "value": 5,
       "duration": 0,
-      "description": "获得2点力量"
+      "targetOverride": "Self",
+      "description": "获得 5 点护盾"
     },
     {
       "effectId": "E2007-1",
-      "effectType": 201,
-      "value": 6,
-      "duration": 0,
-      "description": "造成6点伤害"
-    },
-    {
-      "effectId": "E2007-2",
-      "effectType": 212,
-      "value": 30,
+      "effectType": 2,
+      "value": 5,
       "duration": 0,
       "targetOverride": "Self",
-      "description": "吸血30%"
+      "description": "获得 5 点护盾"
     },
     {
       "effectId": "E2008-1",
-      "effectType": 201,
-      "value": 12,
+      "effectType": 2,
+      "value": 5,
       "duration": 0,
-      "description": "造成12点伤害"
+      "targetOverride": "Self",
+      "description": "获得 5 点护盾"
     },
     {
       "effectId": "E2009-1",
-      "effectType": 102,
-      "value": 4,
+      "effectType": 2,
+      "value": 5,
       "duration": 0,
-      "description": "获得4点护甲"
-    },
-    {
-      "effectId": "E2009-2",
-      "effectType": 211,
-      "value": 50,
-      "duration": 1,
-      "description": "反伤50%，持续1回合"
+      "targetOverride": "Self",
+      "description": "获得 5 点护盾"
     },
     {
       "effectId": "E2010-1",
-      "effectType": 9,
-      "value": 20,
-      "duration": 2,
-      "description": "易伤20%，持续2回合"
+      "effectType": 2,
+      "value": 5,
+      "duration": 0,
+      "targetOverride": "Self",
+      "description": "获得 5 点护盾"
+    },
+    {
+      "effectId": "E2011-1",
+      "effectType": 4,
+      "value": 2,
+      "duration": 0,
+      "targetOverride": "Self",
+      "description": "获得 2 点力量"
+    },
+    {
+      "effectId": "E2012-1",
+      "effectType": 10,
+      "value": 3,
+      "duration": 0,
+      "description": "造成 3 点伤害"
+    },
+    {
+      "effectId": "E2012-2",
+      "effectType": 11,
+      "value": 100,
+      "duration": 0,
+      "targetOverride": "Self",
+      "description": "吸血 100%"
+    },
+    {
+      "effectId": "E2013-1",
+      "effectType": 10,
+      "value": 3,
+      "duration": 0,
+      "description": "造成 3 点伤害"
+    },
+    {
+      "effectId": "E1001-1",
+      "effectType": 24,
+      "value": 3,
+      "duration": 0,
+      "targetOverride": "Self",
+      "description": "抽 3 张牌"
+    },
+    {
+      "effectId": "E1001-2",
+      "effectType": 30,
+      "value": 0,
+      "duration": 1,
+      "targetOverride": "Self",
+      "description": "本回合禁止抽牌"
+    },
+    {
+      "effectId": "E1002-1",
+      "effectType": 29,
+      "value": 0,
+      "duration": 0,
+      "targetOverride": "Self",
+      "description": "你的力量翻倍"
     }
   ]
 }
