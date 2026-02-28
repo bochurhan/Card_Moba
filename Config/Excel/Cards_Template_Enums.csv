@@ -62,6 +62,8 @@ Weak,116,堆叠1层,虚弱：目标造成的伤害减少
 
 --- 堆叠2层：伤害效果 ---
 DealDamage,201,堆叠2层-步骤1,造成伤害：直接扣减目标生命值
+RandomMultiDamage,202,堆叠2层-步骤1,随机多段伤害：Value=单次伤害值；额外字段HitCount=命中次数；每次从当前分路随机选一名敌人
+LifestealFromUnblocked,203,堆叠2层-步骤2,穿透吸血：仅对未被护盾格挡的伤害部分回复生命（Value=100表示100%回复）
 Thorns,211,堆叠2层-步骤2,反伤：受到伤害时反弹伤害
 Lifesteal,212,堆叠2层-步骤2,吸血：造成伤害时回复生命
 HealOnHit,213,堆叠2层-步骤2,受击回血：受到伤害时回复生命
@@ -73,6 +75,12 @@ DrawCard,301,堆叠3层,抽牌：从牌库抽取卡牌
 DiscardCard,302,堆叠3层,弃牌：弃置手牌
 RestoreEnergy,303,堆叠3层,回复能量：回复能量
 Heal,304,堆叠3层,回复生命：回复生命
-Silence,311,堆叠3层,沉默：禁止使用技能牌
+Silence,311,堆叠3层,沉默：禁止使用技能牌（TriggerCondition=NoDraw表示禁止抽牌）
 Stun,312,堆叠3层,眩晕：跳过操作回合
 Slow,313,堆叠3层,减速：行动顺序降低
+
+--- 堆叠1层：条件触发效果（新增）---
+ConditionalStrength,121,堆叠1层,条件获得力量：满足TriggerCondition时获得Value点力量；EnemyPlayedDamagePlanCard=目标本回合打出过伤害定策牌
+
+--- 堆叠1层：力量操作（新增）---
+DoubleStrength,131,堆叠1层,力量翻倍：将当前力量值翻倍（Value字段无意义）

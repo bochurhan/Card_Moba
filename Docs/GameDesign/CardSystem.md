@@ -1,6 +1,7 @@
 # 卡牌系统详解
 
-**文档版本**：V1.0  
+**文档版本**：V2.0  
+**最后更新**：2026-02-28  
 **前置阅读**：[Overview.md](Overview.md)  
 **阅读时间**：8 分钟
 
@@ -47,80 +48,56 @@ public enum CardTag
 
 ## 🎯 效果类型与结算层级
 
-`EffectType` 决定效果在哪个结算层执行：
+`EffectType` 决定效果在哪个结算层执行，完整定义见 `Shared/Protocol/Enums/EffectType.cs`：
 
-| 层级 | EffectType 范围 | 说明 |
+| 层级 | 包含的 EffectType | 说明 |
 |------|-----------------|------|
-| Layer 0 | 100-199 | 反制效果（无效化、惩罚） |
-| Layer 1 | 200-299 | 防御/数值修正（护盾、护甲、攻击修正） |
-| Layer 2 | 300-399 | 伤害 + 触发效果 |
-| Layer 3 | 400-499 | 功能效果（控制、资源操作、传说） |
+| Layer 0 | `Counter(1)` | 反制效果，最高优先级 |
+| Layer 1 | `Shield(2)` `Armor(3)` `AttackBuff(4)` `AttackDebuff(5)` `Reflect(6)` `DamageReduction(7)` `Invincible(8)` | 防御/数值修正 |
+| Layer 2 | `Damage(10)` `Lifesteal(11)` `Thorns(12)` `ArmorOnHit(13)` `Pierce(14)` | 伤害 + 触发效果 |
+| Layer 3 | `Heal(20)` `Stun(21)` `Vulnerable(22)` `Weak(23)` `Draw(24)` `Discard(25)` `GainEnergy(26)` `Silence(27)` `Slow(28)` `DoubleStrength(29)` | 功能效果 |
 
-### 当前已定义的 EffectType
-
-```csharp
-public enum EffectType
-{
-    // ── Layer 0: 反制（100-199）──
-    Counter_Nullify = 100,     // 无效化目标卡牌
-    Counter_Punish  = 101,     // 无效化并惩罚
-    
-    // ── Layer 1: 防御/修正（200-299）──
-    Defense_Shield  = 200,     // 护盾
-    Defense_Armor   = 201,     // 护甲加成
-    Modify_Attack   = 210,     // 攻击力修正
-    Modify_Energy   = 220,     // 能量修正
-    
-    // ── Layer 2: 伤害（300-399）──
-    Damage_Direct   = 300,     // 直接伤害
-    Damage_Area     = 301,     // 范围伤害
-    Damage_Reflect  = 320,     // 反伤（触发型）
-    Damage_Lifesteal= 321,     // 吸血（触发型）
-    
-    // ── Layer 3: 功能（400-499）──
-    Utility_Stun    = 400,     // 晕眩控制
-    Utility_Silence = 401,     // 沉默
-    Utility_Draw    = 410,     // 抽牌
-    Utility_Discard = 411,     // 弃牌
-    Utility_EnergyGain = 420,  // 能量回复
-    Legendary_Special = 450,   // 传说牌特殊效果
-}
-```
+> 完整 EffectType 说明及 Handler 映射见 [../TechGuide/BattleCore.md](../TechGuide/BattleCore.md)。
 
 ---
 
 ## 📋 卡牌配置结构
 
-### CardConfig（配置模型）
+### 运行时卡牌数据来源
+
+```
+Config/Excel/Cards.csv      ← 策划编辑
+Config/Excel/Effects.csv    ← 策划编辑
+       ↓ Tools/ExcelConverter/convert.bat
+Client/Assets/StreamingAssets/Config/cards.json   ← 游戏读取
+Client/Assets/StreamingAssets/Config/effects.json ← 游戏读取
+```
+
+> 详细配置流程见 [../TechGuide/ConfigSystem.md](../TechGuide/ConfigSystem.md)。
+
+### CardConfig（代码模型，位于 Shared/ConfigModels/）
 
 ```csharp
 public class CardConfig
 {
-    public string CardId { get; set; }          // "E1001" 格式
-    public string CardName { get; set; }        // "火球术"
-    public CardTrackType TrackType { get; set; } // 瞬策牌/定策牌
-    public CardTag Tags { get; set; }           // 标签组合
-    public int EnergyCost { get; set; }         // 能量消耗
-    public List<CardEffect> Effects { get; set; } // 效果列表
+    public int CardId { get; set; }              // 数字 ID：1xxx=瞬策，2xxx=定策
+    public string CardName { get; set; }         // 显示名称
+    public CardTrackType TrackType { get; set; } // Instant / Plan
+    public List<string> Tags { get; set; }       // 标签列表（JSON 存字符串，运行时解析）
+    public int EnergyCost { get; set; }          // 能量消耗
+    public int Rarity { get; set; }              // 稀有度 1/2/3
+    public List<CardEffect> Effects { get; set; } // 效果列表（通过 effectIds 关联）
 }
 
 public class CardEffect
 {
-    public EffectType EffectType { get; set; }  // 效果类型
-    public int Value { get; set; }              // 数值（伤害/护盾等）
-    public TargetType TargetType { get; set; }  // 目标类型
-    public string Description { get; set; }     // 效果描述
-}
-
-public enum TargetType
-{
-    Self = 0,           // 自身
-    SingleEnemy = 1,    // 单个敌人
-    AllEnemies = 2,     // 所有敌人
-    SingleAlly = 3,     // 单个友方
-    AllAllies = 4,      // 所有友方
-    LaneEnemies = 5,    // 本路敌人
-    CrossLaneTarget = 6 // 跨路目标（需要 CrossLane 标签）
+    public string EffectId { get; set; }         // 如 "E2001-1"
+    public EffectType EffectType { get; set; }   // 对应枚举整数值
+    public int Value { get; set; }               // 数值（伤害/护盾等）
+    public int Duration { get; set; }            // 持续回合（0=即时）
+    public string TargetOverride { get; set; }   // 覆盖目标（如 "Self"）
+    public string TriggerCondition { get; set; } // 触发条件（反制牌筛选）
+    public bool IsDelayed { get; set; }          // 是否延迟生效
 }
 ```
 
@@ -133,42 +110,41 @@ public enum TargetType
 | 特性 | 规则 |
 |------|------|
 | **生效时机** | 打出后立即生效，不进入结算栈 |
-| **作用范围** | 仅限自身（手牌、牌库、能量） |
+| **作用范围** | 主要针对自身（手牌、牌库、能量），部分可造成直伤 |
 | **使用限制** | 仅在操作窗口期可打出 |
 | **信息可见性** | 敌方不可见（使用动画可见，效果不可见） |
 
-### 允许的效果类型
+### 常用效果类型
 
-| EffectType | 说明 |
-|------------|------|
-| `Utility_Draw` | 抽牌 |
-| `Utility_Discard` | 弃牌 |
-| `Utility_EnergyGain` | 能量回复 |
-| `Modify_Energy` | 能量修正 |
+| EffectType | ID | 说明 |
+|------------|-----|------|
+| `Draw` | 24 | 抽牌 |
+| `Discard` | 25 | 弃牌 |
+| `GainEnergy` | 26 | 能量回复 |
+| `Silence` | 27 | 沉默（针对自身：禁止抽牌等） |
+| `DoubleStrength` | 29 | 力量翻倍（消耗型增益） |
 
-### 禁止的效果
-
-- ❌ 伤害敌方
-- ❌ 控制敌方
-- ❌ 跨路作用
-
-### 示例卡牌
+### 示例卡牌（当前套牌）
 
 ```json
+// 战斗专注：抽3张牌，本回合不能再抽牌
 {
-  "CardId": "E1001",
-  "CardName": "急速抽牌",
-  "TrackType": 1,
-  "Tags": 129,  // Draw | Cycle
-  "EnergyCost": 1,
-  "Effects": [
-    {
-      "EffectType": 410,
-      "Value": 2,
-      "TargetType": 0,
-      "Description": "抽2张牌"
-    }
-  ]
+  "cardId": 1001,
+  "cardName": "战斗专注",
+  "trackType": "Instant",
+  "targetType": "Self",
+  "energyCost": 0,
+  "effectIds": ["E1001-1", "E1001-2"]
+}
+
+// 突破极限：力量翻倍（消耗型）
+{
+  "cardId": 1002,
+  "cardName": "突破极限",
+  "trackType": "Instant",
+  "targetType": "Self",
+  "energyCost": 1,
+  "effectIds": ["E1002-1"]
 }
 ```
 
@@ -252,4 +228,5 @@ bool CanTargetCrossLane(CardConfig card)
 |------|------|
 | 结算规则详解 | [SettlementRules.md](SettlementRules.md) |
 | 核心代码解读 | [../TechGuide/BattleCore.md](../TechGuide/BattleCore.md) |
+| 配置系统说明 | [../TechGuide/ConfigSystem.md](../TechGuide/ConfigSystem.md) |
 | 枚举定义 | `Shared/Protocol/Enums/` |

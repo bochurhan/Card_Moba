@@ -1,7 +1,7 @@
 # 结算规则详解
 
-**文档版本**：V3.1  
-**最后更新**：2025-02-25  
+**文档版本**：V4.0  
+**最后更新**：2026-02-28  
 **前置阅读**：[Overview.md](Overview.md)、[CardSystem.md](CardSystem.md)  
 **阅读时间**：10 分钟
 
@@ -27,49 +27,55 @@
 ```
 定策牌结算顺序（同层无先后手）
 
-    Layer 0: 反制层
+    Layer 0: 反制层（Counter=1）
     ↓ （被反制的卡牌不进入后续层）
-    Layer 1: 防御/修正层
+    Layer 1: 防御/修正层（ID 2-8）
     ↓
-    Layer 2: 伤害层（含触发效果）
+    Layer 2: 伤害层（ID 10-14，含触发效果）
     ↓
-    Layer 3: 功能层
+    Layer 3: 功能层（ID 20-29）
 ```
 
 ### EffectType → 层级映射
 
-#### V3.0 核心类型（1-10，优先使用）
+> 以下为实际枚举值，见 `Shared/Protocol/Enums/EffectType.cs`
 
-| EffectType | 名称 | 层级 |
-|------------|------|------|
-| `Counter = 1` | 反制 | Layer 0 |
-| `Damage = 2` | 伤害 | Layer 2 |
-| `Shield = 3` | 护盾 | Layer 1 |
-| `Heal = 4` | 治疗 | Layer 3 |
-| `Stun = 5` | 眩晕 | Layer 3 |
-| `Armor = 6` | 护甲 | Layer 1 |
-| `AttackBuff = 7` | 攻击强化 | Layer 1 |
-| `Reflect = 8` | 反伤 | Layer 1 |
-| `Vulnerable = 9` | 易伤 | Layer 3 |
-| `Draw = 10` | 抽牌 | Layer 3 |
+| EffectType | ID | 层级 | 名称 |
+|------------|----|------|------|
+| `Counter` | 1 | Layer 0 | 反制 |
+| `Shield` | 2 | Layer 1 | 护盾 |
+| `Armor` | 3 | Layer 1 | 护甲 |
+| `AttackBuff` | 4 | Layer 1 | 攻击力强化 |
+| `AttackDebuff` | 5 | Layer 1 | 攻击力削弱 |
+| `Reflect` | 6 | Layer 1 | 反伤 |
+| `DamageReduction` | 7 | Layer 1 | 减伤 |
+| `Invincible` | 8 | Layer 1 | 无敌 |
+| `Damage` | 10 | Layer 2 | 直接伤害 |
+| `Lifesteal` | 11 | Layer 2 | 吸血 |
+| `Thorns` | 12 | Layer 2 | 荆棘反伤 |
+| `ArmorOnHit` | 13 | Layer 2 | 受击获甲 |
+| `Pierce` | 14 | Layer 2 | 穿透伤害 |
+| `Heal` | 20 | Layer 3 | 治疗 |
+| `Stun` | 21 | Layer 3 | 眩晕 |
+| `Vulnerable` | 22 | Layer 3 | 易伤 |
+| `Weak` | 23 | Layer 3 | 虚弱 |
+| `Draw` | 24 | Layer 3 | 抽牌 |
+| `Discard` | 25 | Layer 3 | 弃牌 |
+| `GainEnergy` | 26 | Layer 3 | 获得能量 |
+| `Silence` | 27 | Layer 3 | 沉默 |
+| `Slow` | 28 | Layer 3 | 迟缓 |
+| `DoubleStrength` | 29 | Layer 3 | 力量翻倍 |
 
-#### 旧版兼容类型（100+，保留兼容）
-
-| 编号范围 | 层级 | 包含效果 |
-|----------|------|----------|
-| 100-199 | Layer 1 | GainArmor(101), GainShield(102), Weak(116)... |
-| 200-299 | Layer 2 | DealDamage(201), Lifesteal(212), Thorns(211)... |
-| 300-399 | Layer 3 | GainEnergy(303), Silence(311), Discard(302)... |
-| 400-499 | Layer 0 | CounterCard(401), CounterFirstDamage(402)... |
+> ⚠️ 不存在 100+/200+/300+/400+ 旧版编号，所有 ID 均为上表所列，跳跃 ID（如 9、15-19）为预留位。
 
 ### 详细说明
 
 | 层级 | 内容 | 执行规则 |
 |------|------|----------|
-| **Layer 0** | 反制效果 | 判定成功的反制 → 标记目标卡牌为"已反制" → 执行惩罚效果（如有） |
-| **Layer 1** | 防御/修正 | 同时应用所有护盾、护甲、攻击力修正 |
-| **Layer 2** | 伤害+触发 | 1. 计算所有伤害值 2. 同时扣血 3. 处理触发效果（反伤、吸血） |
-| **Layer 3** | 功能效果 | 控制、资源操作、传说牌等 |
+| **Layer 0** | 反制效果（`Counter=1`） | 判定成功的反制 → 标记目标卡牌为"已反制" → 执行惩罚效果（如有） |
+| **Layer 1** | 防御/修正（ID 2-8） | 同时应用所有护盾、护甲、攻击力修正 |
+| **Layer 2** | 伤害+触发（ID 10-14） | 1. 计算所有伤害值 2. 同时扣血 3. 处理触发效果（反伤、吸血） |
+| **Layer 3** | 功能效果（ID 20-29） | 控制、资源操作、力量倍增等 |
 
 ---
 
@@ -79,8 +85,7 @@
 
 ```
 1. 收集所有本回合打出的反制卡
-   - V3.0: EffectType == Counter (1)
-   - 兼容: EffectType 400-499
+   - EffectType == Counter (ID=1)
    
 2. 收集所有可被反制的目标卡
 
@@ -102,11 +107,11 @@
 | 反制定策牌 | `targetCard.TrackType == 定策牌` |
 | 反制指定卡 | `targetCard.CardId == specifiedId` |
 
-### 代码接口（V3.1）
+### 代码接口
 
 ```csharp
 /// <summary>
-/// 执行 Layer 0 反制结算
+/// 执行 Layer 0 反制结算（见 SettlementEngine.cs）
 /// </summary>
 private void ResolveLayer0_Counter(BattleContext ctx)
 {
@@ -121,7 +126,7 @@ private void ResolveLayer0_Counter(BattleContext ctx)
                 targetCard.IsCountered = true;
                 ctx.CounteredCards.Add(targetCard);
                 
-                // 通过 Handler 执行反制效果
+                // 通过 Handler 执行反制效果（EffectType.Counter = 1）
                 var handler = HandlerRegistry.GetHandler(EffectType.Counter);
                 handler?.Execute(ctx, counterCard, counterCard.Config.Effects[0], source);
             }
@@ -137,14 +142,17 @@ private void ResolveLayer0_Counter(BattleContext ctx)
 
 ## 🛡️ Layer 1: 防御/修正
 
-### 执行内容
+### Layer 1 执行内容
 
-| V3.0 类型 | 旧版类型 | 说明 |
-|-----------|----------|------|
-| `Shield (3)` | `GainShield (102)` | 添加护盾值到玩家状态 |
-| `Armor (6)` | `GainArmor (101)` | 增加护甲（减伤百分比） |
-| `AttackBuff (7)` | `GainStrength (111)` | 修正攻击力 |
-| `Reflect (8)` | `Thorns (211)` | 反伤效果 |
+| EffectType | ID | 说明 |
+|------------|----|------|
+| `Shield` | 2 | 添加护盾值到玩家状态 |
+| `Armor` | 3 | 增加护甲（减伤） |
+| `AttackBuff` | 4 | 增加攻击力（加算） |
+| `AttackDebuff` | 5 | 降低攻击力 |
+| `Reflect` | 6 | 反伤效果 |
+| `DamageReduction` | 7 | 固定减伤 |
+| `Invincible` | 8 | 本回合免伤 |
 
 ### 同步应用规则
 
@@ -152,7 +160,7 @@ private void ResolveLayer0_Counter(BattleContext ctx)
 
 ```csharp
 /// <summary>
-/// 执行 Layer 1 防御结算（V3.1）
+/// 执行 Layer 1 防御结算（Handler 模式）
 /// </summary>
 private void ResolveLayer1_Defense(BattleContext ctx)
 {
@@ -162,14 +170,10 @@ private void ResolveLayer1_Defense(BattleContext ctx)
     {
         foreach (var effect in card.Config.Effects)
         {
-            // 使用 V3.0 层级判断方法
-            if (effect.GetSettlementLayerV3() == 1)
+            // ID 2-8 属于 Layer 1
+            if (effect.GetSettlementLayer() == 1)
             {
-                layer1Effects.Add(new EffectToResolve 
-                { 
-                    Card = card, 
-                    Effect = effect 
-                });
+                layer1Effects.Add(new EffectToResolve { Card = card, Effect = effect });
             }
         }
     }
@@ -177,7 +181,8 @@ private void ResolveLayer1_Defense(BattleContext ctx)
     // 同时应用所有效果
     foreach (var item in layer1Effects)
     {
-        ExecuteEffect(ctx, item.Card, item.Effect);
+        var handler = HandlerRegistry.GetHandler(item.Effect.EffectType);
+        handler?.Execute(ctx, item.Card, item.Effect, ctx.GetPlayer(item.Card.SourcePlayerId));
     }
 }
 ```
@@ -207,14 +212,12 @@ private void ResolveLayer1_Defense(BattleContext ctx)
 /// </summary>
 private void ResolveLayer2_Damage(BattleContext ctx)
 {
-    // Step1: 收集并同步应用所有伤害
-    var damageMap = new Dictionary<string, int>();  // playerId → totalDamage
-    
+    // Step1: 收集并同步应用所有伤害（ID 10-14）
     foreach (var card in ctx.ValidPlanCards)
     {
         foreach (var effect in card.Config.Effects)
         {
-            if (effect.GetSettlementLayerV3() == 2)
+            if (effect.GetSettlementLayer() == 2)
             {
                 var handler = HandlerRegistry.GetHandler(effect.EffectType);
                 handler?.Execute(ctx, card, effect, ctx.GetPlayer(card.SourcePlayerId));
@@ -229,26 +232,32 @@ private void ResolveLayer2_Damage(BattleContext ctx)
 
 ### 触发效果处理
 
-| 触发类型 | EffectType | 触发条件 | 效果 |
-|----------|------------|----------|------|
-| 反伤 | `Reflect(8)`, `Thorns(211)` | 受到伤害时 | 对伤害来源造成固定/比例伤害 |
-| 吸血 | `Lifesteal(212)` | 造成伤害时 | 恢复固定/比例生命值 |
-| 濒死触发 | - | 生命值归零时 | 触发救生效果（如有） |
+| 触发类型 | EffectType | ID | 触发条件 | 效果 |
+|----------|------------|----|----------|------|
+| 反伤 | `Reflect` | 6 | 受到伤害时 | 对来源造成固定伤害 |
+| 荆棘 | `Thorns` | 12 | 受到伤害时 | 额外伤害来源 |
+| 吸血 | `Lifesteal` | 11 | 造成伤害时 | 恢复等比生命值 |
+| 受击获甲 | `ArmorOnHit` | 13 | 受到伤害时 | 获得护甲 |
+| 濒死触发 | - | - | 生命值归零时 | 触发救生效果（如有） |
 
 ---
 
 ## 🎲 Layer 3: 功能效果
 
-### 执行内容
+### Layer 3 执行内容
 
-| V3.0 类型 | 旧版类型 | 说明 |
-|-----------|----------|------|
-| `Heal (4)` | - | 恢复生命值 |
-| `Stun (5)` | - | 晕眩（下回合无法操作） |
-| `Vulnerable (9)` | - | 易伤（受伤增加） |
-| `Draw (10)` | - | 抽牌 |
-| - | `Silence (311)` | 沉默（下回合无法使用技能牌） |
-| - | `GainEnergy (303)` | 能量回复 |
+| EffectType | ID | 说明 |
+|------------|----|------|
+| `Heal` | 20 | 恢复生命值 |
+| `Stun` | 21 | 眩晕（下回合无法操作） |
+| `Vulnerable` | 22 | 易伤（受伤增加） |
+| `Weak` | 23 | 虚弱（攻击力降低） |
+| `Draw` | 24 | 抽牌 |
+| `Discard` | 25 | 弃牌 |
+| `GainEnergy` | 26 | 能量回复 |
+| `Silence` | 27 | 沉默（下回合无法抽牌） |
+| `Slow` | 28 | 迟缓（能量上限降低） |
+| `DoubleStrength` | 29 | 力量翻倍（乘法增益） |
 
 ### 执行规则
 
@@ -305,21 +314,21 @@ private void ResolveLayer2_Damage(BattleContext ctx)
 ┌───────────────────────────┐
 │  Layer 1: 防御/修正结算      │
 │  → 同时应用护盾/护甲/修正    │
-│  → GetSettlementLayerV3()==1│
+│  → GetSettlementLayer()==1  │
 └───────────────────────────┘
     │
     ▼
 ┌───────────────────────────┐
 │  Layer 2: 伤害结算          │
 │  → 同时扣血 → 触发效果      │
-│  → GetSettlementLayerV3()==2│
+│  → GetSettlementLayer()==2  │
 └───────────────────────────┘
     │
     ▼
 ┌───────────────────────────┐
 │  Layer 3: 功能效果结算       │
-│  → 控制/资源/传说           │
-│  → GetSettlementLayerV3()==3│
+│  → 控制/资源/力量倍增        │
+│  → GetSettlementLayer()==3  │
 └───────────────────────────┘
     │
     ▼
@@ -366,7 +375,8 @@ private void ResolveLayer2_Damage(BattleContext ctx)
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
-| V3.1 | 2025-02-25 | 同步 V3.0 EffectType 体系；更新代码示例使用 GetSettlementLayerV3() |
+| V4.0 | 2026-02-28 | 全面修正 EffectType ID（对齐枚举实际值）；删除不存在的旧版兼容编号；补全 Layer3；新增 DoubleStrength(29) |
+| V3.1 | 2025-02-25 | 同步 V3.0 EffectType 体系 |
 | V1.0 | 初始 | 基础结算规则文档 |
 
 ---

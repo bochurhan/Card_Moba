@@ -1,8 +1,7 @@
-﻿\
-# BattleCore 核心代码解读
+﻿# BattleCore 核心代码解读
 
-**文档版本**：V4.0
-**最后更新**：2026-02-26
+**文档版本**：V5.0
+**最后更新**：2026-02-28
 **适用对象**：需要理解或修改结算逻辑的开发者
 **前置阅读**：[QuickStart.md](QuickStart.md)、[SystemArchitecture.md](SystemArchitecture.md)（系统关系总览）、[../GameDesign/SettlementRules.md](../GameDesign/SettlementRules.md)
 **阅读时间**：20 分钟
@@ -83,8 +82,8 @@ Shared/BattleCore/
 
 ## 🔧 EffectType 统一枚举体系
 
-> **V4.0 重要变更**：已彻底移除旧版兼容范围（100+），所有效果类型统一为连续 ID（1–28）。
-> 添加新效果时，**必须**在此连续范围内追加，不得使用跳跃 ID。
+> **当前版本**：所有效果类型统一定义在 `Shared/Protocol/Enums/EffectType.cs`。
+> 添加新效果时，先在枚举追加，再创建 Handler，再注册到 HandlerRegistry。
 
 ### Layer 0 — 反制层（最高优先级）
 
@@ -98,38 +97,36 @@ Shared/BattleCore/
 |--------|----|------|
 | `Shield` | 2 | 获得护盾（吸收伤害，一次性） |
 | `Armor` | 3 | 获得护甲（持续减伤） |
-| `AttackBuff` | 4 | 增加攻击力 |
-| `AttackDebuff` | 5 | 降低攻击力 |
-| `ArmorBreak` | 6 | 破甲（降低护甲值） |
+| `AttackBuff` | 4 | 力量增益（增加造成的伤害） |
+| `AttackDebuff` | 5 | 力量削减（降低目标造成的伤害） |
+| `Reflect` | 6 | 反伤（受到伤害时等量反弹给攻击者） |
 | `DamageReduction` | 7 | 伤害减免（百分比） |
-| `Invincible` | 8 | 本回合无敌 |
-| `ArmorOnHit` | 9 | 受击时获得护甲 |
-| `Weak` | 10 | 施加虚弱（降低目标攻击力） |
+| `Invincible` | 8 | 本回合无敌（完全免疫伤害） |
 
 ### Layer 2 — 伤害/触发层
 
 | 枚举值 | ID | 说明 |
 |--------|----|------|
-| `Damage` | 11 | 对目标造成伤害（护盾→护甲→扣血→濒死判定） |
-| `Lifesteal` | 12 | 吸血（造成伤害的同时恢复等量生命） |
-| `Thorns` | 13 | 荆棘反伤（受到伤害时对攻击者造成固定伤害） |
-| `Vulnerable` | 14 | 易伤（目标受到的伤害增加） |
-| `ExecuteKill` | 15 | 斩杀（对低血量目标直接击杀） |
+| `Damage` | 10 | 对目标造成伤害（护盾→护甲→扣血→濒死判定） |
+| `Lifesteal` | 11 | 吸血（造成伤害后恢复等比例生命） |
+| `Thorns` | 12 | 荆棘（受击后对攻击者造成固定伤害，忽略护甲） |
+| `ArmorOnHit` | 13 | 受击获甲（受到伤害时获得护甲） |
+| `Pierce` | 14 | 穿透（伤害无视护甲/护盾，直接扣血） |
 
 ### Layer 3 — 功能/资源层（最低优先级）
 
 | 枚举值 | ID | 说明 |
 |--------|----|------|
-| `Heal` | 16 | 恢复生命值 |
-| `HealTeam` | 17 | 恢复队友生命值 |
-| `Draw` | 18 | 抽取卡牌 |
-| `Discard` | 19 | 强制弃牌 |
-| `GainEnergy` | 20 | 获得能量 |
-| `Stun` | 21 | 眩晕控制（跳过目标下回合出牌） |
-| `Slow` | 22 | 减速（目标下回合费用增加） |
-| `Silence` | 27 | 沉默（阻止目标使用指定类型卡牌） |
-
-> **注**：ID 23–26 为预留位，28 为扩展预留。添加新效果时从 ID 28 起追加。
+| `Heal` | 20 | 恢复生命值 |
+| `Stun` | 21 | 眩晕控制（跳过目标下 N 个操作期） |
+| `Vulnerable` | 22 | 易伤（目标受到的伤害增加） |
+| `Weak` | 23 | 虚弱（目标造成的伤害减少） |
+| `Draw` | 24 | 抽取卡牌 |
+| `Discard` | 25 | 强制弃牌 |
+| `GainEnergy` | 26 | 获得能量 |
+| `Silence` | 27 | 沉默（禁止目标使用技能牌 N 回合） |
+| `Slow` | 28 | 减速（降低目标行动顺序优先级） |
+| `DoubleStrength` | 29 | 力量翻倍（将施法者当前力量×2，消耗型） |
 
 ---
 
@@ -165,25 +162,25 @@ Shared/BattleCore/
 | `ShieldHandler` | `Shield(2)` |
 | `ArmorHandler` | `Armor(3)` |
 | `StrengthHandler` | `AttackBuff(4)`、`AttackDebuff(5)` |
-| `ArmorBreakHandler` | `ArmorBreak(6)` |
+| `ThornsHandler` | `Reflect(6)` |
 | `DamageReductionHandler` | `DamageReduction(7)` |
 | `InvincibleHandler` | `Invincible(8)` |
-| `ArmorOnHitHandler` | `ArmorOnHit(9)` |
-| `WeakHandler` | `Weak(10)` |
-| `DamageHandler` | `Damage(11)` |
-| `LifestealHandler` | `Lifesteal(12)` |
-| `ThornsHandler` | `Thorns(13)` |
-| `VulnerableHandler` | `Vulnerable(14)` |
-| `ExecuteKillHandler` | `ExecuteKill(15)` |
-| `HealHandler` | `Heal(16)`、`HealTeam(17)` |
-| `DrawHandler` | `Draw(18)` |
-| `DiscardHandler` | `Discard(19)` |
-| `EnergyHandler` | `GainEnergy(20)` |
+| `DamageHandler` | `Damage(10)` |
+| `LifestealHandler` | `Lifesteal(11)` |
+| `ThornsHandler` | `Thorns(12)` |
+| `ArmorOnHitHandler` | `ArmorOnHit(13)` |
+| `HealHandler` | `Heal(20)` |
 | `StunHandler` | `Stun(21)` |
-| `SlowHandler` | `Slow(22)` |
+| `VulnerableHandler` | `Vulnerable(22)` |
+| `WeakHandler` | `Weak(23)` |
+| `DrawHandler` | `Draw(24)` |
+| `DiscardHandler` | `Discard(25)` |
+| `EnergyHandler` | `GainEnergy(26)` |
 | `SilenceHandler` | `Silence(27)` |
+| `SlowHandler` | `Slow(28)` |
+| `DoubleStrengthHandler` | `DoubleStrength(29)` |
 
-### 注册示例（HandlerRegistry.cs）
+### 注册代码（HandlerRegistry.cs 实际内容）
 
 ```csharp
 public static void Initialize()
@@ -196,28 +193,27 @@ public static void Initialize()
     Register(EffectType.Armor,           new ArmorHandler());
     Register(EffectType.AttackBuff,      new StrengthHandler());
     Register(EffectType.AttackDebuff,    new StrengthHandler());
-    Register(EffectType.ArmorBreak,      new ArmorBreakHandler());
+    Register(EffectType.Reflect,         new ThornsHandler());
     Register(EffectType.DamageReduction, new DamageReductionHandler());
     Register(EffectType.Invincible,      new InvincibleHandler());
-    Register(EffectType.ArmorOnHit,      new ArmorOnHitHandler());
-    Register(EffectType.Weak,            new WeakHandler());
 
     // Layer 2: 伤害/触发
     Register(EffectType.Damage,          new DamageHandler());
     Register(EffectType.Lifesteal,       new LifestealHandler());
     Register(EffectType.Thorns,          new ThornsHandler());
-    Register(EffectType.Vulnerable,      new VulnerableHandler());
-    Register(EffectType.ExecuteKill,     new ExecuteKillHandler());
+    Register(EffectType.ArmorOnHit,      new ArmorOnHitHandler());
 
     // Layer 3: 功能/资源
     Register(EffectType.Heal,            new HealHandler());
-    Register(EffectType.HealTeam,        new HealHandler());
+    Register(EffectType.Stun,            new StunHandler());
+    Register(EffectType.Vulnerable,      new VulnerableHandler());
+    Register(EffectType.Weak,            new WeakHandler());
     Register(EffectType.Draw,            new DrawHandler());
     Register(EffectType.Discard,         new DiscardHandler());
     Register(EffectType.GainEnergy,      new EnergyHandler());
-    Register(EffectType.Stun,            new StunHandler());
-    Register(EffectType.Slow,            new SlowHandler());
     Register(EffectType.Silence,         new SilenceHandler());
+    Register(EffectType.Slow,            new SlowHandler());
+    Register(EffectType.DoubleStrength,  new DoubleStrengthHandler());
 }
 ```
 
@@ -461,12 +457,13 @@ public class PlayerBattleState
 ### 添加新效果的步骤
 
 ```
-1. 在 Protocol/Enums/EffectType.cs 追加枚举值（ID 从当前最大值+1 起）
-2. 在 Handlers/ 创建 XxxHandler.cs 实现 IEffectHandler
+1. 在 Shared/Protocol/Enums/EffectType.cs 追加枚举值（当前最大 ID = 29）
+2. 在 Shared/BattleCore/Settlement/Handlers/ 创建 XxxHandler.cs 实现 IEffectHandler
 3. 在 HandlerRegistry.Initialize() 中 Register(EffectType.Xxx, new XxxHandler())
-4. 在 ConfigModels/Card/ 相关配置中填写效果参数
-5. 更新本文档 Handler 注册表
-6. 运行 BattleSimulator 验证效果
+4. 在 Config/Excel/Effects.csv 中增加使用该效果的卡牌数据
+5. 运行 Tools/ExcelConverter/convert.bat 重新生成 JSON
+6. 更新本文档 Handler 注册表与 EffectType 表
+7. 运行 BattleSimulator 验证效果
 ```
 
 ---
@@ -475,11 +472,10 @@ public class PlayerBattleState
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
-| V4.0 | 2026-02-26 | 彻底移除旧版 100+ 兼容范围；统一 EffectType 为连续 ID（1–28）；CounterHandler 重构为单枚举+条件+标签三维设计；补充 PlayerBattleState 关键字段说明；CardTag 新增 Reflect(32768) |
-| V3.1 | 2025-02-25 | 清理旧版 API；统一 EffectType 体系（核心类型 1-10）；完善 Handler 列表 |
-| V3.0 | 2024-01 | Handler 模块化重构；PlayerId 改为 string；新增 PlayedCard |
-| V2.0 | 2024-01 | 引入 4 层结算栈；TargetResolver 分离 |
-| V1.0 | 初始 | 基础结算引擎 |
+| V5.0 | 2026-02-28 | 修正 EffectType ID 表（对齐实际枚举：跳跃分布 1,2-8,10-14,20-29）；更新 Handler 注册表（移除不存在的 ArmorBreak/ExecuteKill/HealTeam；新增 DoubleStrength(29)）；新增效果流程指向 ConfigSystem.md |
+| V4.0 | 2026-02-26 | 彻底移除旧版 100+ 兼容范围；统一 EffectType 体系；CounterHandler 重构；补充 PlayerBattleState 字段；CardTag 新增 Reflect |
+| V3.1 | 2026-02-25 | 清理旧版 API；完善 Handler 列表 |
+| V3.0 | 初期 | Handler 模块化重构；PlayerId 改为 string；新增 PlayedCard |
 
 ---
 
@@ -489,5 +485,6 @@ public class PlayerBattleState
 |------|------|
 | 结算规则设计 | [../GameDesign/SettlementRules.md](../GameDesign/SettlementRules.md) |
 | 卡牌系统设计 | [../GameDesign/CardSystem.md](../GameDesign/CardSystem.md) |
+| 配置系统说明 | [ConfigSystem.md](ConfigSystem.md) |
 | 快速入门 | [QuickStart.md](QuickStart.md) |
 | 代码位置 | `Shared/BattleCore/Settlement/` |

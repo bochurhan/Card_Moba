@@ -8,8 +8,8 @@ namespace CardMoba.Tools.ExcelConverter.Converters;
 /// 卡牌 Excel/CSV 转换器
 /// 
 /// 支持的输入格式：
-///   - Cards_Template_Cards.csv  → cards.json
-///   - Cards_Template_Effects.csv → effects.json
+///   - Cards.csv     → cards.json
+///   - Effects.csv   → effects.json
 ///   - Cards.xlsx (包含 Cards 和 Effects 两个工作表) → cards.json + effects.json
 /// </summary>
 public class CardExcelConverter
@@ -37,19 +37,19 @@ public class CardExcelConverter
         var result = new ConvertResult { Success = true };
 
         // 查找输入文件
-        string? cardsCsvPath = FindFile(inputDir, "Cards_Template_Cards.csv", "*_Cards.csv", "cards.csv");
-        string? effectsCsvPath = FindFile(inputDir, "Cards_Template_Effects.csv", "*_Effects.csv", "effects.csv");
+        string? cardsCsvPath = FindFile(inputDir, "Cards.csv", "*_Cards.csv", "cards.csv");
+        string? effectsCsvPath = FindFile(inputDir, "Effects.csv", "*_Effects.csv", "effects.csv");
 
         if (cardsCsvPath == null)
         {
-            result.Errors.Add("找不到卡牌 CSV 文件 (Cards_Template_Cards.csv)");
+            result.Errors.Add("找不到卡牌 CSV 文件 (Cards.csv)");
             result.Success = false;
             return result;
         }
 
         if (effectsCsvPath == null)
         {
-            result.Errors.Add("找不到效果 CSV 文件 (Cards_Template_Effects.csv)");
+            result.Errors.Add("找不到效果 CSV 文件 (Effects.csv)");
             result.Success = false;
             return result;
         }

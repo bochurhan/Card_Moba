@@ -82,9 +82,10 @@ Effects表：
 | C | EffectType | enum | ✅ | 效果类型（决定结算层） | GainArmor |
 | D | Value | int | ✅ | 效果数值 | 4 |
 | E | Duration | int | ❌ | 持续回合数（0=即时） | 0 |
-| F | TargetOverride | enum | ❌ | 覆盖目标类型（留空=使用卡牌默认） | Self |
-| G | TriggerCondition | string | ❌ | 触发条件（触发式效果用） | |
-| H | IsDelayed | bool | ❌ | 是否跨回合生效（反制牌=TRUE） | FALSE |
+| F | HitCount | int | ❌ | 命中次数（多段伤害专用，如飞剑回旋镖=4；留空=1次） | 4 |
+| G | TargetOverride | enum | ❌ | 覆盖目标类型（留空=使用卡牌默认） | Self |
+| H | TriggerCondition | string | ❌ | 触发条件（触发式效果用） | EnemyPlayedDamagePlanCard |
+| I | IsDelayed | bool | ❌ | 是否跨回合生效（反制牌=TRUE） | FALSE |
 
 ### 📊 EffectType 与结算层
 
