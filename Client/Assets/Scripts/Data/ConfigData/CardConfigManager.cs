@@ -436,11 +436,8 @@ namespace CardMoba.Client.Data.ConfigData
                 effect.TargetOverride = ParseEnum(data.targetOverride, CardTargetType.Self);
             }
 
-            // V3.0: 处理结算层级（显式指定优先，否则自动推断）
-            if (data.layer > 0)
-            {
-                effect.Layer = (SettlementLayer)data.layer;
-            }
+            // V3.0: 结算层级由 CardEffect.GetSettlementLayer() 根据 EffectType 自动推断。
+            // 若配置了显式 layer 值，可在 EffectParams 中扩展，此处暂不需要手动赋值。
 
             // V3.0: 处理效果参数
             if (data.effectParams != null)

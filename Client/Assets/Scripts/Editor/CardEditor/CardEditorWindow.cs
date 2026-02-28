@@ -467,15 +467,8 @@ namespace CardMoba.Client.Editor.CardEditor
                 EffectType.Vulnerable => $"易伤{effect.Value}%",
                 EffectType.Stun => $"眩晕{effect.Value}回合",
                 EffectType.Draw => $"抽{effect.Value}张牌",
-                // 旧版兼容类型
-                EffectType.DealDamage => $"造成{effect.Value}点伤害",
-                EffectType.GainArmor => $"获得{effect.Value}点护甲",
-                EffectType.GainShield => $"获得{effect.Value}点护盾",
-                EffectType.GainStrength => $"获得{effect.Value}点力量",
                 EffectType.Thorns => $"反伤{effect.Value}%",
                 EffectType.Lifesteal => $"吸血{effect.Value}%",
-                EffectType.CounterFirstDamage => "反制敌方首张伤害牌",
-                EffectType.CounterCard => "反制目标卡牌",
                 EffectType.GainEnergy => $"获得{effect.Value}点能量",
                 _ => $"{effect.EffectType}: {effect.Value}"
             };
@@ -616,7 +609,7 @@ namespace CardMoba.Client.Editor.CardEditor
             {
                 EffectId = effectId,
                 CardId = card.CardId,
-                EffectType = EffectType.DealDamage,  // 使用 V3.0 兼容类型
+                EffectType = EffectType.Damage,
                 Value = 5,
                 Duration = 0
             };
@@ -1210,29 +1203,20 @@ namespace CardMoba.Client.Editor.CardEditor
         {
             return name.ToLowerInvariant() switch
             {
-                // V3.0 核心类型
-                "damage" => EffectType.Damage,
-                "shield" => EffectType.Shield,
-                "armor" => EffectType.Armor,
+                "damage" or "dealdamage" => EffectType.Damage,
+                "shield" or "gainshield" => EffectType.Shield,
+                "armor" or "gainarmor" => EffectType.Armor,
                 "heal" => EffectType.Heal,
-                "counter" => EffectType.Counter,
-                "attackbuff" => EffectType.AttackBuff,
+                "counter" or "counterfirstdamage" or "countercard" => EffectType.Counter,
+                "attackbuff" or "gainstrength" => EffectType.AttackBuff,
                 "reflect" => EffectType.Reflect,
                 "vulnerable" => EffectType.Vulnerable,
                 "stun" => EffectType.Stun,
-                "draw" => EffectType.Draw,
-                // 旧版兼容类型
-                "dealdamage" => EffectType.DealDamage,
-                "gainshield" => EffectType.GainShield,
-                "gainarmor" => EffectType.GainArmor,
+                "draw" or "drawcard" or "drawcards" => EffectType.Draw,
                 "lifesteal" => EffectType.Lifesteal,
-                "gainstrength" => EffectType.GainStrength,
                 "thorns" => EffectType.Thorns,
-                "counterfirstdamage" => EffectType.CounterFirstDamage,
-                "countercard" => EffectType.CounterCard,
-                "drawcard" or "drawcards" => EffectType.Draw,
                 "gainenergy" => EffectType.GainEnergy,
-                _ => EffectType.DealDamage
+                _ => EffectType.Damage
             };
         }
 

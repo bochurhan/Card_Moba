@@ -1,10 +1,13 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using System;
 using System.Collections.Generic;
 using CardMoba.BattleCore.Context;
 using CardMoba.ConfigModels.Card;
 using CardMoba.Protocol.Enums;
+using CardMoba.Client.GameLogic.RoundFlow;
+using CardMoba.Client.Presentation.UI.Components;
 
 namespace CardMoba.Client.Presentation.Battle
 {
@@ -57,6 +60,9 @@ namespace CardMoba.Client.Presentation.Battle
         [SerializeField] private ScrollRect _logScrollRect;
         [SerializeField] private TextMeshProUGUI _logText;
 
+        [Header("── 计时器 UI ──")]
+        [SerializeField] private RoundTimerUI _roundTimerUI;
+
         [Header("── 游戏结束面板 ──")]
         [SerializeField] private GameObject _gameOverPanel;
         [SerializeField] private TextMeshProUGUI _gameOverText;
@@ -67,6 +73,16 @@ namespace CardMoba.Client.Presentation.Battle
         // ══════════════════════════════════════
 
         private GameLogic.BattleGameManager _gameManager;
+
+        /// <summary>
+        /// 客户端阶段计时器（MonoBehaviour），挂在同一 GameObject 或子节点上。
+        /// 由 Awake() 自动查找，也可在 Inspector 中手动绑定。
+        /// </summary>
+        private RoundPhaseTimerClient _phaseTimer;
+
+        /// <summary>计时归零后是否已锁定操作</summary>
+        private bool _isTimerLocked;
+
         private int _selectedCardIndex = -1;
         private List<GameObject> _cardObjects = new List<GameObject>();
         private List<string> _logMessages = new List<string>();
@@ -80,14 +96,32 @@ namespace CardMoba.Client.Presentation.Battle
 
         private void Awake()
         {
+            // ── 确保场景中存在 EventSystem（UI点击必需）──
+            EnsureEventSystem();
+
+            // ── 确保当前 Canvas 有 GraphicRaycaster（Button点击必需）──
+            EnsureGraphicRaycaster();
+
             // 初始化游戏管理器
             _gameManager = new GameLogic.BattleGameManager();
 
-            // 订阅事件
+            // ── 查找或创建 RoundPhaseTimerClient ──
+            _phaseTimer = GetComponent<RoundPhaseTimerClient>();
+            if (_phaseTimer == null)
+                _phaseTimer = gameObject.AddComponent<RoundPhaseTimerClient>();
+
+            // ── 将计时器绑定到 RoundTimerUI ──
+            if (_roundTimerUI != null)
+                _roundTimerUI.BindTimer(_phaseTimer);
+
+            // ── 订阅计时器锁定事件 ──
+            _phaseTimer.OnLocalTimerExpired += OnTimerLocked;
+
+            // 订阅游戏管理器事件
             _gameManager.OnStateChanged += RefreshAllUI;
             _gameManager.OnLogMessage += AddLogMessage;
             _gameManager.OnGameOver += ShowGameOver;
-            _gameManager.OnPhaseChanged += UpdatePhaseText;
+            _gameManager.OnPhaseChanged += OnGameManagerPhaseChanged;
 
             // 绑定按钮事件
             if (_endTurnButton != null)
@@ -109,13 +143,17 @@ namespace CardMoba.Client.Presentation.Battle
 
         private void OnDestroy()
         {
+            // 清理计时器事件
+            if (_phaseTimer != null)
+                _phaseTimer.OnLocalTimerExpired -= OnTimerLocked;
+
             // 清理事件订阅
             if (_gameManager != null)
             {
                 _gameManager.OnStateChanged -= RefreshAllUI;
                 _gameManager.OnLogMessage -= AddLogMessage;
                 _gameManager.OnGameOver -= ShowGameOver;
-                _gameManager.OnPhaseChanged -= UpdatePhaseText;
+                _gameManager.OnPhaseChanged -= OnGameManagerPhaseChanged;
             }
 
             // 清理按钮事件
@@ -124,6 +162,50 @@ namespace CardMoba.Client.Presentation.Battle
 
             if (_restartButton != null)
                 _restartButton.onClick.RemoveListener(OnRestartClicked);
+        }
+
+        // ══════════════════════════════════════
+        // 场景基础组件保障
+        // ══════════════════════════════════════
+
+        /// <summary>
+        /// 确保场景中存在 EventSystem。
+        /// Unity UI 的所有点击事件都依赖 EventSystem，缺少时按钮完全无响应。
+        /// </summary>
+        private void EnsureEventSystem()
+        {
+            if (FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
+            {
+                GameObject esGo = new GameObject("EventSystem");
+                esGo.AddComponent<UnityEngine.EventSystems.EventSystem>();
+                esGo.AddComponent<UnityEngine.EventSystems.StandaloneInputModule>();
+                DontDestroyOnLoad(esGo);
+                Debug.Log("[BattleUI] 自动创建 EventSystem");
+            }
+        }
+
+        /// <summary>
+        /// 确保本 GameObject 所在的 Canvas 上有 GraphicRaycaster。
+        /// 没有 GraphicRaycaster，Canvas 内的所有 Button 点击都不会被检测到。
+        /// </summary>
+        private void EnsureGraphicRaycaster()
+        {
+            Canvas canvas = GetComponentInParent<Canvas>();
+            if (canvas == null)
+            {
+                // BattleUIManager 本身就挂在 Canvas 上
+                canvas = GetComponent<Canvas>();
+            }
+            if (canvas == null)
+            {
+                Debug.LogError("[BattleUI] 找不到 Canvas！请将 BattleUIManager 挂在 Canvas GameObject 上。");
+                return;
+            }
+            if (canvas.GetComponent<GraphicRaycaster>() == null)
+            {
+                canvas.gameObject.AddComponent<GraphicRaycaster>();
+                Debug.Log("[BattleUI] 自动添加 GraphicRaycaster 到 Canvas");
+            }
         }
 
         // ══════════════════════════════════════
@@ -137,6 +219,7 @@ namespace CardMoba.Client.Presentation.Battle
         {
             _logMessages.Clear();
             _selectedCardIndex = -1;
+            _isTimerLocked = false;
 
             if (_gameOverPanel != null)
                 _gameOverPanel.SetActive(false);
@@ -146,7 +229,7 @@ namespace CardMoba.Client.Presentation.Battle
 
             _gameManager.StartBattle();
 
-            AddLogMessage(">>> 对局开始! 选择一张手牌点击出牌 <<<");
+            AddLogMessage(">>> 对局开始! 操作窗口期 10 秒 <<<");
         }
 
         // ══════════════════════════════════════
@@ -239,9 +322,25 @@ namespace CardMoba.Client.Presentation.Battle
             _cardObjects.Clear();
             _selectedCardIndex = -1;
 
-            // 获取玩家手牌
+            // ── 诊断：检查必要引用是否绑定 ──
             PlayerBattleState player = _gameManager.GetHumanPlayer();
-            if (player == null || _cardPrefab == null || _handContainer == null) return;
+            if (player == null)
+            {
+                Debug.LogError("[BattleUI] RefreshHandCards: GetHumanPlayer() 返回 null！");
+                return;
+            }
+            if (_cardPrefab == null)
+            {
+                Debug.LogError("[BattleUI] RefreshHandCards: _cardPrefab 未绑定！请在 Inspector 中拖拽赋值。");
+                return;
+            }
+            if (_handContainer == null)
+            {
+                Debug.LogError("[BattleUI] RefreshHandCards: _handContainer 未绑定！请在 Inspector 中拖拽赋值。");
+                return;
+            }
+
+            Debug.Log($"[BattleUI] 刷新手牌，共 {player.Hand.Count} 张");
 
             // 为每张手牌创建UI
             for (int i = 0; i < player.Hand.Count; i++)
@@ -254,6 +353,7 @@ namespace CardMoba.Client.Presentation.Battle
                 SetupCardUI(cardObj, card, i);
 
                 _cardObjects.Add(cardObj);
+                Debug.Log($"[BattleUI] 创建手牌[{i}]: {card.CardName} | 费用={card.EnergyCost} | 类型={card.TrackType}");
             }
         }
 
@@ -290,21 +390,37 @@ namespace CardMoba.Client.Presentation.Battle
             {
                 int capturedIndex = index; // 闭包捕获
                 btn.onClick.AddListener(() => OnCardClicked(capturedIndex));
+                Debug.Log($"[BattleUI] 手牌[{index}] Button 已绑定，interactable={btn.interactable}");
+            }
+            else
+            {
+                Debug.LogError($"[BattleUI] 手牌[{index}] {cardObj.name} 上找不到 Button 组件！");
             }
         }
 
         /// <summary>
         /// 刷新按钮状态。
+        /// 当计时器锁定时，即使是玩家回合也不允许操作。
+        /// 同时同步所有手牌按钮的可交互状态。
         /// </summary>
         private void RefreshButtons()
         {
-            bool canOperate = _gameManager.IsPlayerTurn && !_gameManager.IsGameOver;
+            bool canOperate = _gameManager.IsPlayerTurn && !_gameManager.IsGameOver && !_isTimerLocked;
 
             if (_endTurnButton != null)
                 _endTurnButton.interactable = canOperate;
 
             if (_endTurnButtonText != null)
-                _endTurnButtonText.text = canOperate ? "结束回合" : "等待中...";
+                _endTurnButtonText.text = canOperate ? "结束回合" : (_isTimerLocked ? "等待结算..." : "等待中...");
+
+            // ── 同步所有手牌按钮的可交互状态 ──
+            for (int i = 0; i < _cardObjects.Count; i++)
+            {
+                if (_cardObjects[i] == null) continue;
+                Button btn = _cardObjects[i].GetComponent<Button>();
+                if (btn != null)
+                    btn.interactable = canOperate;
+            }
         }
 
         /// <summary>
@@ -325,12 +441,39 @@ namespace CardMoba.Client.Presentation.Battle
         /// </summary>
         private void OnCardClicked(int handIndex)
         {
-            if (!_gameManager.IsPlayerTurn || _gameManager.IsGameOver) return;
+            // ── 诊断日志（确认点击已到达此处）──
+            Debug.Log($"[BattleUI] OnCardClicked({handIndex}) | IsPlayerTurn={_gameManager.IsPlayerTurn} | IsGameOver={_gameManager.IsGameOver} | IsTimerLocked={_isTimerLocked}");
+
+            if (!_gameManager.IsPlayerTurn)
+            {
+                AddLogMessage("<color=#ff8888>当前不是你的回合，无法出牌</color>");
+                return;
+            }
+            if (_gameManager.IsGameOver)
+            {
+                AddLogMessage("<color=#ff8888>游戏已结束</color>");
+                return;
+            }
+            if (_isTimerLocked)
+            {
+                AddLogMessage("<color=#ff8888>时间已到，等待结算中...</color>");
+                return;
+            }
 
             PlayerBattleState player = _gameManager.GetHumanPlayer();
-            if (player == null || handIndex < 0 || handIndex >= player.Hand.Count) return;
+            if (player == null)
+            {
+                Debug.LogError("[BattleUI] 玩家状态为 null！");
+                return;
+            }
+            if (handIndex < 0 || handIndex >= player.Hand.Count)
+            {
+                Debug.LogError($"[BattleUI] 手牌索引越界: {handIndex}，手牌数量: {player.Hand.Count}");
+                return;
+            }
 
             CardConfig card = player.Hand[handIndex];
+            Debug.Log($"[BattleUI] 尝试打出: {card.CardName}(ID={card.CardId}) 类型={card.TrackType} 费用={card.EnergyCost} 当前能量={player.Energy}");
 
             // 能量检查
             if (player.Energy < card.EnergyCost)
@@ -350,6 +493,7 @@ namespace CardMoba.Client.Presentation.Battle
                 result = _gameManager.PlayerCommitPlanCard(handIndex);
             }
 
+            AddLogMessage($"<color=#aaffaa>出牌: {card.CardName} → {result}</color>");
             Debug.Log($"[BattleUI] 出牌结果: {result}");
         }
 
@@ -377,7 +521,49 @@ namespace CardMoba.Client.Presentation.Battle
         // ══════════════════════════════════════
 
         /// <summary>
-        /// 更新阶段提示文字。
+        /// 计时器归零时：锁定玩家输入，自动触发结束回合（模拟服务端推进阶段）。
+        /// </summary>
+        private void OnTimerLocked()
+        {
+            _isTimerLocked = true;
+            RefreshButtons();
+            AddLogMessage("<color=#ffcc44>⏱ 操作时间结束，自动结算...</color>");
+            Debug.Log("[BattleUI] 操作窗口关闭 → 自动触发结算");
+
+            // 本地单机模式：计时器到期时自动推进回合（模拟服务端推送结算）
+            if (_gameManager.IsPlayerTurn && !_gameManager.IsGameOver)
+            {
+                _gameManager.PlayerEndTurn();
+            }
+        }
+
+        /// <summary>
+        /// 接收 BattleGameManager 的阶段变更通知，同时驱动计时器和静态文字。
+        /// </summary>
+        private void OnGameManagerPhaseChanged(string phaseDesc)
+        {
+            // 旧的文字显示保留（兼容现有 _phaseText）
+            if (_phaseText != null)
+                _phaseText.text = phaseDesc;
+
+            // 根据阶段描述判断是否是操作窗口期，驱动计时器
+            if (phaseDesc.Contains("操作期"))
+            {
+                // 模拟服务端推送：用当前 UTC 时间戳启动操作窗口期
+                long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                _phaseTimer?.OnServerPhaseChange(RoundPhase.OperationWindow, nowMs);
+                _isTimerLocked = false;
+                RefreshButtons();
+            }
+            else if (phaseDesc.Contains("结算"))
+            {
+                // 结算阶段：显示静态文字，停止计时器倒计时显示
+                _roundTimerUI?.ShowStaticPhase("结算中...");
+            }
+        }
+
+        /// <summary>
+        /// 更新阶段提示文字（保留兼容旧签名的包装）。
         /// </summary>
         private void UpdatePhaseText(string phaseDesc)
         {

@@ -88,6 +88,15 @@ namespace CardMoba.Client.Editor.Tools
         [MenuItem("CardMoba Tools/生成战斗UI")]
         public static void BuildBattleUI()
         {
+            // ── 0. 确保场景中有 EventSystem ──
+            if (Object.FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
+            {
+                GameObject esGo = new GameObject("EventSystem");
+                esGo.AddComponent<UnityEngine.EventSystems.EventSystem>();
+                esGo.AddComponent<UnityEngine.EventSystems.StandaloneInputModule>();
+                Debug.Log("[BattleUIBuilder] 已自动创建 EventSystem");
+            }
+
             // ── 1. 创建 Canvas ──
             GameObject canvasObj = new GameObject("BattleCanvas");
             Canvas canvas = canvasObj.AddComponent<Canvas>();
@@ -103,6 +112,9 @@ namespace CardMoba.Client.Editor.Tools
 
             // 挂载 BattleUIManager
             var uiManager = canvasObj.AddComponent<Presentation.Battle.BattleUIManager>();
+
+            // ── 添加 RoundTimerUI 组件 ──
+            var roundTimerUI = canvasObj.AddComponent<CardMoba.Client.Presentation.UI.Components.RoundTimerUI>();
 
             // ── 2. 背景 ──
             GameObject bg = CreateImage(canvasObj.transform, "Background",
@@ -328,6 +340,9 @@ namespace CardMoba.Client.Editor.Tools
             so.FindProperty("_gameOverText").objectReferenceValue = gameOverText.GetComponent<TextMeshProUGUI>();
             so.FindProperty("_restartButton").objectReferenceValue = restartBtn.GetComponent<Button>();
 
+            // 计时器 UI
+            so.FindProperty("_roundTimerUI").objectReferenceValue = roundTimerUI;
+
             so.ApplyModifiedProperties();
 
             // 选中新创建的 Canvas
@@ -454,6 +469,7 @@ namespace CardMoba.Client.Editor.Tools
             tmp.color = color;
             tmp.alignment = alignment;
             tmp.richText = true;
+            tmp.raycastTarget = false; // ← 关闭 RaycastTarget，防止文字遮挡父级 Button 的点击
 
             return obj;
         }

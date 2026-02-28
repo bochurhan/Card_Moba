@@ -96,7 +96,7 @@ namespace CardMoba.Client.Editor.CardEditor
         public string EffectId = "";
         public int CardId;
         /// <summary>效果类型 —— 使用 Shared/Protocol/Enums/EffectType</summary>
-        public EffectType EffectType = EffectType.DealDamage;
+        public EffectType EffectType = EffectType.Damage;
         public int Value;
         public int Duration;
         public string TargetOverride = "";
