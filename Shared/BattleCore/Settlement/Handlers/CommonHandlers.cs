@@ -1,6 +1,7 @@
-using CardMoba.BattleCore.Buff;
+﻿using CardMoba.BattleCore.Buff;
 using CardMoba.BattleCore.Context;
 using CardMoba.ConfigModels.Card;
+using CardMoba.Protocol.Enums;
 
 #pragma warning disable CS8632 // nullable 注解警告在非 nullable 上下文中使用
 
@@ -44,7 +45,7 @@ namespace CardMoba.BattleCore.Settlement.Handlers
                 {
                     BuffId          = $"armor_{source.PlayerId}",
                     BuffType        = BuffType.Armor,
-                    SourceId        = source.PlayerId,
+                    SourcePlayerId = source.PlayerId,
                     Value           = effect.Value,
                     Stacks          = 1,
                     RemainingRounds = duration,
@@ -104,7 +105,7 @@ namespace CardMoba.BattleCore.Settlement.Handlers
                 {
                     BuffId          = $"strength_{source.PlayerId}",
                     BuffType        = BuffType.Strength,
-                    SourceId        = source.PlayerId,
+                    SourcePlayerId = source.PlayerId,
                     Value           = change,
                     Stacks          = 1,
                     RemainingRounds = duration,
@@ -160,7 +161,7 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             {
                 BuffId          = $"vulnerable_{source.PlayerId}",
                 BuffType        = BuffType.Vulnerable,
-                SourceId        = source.PlayerId,
+                SourcePlayerId = source.PlayerId,
                 Value           = effect.Value > 0 ? effect.Value : 1,
                 Stacks          = 1,
                 RemainingRounds = duration,
@@ -210,7 +211,7 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             {
                 BuffId          = $"weak_{source.PlayerId}",
                 BuffType        = BuffType.Weak,
-                SourceId        = source.PlayerId,
+                SourcePlayerId = source.PlayerId,
                 Value           = effect.Value > 0 ? effect.Value : 1,
                 Stacks          = 1,
                 RemainingRounds = duration,
@@ -260,7 +261,7 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             {
                 BuffId          = $"dmgred_{source.PlayerId}",
                 BuffType        = BuffType.DamageReduction,
-                SourceId        = source.PlayerId,
+                SourcePlayerId = source.PlayerId,
                 Value           = effect.Value,
                 Stacks          = 1,
                 RemainingRounds = duration,
@@ -310,7 +311,7 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             {
                 BuffId          = $"invincible_{source.PlayerId}",
                 BuffType        = BuffType.Invincible,
-                SourceId        = source.PlayerId,
+                SourcePlayerId = source.PlayerId,
                 Value           = 0,
                 Stacks          = 1,
                 RemainingRounds = duration,
@@ -361,7 +362,7 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             {
                 BuffId          = $"lifesteal_{source.PlayerId}",
                 BuffType        = BuffType.Lifesteal,
-                SourceId        = source.PlayerId,
+                SourcePlayerId = source.PlayerId,
                 Value           = effect.Value,     // 吸血百分比
                 Stacks          = 1,
                 RemainingRounds = duration,
@@ -412,7 +413,7 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             {
                 BuffId          = $"thorns_{source.PlayerId}",
                 BuffType        = BuffType.Thorns,
-                SourceId        = source.PlayerId,
+                SourcePlayerId = source.PlayerId,
                 Value           = effect.Value,     // 反伤固定值
                 Stacks          = 1,
                 RemainingRounds = duration,
@@ -461,7 +462,7 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             {
                 BuffId          = $"silence_{source.PlayerId}",
                 BuffType        = BuffType.Silence,
-                SourceId        = source.PlayerId,
+                SourcePlayerId = source.PlayerId,
                 Value           = 0,
                 Stacks          = 1,
                 RemainingRounds = duration,
@@ -511,7 +512,7 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             {
                 BuffId          = $"slow_{source.PlayerId}",
                 BuffType        = BuffType.Root,
-                SourceId        = source.PlayerId,
+                SourcePlayerId = source.PlayerId,
                 Value           = 0,
                 Stacks          = 1,
                 RemainingRounds = duration,
@@ -563,7 +564,7 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             {
                 BuffId          = $"armoronhit_{source.PlayerId}",
                 BuffType        = BuffType.Armor,
-                SourceId        = source.PlayerId,
+                SourcePlayerId = source.PlayerId,
                 Value           = effect.Value,
                 Stacks          = 1,
                 RemainingRounds = duration,
@@ -582,6 +583,7 @@ namespace CardMoba.BattleCore.Settlement.Handlers
 
     /// <summary>
     /// 抽牌效果处理器 —— 处理 Draw 效果（瞬时，无 Buff）。
+    /// 若目标身上有 NoDrawThisTurn Buff，则本次抽牌被拦截。
     /// </summary>
     public class DrawHandler : IEffectHandler
     {
@@ -596,6 +598,14 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             if (!drawTarget.IsAlive)
             {
                 ctx.RoundLog.Add($"[DrawHandler] 目标玩家{drawTarget.PlayerId}已死亡，抽牌无效");
+                return;
+            }
+
+            // ── 检查"禁止抽牌"Debuff ──
+            var buffMgr = ctx.GetBuffManager(drawTarget.PlayerId);
+            if (buffMgr != null && buffMgr.HasBuffType(BuffType.NoDrawThisTurn))
+            {
+                ctx.RoundLog.Add($"[DrawHandler] 玩家{drawTarget.PlayerId}持有「禁止抽牌」状态，本次抽牌被取消");
                 return;
             }
 
@@ -672,11 +682,103 @@ namespace CardMoba.BattleCore.Settlement.Handlers
                 int lastIndex = discardTarget.Hand.Count - 1;
                 var discardedCard = discardTarget.Hand[lastIndex];
                 discardTarget.Hand.RemoveAt(lastIndex);
-                discardTarget.Discard.Add(discardedCard);
+                discardTarget.DiscardPile.Add(discardedCard);
                 actualDiscarded++;
             }
 
             ctx.RoundLog.Add($"[DiscardHandler] 玩家{discardTarget.PlayerId}弃置{actualDiscarded}张牌");
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 禁止抽牌 Handler —— 施加 NoDrawThisTurn Buff（本回合生效）
+    // ═══════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 禁止抽牌效果处理器 —— 处理 BanDraw 效果。
+    /// 对施法者自身施加 NoDrawThisTurn Buff（持续1回合），
+    /// DrawHandler 在执行时会检测该 Buff 并拦截后续所有抽牌。
+    /// </summary>
+    public class BanDrawHandler : IEffectHandler
+    {
+        public void Execute(
+            PlayedCard card,
+            CardEffect effect,
+            PlayerBattleState source,
+            PlayerBattleState? target,
+            BattleContext ctx)
+        {
+            // BanDraw 始终作用于施法者自身
+            if (!source.IsAlive)
+            {
+                ctx.RoundLog.Add($"[BanDrawHandler] 施法者{source.PlayerId}已死亡，禁止抽牌施加无效");
+                return;
+            }
+
+            var mgr = ctx.GetBuffManager(source.PlayerId);
+            if (mgr == null)
+            {
+                ctx.RoundLog.Add($"[BanDrawHandler] 找不到玩家{source.PlayerId}的BuffManager");
+                return;
+            }
+
+            // 持续 1 回合（当前回合剩余时间内），不可叠加
+            mgr.AddBuff(new BuffInstance
+            {
+                BuffId          = $"nodraw_{source.PlayerId}",
+                BuffType        = BuffType.NoDrawThisTurn,
+                SourcePlayerId = source.PlayerId,
+                Value           = 0,
+                Stacks          = 1,
+                RemainingRounds = 1,
+                IsPermanent     = false,
+                IsDispellable   = false,   // 不可被驱散，机制型限制
+                TriggerTiming   = BuffTriggerTiming.None,
+                StackRule       = BuffStackRule.RefreshDuration,
+            });
+            ctx.RoundLog.Add($"[BanDrawHandler] 玩家{source.PlayerId}本回合禁止抽牌");
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 力量翻倍 Handler —— 消耗型瞬时效果，不走 BuffManager
+    // ═══════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 力量翻倍效果处理器 —— 处理 DoubleStrength 效果（「突破极限」专属）。
+    /// 
+    /// 规则：
+    ///   - 将施法者当前 Strength 值×2（若为0则保持0，翻倍无意义）
+    ///   - 属于消耗型效果（卡牌打出后消耗，不进入弃牌堆，由 CardConfig.IsExhaust 控制）
+    ///   - 瞬时执行，不挂 Buff，不受持续时间影响
+    /// </summary>
+    public class DoubleStrengthHandler : IEffectHandler
+    {
+        public void Execute(
+            PlayedCard card,
+            CardEffect effect,
+            PlayerBattleState source,
+            PlayerBattleState? target,
+            BattleContext ctx)
+        {
+            // 始终作用于施法者自身，忽略 target
+            if (!source.IsAlive)
+            {
+                ctx.RoundLog.Add($"[DoubleStrengthHandler] 施法者{source.PlayerId}已死亡，力量翻倍无效");
+                return;
+            }
+
+            int before = source.Strength;
+
+            if (before == 0)
+            {
+                // 力量为0时翻倍没有意义，给出提示但不报错
+                ctx.RoundLog.Add($"[DoubleStrengthHandler] 玩家{source.PlayerId}当前力量为0，翻倍无效果");
+                return;
+            }
+
+            source.Strength = before * 2;
+            ctx.RoundLog.Add($"[DoubleStrengthHandler] 玩家{source.PlayerId}力量翻倍：{before} → {source.Strength}");
         }
     }
 }

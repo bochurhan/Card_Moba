@@ -1,6 +1,7 @@
-using CardMoba.BattleCore.Buff;
+﻿using CardMoba.BattleCore.Buff;
 using CardMoba.BattleCore.Context;
 using CardMoba.ConfigModels.Card;
+using CardMoba.Protocol.Enums;
 
 #pragma warning disable CS8632 // nullable 注解警告在非 nullable 上下文中使用
 
@@ -38,7 +39,7 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             {
                 BuffId    = $"stun_{source.PlayerId}",
                 BuffType  = BuffType.Stun,
-                SourceId  = source.PlayerId,
+                SourcePlayerId = source.PlayerId,
                 RemainingRounds = duration,
                 IsPermanent     = false,
                 IsDispellable   = effect.AppliesBuff ? effect.IsBuffDispellable : true,

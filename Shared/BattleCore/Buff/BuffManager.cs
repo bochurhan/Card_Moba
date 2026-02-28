@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using CardMoba.BattleCore.Context;
 using CardMoba.BattleCore.Random;
+using CardMoba.Protocol.Enums;
 
 namespace CardMoba.BattleCore.Buff
 {

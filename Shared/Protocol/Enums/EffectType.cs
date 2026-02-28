@@ -63,6 +63,9 @@ namespace CardMoba.Protocol.Enums
         /// <summary>受击获甲（受到伤害时获得护甲）</summary>
         ArmorOnHit = 13,
 
+        /// <summary>穿透（伤害无视目标护甲/护盾，直接扣血）</summary>
+        Pierce = 14,
+
         // ═══════════════════════════════════════════════════════════
         // Layer 3 — 全局功能收尾层
         // ═══════════════════════════════════════════════════════════
@@ -93,5 +96,11 @@ namespace CardMoba.Protocol.Enums
 
         /// <summary>减速（降低目标的行动顺序优先级）</summary>
         Slow = 28,
+
+        /// <summary>力量翻倍（将施法者当前力量值×2，消耗型）</summary>
+        DoubleStrength = 29,
+
+        /// <summary>施加"禁止抽牌"Debuff（本回合剩余时间内无法抽牌）</summary>
+        BanDraw = 30,
     }
 }

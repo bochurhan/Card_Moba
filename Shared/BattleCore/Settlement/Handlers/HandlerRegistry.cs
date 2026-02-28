@@ -53,8 +53,10 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             Register(EffectType.Draw,       new DrawHandler());
             Register(EffectType.Discard,    new DiscardHandler());
             Register(EffectType.GainEnergy, new EnergyHandler());
-            Register(EffectType.Silence,    new SilenceHandler());
-            Register(EffectType.Slow,       new SlowHandler());
+            Register(EffectType.Silence,        new SilenceHandler());
+            Register(EffectType.Slow,           new SlowHandler());
+            Register(EffectType.DoubleStrength, new DoubleStrengthHandler());
+            Register(EffectType.BanDraw,        new BanDrawHandler());
 
             _initialized = true;
         }

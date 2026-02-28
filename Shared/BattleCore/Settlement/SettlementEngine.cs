@@ -616,6 +616,10 @@ namespace CardMoba.BattleCore.Settlement
         /// <summary>
         /// 执行单个效果 —— 通过 HandlerRegistry 找到对应 Handler 并执行。
         /// 若无对应 Handler，则记录警告日志并跳过（不抛异常）。
+        /// 
+        /// 目标优先级：
+        ///   1. effect.TargetOverride（单个效果的目标覆盖，如护盾牌自身效果覆盖为 Self）
+        ///   2. card.ResolvedTargets（整张卡的解析目标）
         /// </summary>
         private void ExecuteEffect(BattleContext ctx, PlayedCard card, CardEffect effect, PlayerBattleState source)
         {
@@ -626,6 +630,16 @@ namespace CardMoba.BattleCore.Settlement
                 return;
             }
 
+            // ── 优先使用 effect.TargetOverride 覆盖目标 ──
+            if (effect.TargetOverride.HasValue)
+            {
+                PlayerBattleState? overrideTarget = ResolveTargetOverride(
+                    effect.TargetOverride.Value, source, card, ctx);
+                handler.Execute(card, effect, source, overrideTarget, ctx);
+                return;
+            }
+
+            // ── 使用卡牌整体的解析目标 ──
             var targets = card.ResolvedTargets;
             if (targets == null || targets.Count == 0)
             {
@@ -638,6 +652,40 @@ namespace CardMoba.BattleCore.Settlement
                     var target = ctx.GetPlayer(targetId);
                     handler.Execute(card, effect, source, target, ctx);
                 }
+            }
+        }
+
+        /// <summary>
+        /// 根据 CardTargetType 解析单个效果的覆盖目标。
+        /// </summary>
+        private PlayerBattleState? ResolveTargetOverride(
+            CardTargetType targetType,
+            PlayerBattleState source,
+            PlayedCard card,
+            BattleContext ctx)
+        {
+            switch (targetType)
+            {
+                case CardTargetType.Self:
+                    return source;
+
+                case CardTargetType.CurrentEnemy:
+                case CardTargetType.AnyEnemy:
+                case CardTargetType.AllEnemies:
+                    // 从 ResolvedTargets 取第一个，或从所有玩家里找对手
+                    if (card.ResolvedTargets?.Count > 0)
+                        return ctx.GetPlayer(card.ResolvedTargets[0]);
+                    foreach (var p in ctx.Players)
+                        if (p.TeamId != source.TeamId && p.IsAlive)
+                            return p;
+                    return null;
+
+                case CardTargetType.AnyAlly:
+                case CardTargetType.AllAllies:
+                    return source; // 友方默认为自身
+
+                default:
+                    return source;
             }
         }
 

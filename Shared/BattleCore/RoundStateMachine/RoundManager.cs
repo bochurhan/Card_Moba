@@ -38,6 +38,20 @@ namespace CardMoba.BattleCore.RoundStateMachine
         /// <summary>手牌上限（抽牌时超出上限则不抽）</summary>
         private const int MaxHandSize = 10;
 
+        // ── 阶段状态 ──
+
+        /// <summary>当前回合所处阶段（由服务端/Host推进，客户端只读）</summary>
+        public RoundPhase CurrentPhase { get; private set; } = RoundPhase.RoundStartSettle;
+
+        /// <summary>当前阶段开始时间戳（UTC毫秒，由推进方写入，用于客户端校正）</summary>
+        public long PhaseStartTimestampMs { get; private set; }
+
+        /// <summary>当前阶段时长（毫秒），从 RoundPhaseConfig 读取</summary>
+        public int PhaseDurationMs => RoundPhaseConfig.GetDurationMs(CurrentPhase);
+
+        /// <summary>当前是否处于允许玩家操作的阶段</summary>
+        public bool IsOperationAllowed => RoundPhaseConfig.IsPlayerActionAllowed(CurrentPhase);
+
         // ── 初始化 ──
 
         /// <summary>
@@ -102,6 +116,9 @@ namespace CardMoba.BattleCore.RoundStateMachine
             ctx.RoundLog.Add($"[RoundManager] 玩家1 HP:{p1.Hp} 能量:{p1.Energy} 手牌:{p1.Hand.Count}张");
             ctx.RoundLog.Add($"[RoundManager] 玩家2 HP:{p2.Hp} 能量:{p2.Energy} 手牌:{p2.Hand.Count}张");
 
+            // 初始化后直接进入操作窗口期，允许玩家出牌
+            CurrentPhase = RoundPhase.OperationWindow;
+
             return ctx;
         }
 
@@ -120,6 +137,7 @@ namespace CardMoba.BattleCore.RoundStateMachine
             // ── 校验 ──
             PlayerBattleState? player = ctx.GetPlayer(playerId);
             if (player == null) return "错误：玩家不存在";
+            if (!IsOperationAllowed) return $"错误：当前阶段（{CurrentPhase}）不允许操作";
             if (!player.IsAlive) return "错误：玩家已阵亡";
             if (player.IsLocked) return "错误：已锁定操作，不能再出牌";
             if (handIndex < 0 || handIndex >= player.Hand.Count) return "错误：无效的手牌索引";
@@ -301,7 +319,10 @@ namespace CardMoba.BattleCore.RoundStateMachine
                 }
             }
 
-            // 7d. 回合结束状态快照
+            // 7d. Buff 持续时间衰减（含 NoDrawThisTurn 等回合型 Buff）
+            ctx.OnRoundEnd();
+
+            // 7e. 回合结束状态快照
             for (int i = 0; i < ctx.Players.Count; i++)
             {
                 PlayerBattleState p = ctx.Players[i];
@@ -315,6 +336,9 @@ namespace CardMoba.BattleCore.RoundStateMachine
                 DetermineWinnerByHp(ctx);
                 return;
             }
+
+            // 回合结束后切换到回合开始结算期，等待 BeginNextRound 推进
+            CurrentPhase = RoundPhase.RoundStartSettle;
         }
 
         /// <summary>
@@ -385,6 +409,9 @@ namespace CardMoba.BattleCore.RoundStateMachine
             }
 
             // 1e. TODO: 校验对局胜负条件（原型阶段在濒死判定期统一处理）
+
+            // 回合开始结算完成，进入操作窗口期
+            CurrentPhase = RoundPhase.OperationWindow;
         }
 
         // ── 辅助方法 ──

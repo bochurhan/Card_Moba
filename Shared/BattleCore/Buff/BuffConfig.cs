@@ -1,3 +1,5 @@
+using CardMoba.Protocol.Enums;
+
 namespace CardMoba.BattleCore.Buff
 {
     /// <summary>

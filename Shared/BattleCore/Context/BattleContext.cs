@@ -3,6 +3,7 @@ using CardMoba.BattleCore.Buff;
 using CardMoba.BattleCore.Event;
 using CardMoba.BattleCore.Random;
 using CardMoba.BattleCore.Trigger;
+using CardMoba.Protocol.Enums;
 
 #pragma warning disable CS8632 // nullable 注解警告
 

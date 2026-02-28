@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using CardMoba.Protocol.Enums;
+// BuffType / BuffStackRule / BuffTriggerTiming 已迁移至 CardMoba.Protocol.Enums（BuffEnums.cs）
 
 namespace CardMoba.ConfigModels.Card
 {
@@ -55,14 +56,14 @@ namespace CardMoba.ConfigModels.Card
         /// 附加的 Buff 类型（AppliesBuff = true 时必填）。
         /// 对应 BuffManager 中 BuffType 枚举，决定属性修正方式和衰减行为。
         /// </summary>
-        public BattleCore.Buff.BuffType BuffType { get; set; }
+        public BuffType BuffType { get; set; }
 
         /// <summary>
         /// Buff 叠加规则（AppliesBuff = true 时有效）。
         /// 默认 RefreshDuration：同类 Buff 刷新持续时间而非叠加层数。
         /// </summary>
-        public BattleCore.Buff.BuffStackRule BuffStackRule { get; set; }
-            = BattleCore.Buff.BuffStackRule.RefreshDuration;
+        public BuffStackRule BuffStackRule { get; set; }
+            = BuffStackRule.RefreshDuration;
 
         /// <summary>
         /// Buff 是否可被驱散（AppliesBuff = true 时有效）。
@@ -112,6 +113,7 @@ namespace CardMoba.ConfigModels.Card
                 EffectType.Lifesteal      => 2,
                 EffectType.Thorns         => 2,
                 EffectType.ArmorOnHit     => 2,
+                EffectType.Pierce         => 2,
 
                 // Layer 3: 功能（默认）
                 _ => 3

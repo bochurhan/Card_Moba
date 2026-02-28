@@ -127,7 +127,7 @@ namespace CardMoba.ConfigModels.Card
             List<CardEffect> result = new List<CardEffect>();
             foreach (var effect in Effects)
             {
-                if (effect.GetSettlementLayerV3() == layer)
+                if (effect.GetSettlementLayer() == layer)
                     result.Add(effect);
             }
             return result;
