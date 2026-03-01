@@ -105,8 +105,9 @@ namespace CardMoba.BattleCore.RoundStateMachine
                 Deck = new List<CardConfig>(player2Deck),
             };
 
-            ctx.Players.Add(p1);
-            ctx.Players.Add(p2);
+        // 使用 RegisterPlayer 注册玩家，同步构建 R-06 快速查找字典
+        ctx.RegisterPlayer(p1);
+        ctx.RegisterPlayer(p2);
 
             // 各摸初始手牌
             DrawCards(p1, startHandSize);

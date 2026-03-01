@@ -1,7 +1,7 @@
 ﻿# BattleCore 核心代码解读
 
-**文档版本**：V5.0
-**最后更新**：2026-02-28
+**文档版本**：V5.1
+**最后更新**：2026-03-01
 **适用对象**：需要理解或修改结算逻辑的开发者
 **前置阅读**：[QuickStart.md](QuickStart.md)、[SystemArchitecture.md](SystemArchitecture.md)（系统关系总览）、[../GameDesign/SettlementRules.md](../GameDesign/SettlementRules.md)
 **阅读时间**：20 分钟
@@ -380,7 +380,8 @@ public class PlayedCard
 public class BattleContext
 {
     // ── 玩家状态 ──
-    public List<PlayerBattleState> Players { get; set; }
+    public List<PlayerBattleState> Players { get; set; }           // 遍历用
+    // 注意：获取单个玩家请用 GetPlayer(id)，O(1) 字典查找
 
     // ── 待结算卡牌队列 ──
     public List<PlayedCard> PendingPlanCards { get; set; }    // 本回合定策牌
@@ -388,17 +389,24 @@ public class BattleContext
     public List<PlayedCard> ValidPlanCards { get; set; }      // 有效牌（未被反制）
     public List<PlayedCard> CounteredCards { get; set; }      // 已被反制的牌
 
-    // ── 触发效果队列 ──
-    public List<PendingTriggerEffect> PendingTriggerEffects { get; set; }
-    public bool HasChainTriggeredThisRound { get; set; }      // 连锁封顶标记
-
     // ── 场景信息 ──
     public MatchPhase MatchPhase { get; set; }                // 当前比赛阶段
 
     // ── 日志 ──
-    public List<string> RoundLog { get; set; }
+    public List<string> RoundLog { get; set; }                // 当前回合日志
+    public List<List<string>> HistoryLog { get; set; }        // 历史回合快照（R-08，永不丢失）
+
+    // ── 快捷方法 ──
+    public PlayerBattleState GetPlayer(string playerId)       // O(1)，推荐使用
+    public void RegisterPlayer(PlayerBattleState player)      // 替代直接 Players.Add
+    public BuffManager GetBuffManager(string playerId)        // 获取玩家 Buff 管理器
 }
 ```
+
+> ⚠️ 已移除字段（2026-03-01 R-05 清理）：
+> - `PendingTriggerEffects`（旧触发路径列表）
+> - `HasChainTriggeredThisRound`（旧连锁封顶标记）
+> 触发式效果（吸血/反伤）现在统一由 `TriggerManager` 通过 `AfterDealDamage / AfterTakeDamage` 节点处理。
 
 ### PlayerBattleState（玩家战斗状态，关键字段）
 
@@ -472,6 +480,7 @@ public class PlayerBattleState
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| V5.1 | 2026-03-01 | R-05：删除 `PendingTriggerEffects` / `HasChainTriggeredThisRound` / `ResolveLayer2_Step2_Triggers` 旧触发路径；R-06：`GetPlayer` 改为 O(1) 字典查找，新增 `RegisterPlayer` 方法；R-08：新增 `HistoryLog` 回合日志快照持久化；更新 BattleContext 数据结构章节 |
 | V5.0 | 2026-02-28 | 修正 EffectType ID 表（对齐实际枚举：跳跃分布 1,2-8,10-14,20-29）；更新 Handler 注册表（移除不存在的 ArmorBreak/ExecuteKill/HealTeam；新增 DoubleStrength(29)）；新增效果流程指向 ConfigSystem.md |
 | V4.0 | 2026-02-26 | 彻底移除旧版 100+ 兼容范围；统一 EffectType 体系；CounterHandler 重构；补充 PlayerBattleState 字段；CardTag 新增 Reflect |
 | V3.1 | 2026-02-25 | 清理旧版 API；完善 Handler 列表 |

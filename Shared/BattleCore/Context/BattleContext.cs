@@ -101,18 +101,6 @@ namespace CardMoba.BattleCore.Context
         /// </summary>
         public List<PlayedCard> ValidPlanCards { get; set; } = new List<PlayedCard>();
 
-        // ── 触发式效果追踪 ──
-
-        /// <summary>
-        /// 本回合待触发的效果列表（堆叠2层步骤2处理）
-        /// </summary>
-        public List<PendingTriggerEffect> PendingTriggerEffects { get; set; } = new List<PendingTriggerEffect>();
-
-        /// <summary>
-        /// 本回合是否已触发连锁（连锁封顶规则：单回合仅1次连锁）
-        /// </summary>
-        public bool HasChainTriggeredThisRound { get; set; }
-
         // ══════════════════════════════════════════════════════════
         // 系统管理器
         // ══════════════════════════════════════════════════════════
@@ -132,25 +120,45 @@ namespace CardMoba.BattleCore.Context
         /// </summary>
         private Dictionary<string, BuffManager> _buffManagers = new Dictionary<string, BuffManager>();
 
+        /// <summary>
+        /// R-06：玩家快速查找字典（PlayerId -> PlayerBattleState），O(1) 替代 O(n) 线性遍历。
+        /// 与 Players 列表保持同步，在 RegisterPlayer / Initialize 时写入。
+        /// </summary>
+        private Dictionary<string, PlayerBattleState> _playerMap = new Dictionary<string, PlayerBattleState>();
+
+        /// <summary>
+        /// R-08：历史回合日志存档（下标 0 = 第1回合）。
+        /// 每次 ClearRoundData() 执行前将当前 RoundLog 快照存入，确保数据永不丢失。
+        /// 用途：对战录像回放、UI 结算动画延迟播放、服务端日志审计。
+        /// </summary>
+        public List<List<string>> HistoryLog { get; set; } = new List<List<string>>();
+
         // ══════════════════════════════════════════════════════════
         // 便捷方法
         // ══════════════════════════════════════════════════════════
 
         /// <summary>
-        /// 根据玩家ID获取玩家状态（字符串版本）。
+        /// 向战斗上下文注册一名玩家，同步写入快速查找字典（R-06）。
+        /// 所有向 Players 列表添加玩家的操作应改用本方法，而非直接 Players.Add。
         /// </summary>
-        /// <param name="playerId">目标玩家ID（字符串）</param>
+        /// <param name="player">待注册的玩家状态</param>
+        public void RegisterPlayer(PlayerBattleState player)
+        {
+            Players.Add(player);
+            _playerMap[player.PlayerId] = player;
+        }
+
+        /// <summary>
+        /// 根据玩家ID获取玩家状态，O(1) 字典查找（R-06 优化）。
+        /// </summary>
+        /// <param name="playerId">目标玩家ID</param>
         /// <returns>玩家状态，找不到则返回 null</returns>
         public PlayerBattleState? GetPlayer(string playerId)
         {
             if (string.IsNullOrEmpty(playerId)) return null;
 
-            for (int i = 0; i < Players.Count; i++)
-            {
-                if (Players[i].PlayerId == playerId)
-                    return Players[i];
-            }
-            return null;
+            // R-06：O(1) 字典查找，替代原先 O(n) 线性遍历
+            return _playerMap.TryGetValue(playerId, out var player) ? player : null;
         }
 
         /// <summary>
@@ -208,9 +216,17 @@ namespace CardMoba.BattleCore.Context
 
         /// <summary>
         /// 清空本回合的临时数据，准备进入下一回合。
+        /// R-08：清空前先将 RoundLog 快照存入 HistoryLog，确保日志永不丢失。
         /// </summary>
         public void ClearRoundData()
         {
+            // ── R-08：持久化本回合日志快照 ──
+            // 必须在 RoundLog.Clear() 之前执行，UI/录像系统可通过 HistoryLog[round-1] 访问历史日志
+            if (RoundLog.Count > 0)
+            {
+                HistoryLog.Add(new List<string>(RoundLog));
+            }
+
             // 将本回合的反制牌转移到跨回合存储
             PendingCounterCards.Clear();
             foreach (var card in PendingPlanCards)
@@ -226,9 +242,7 @@ namespace CardMoba.BattleCore.Context
             PendingPlanCards.Clear();
             ValidPlanCards.Clear();
             CounteredCards.Clear();
-            PendingTriggerEffects.Clear();
             RoundLog.Clear();
-            HasChainTriggeredThisRound = false;
 
             // 重置所有玩家的回合状态
             for (int i = 0; i < Players.Count; i++)
@@ -320,12 +334,22 @@ namespace CardMoba.BattleCore.Context
             WinnerTeamId = -1;
             CardPlayedCountThisRound = 0;
 
+            // R-06：重建玩家快速查找字典（Players 列表可能在 Initialize 之前已通过 RegisterPlayer 填充）
+            _playerMap.Clear();
+            foreach (var player in Players)
+            {
+                _playerMap[player.PlayerId] = player;
+            }
+
             // 初始化所有玩家的 BuffManager（传入 this，使 BuffManager 能注册触发器）
             _buffManagers.Clear();
             foreach (var player in Players)
             {
                 _buffManagers[player.PlayerId] = new BuffManager(player, this);
             }
+
+            // R-08：重置历史日志（新一局对战从空白开始）
+            HistoryLog.Clear();
 
             // 清空事件记录
             EventRecorder.Clear();
@@ -390,24 +414,4 @@ namespace CardMoba.BattleCore.Context
         }
     }
 
-    /// <summary>
-    /// 待触发效果 —— 表示一个等待在堆叠2层步骤2处理的触发式效果。
-    /// </summary>
-    public class PendingTriggerEffect
-    {
-        /// <summary>效果来源玩家ID</summary>
-        public string SourcePlayerId { get; set; } = string.Empty;
-
-        /// <summary>效果目标玩家ID</summary>
-        public string TargetPlayerId { get; set; } = string.Empty;
-
-        /// <summary>触发效果类型</summary>
-        public Protocol.Enums.EffectType EffectType { get; set; }
-
-        /// <summary>效果数值</summary>
-        public int Value { get; set; }
-
-        /// <summary>触发原因描述（用于日志）</summary>
-        public string TriggerReason { get; set; } = string.Empty;
-    }
 }

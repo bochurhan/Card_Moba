@@ -351,16 +351,19 @@ namespace CardMoba.BattleCore.Settlement
         // 堆叠2层：主动伤害与触发式效果闭环层
         // ══════════════════════════════════════════════════════════
 
-        /// <summary>
-        /// 堆叠2层：主动伤害与触发式效果闭环结算。
-        /// </summary>
-        private void ResolveLayer2_Damage(BattleContext ctx)
-        {
-            ctx.RoundLog.Add("[Layer2] ── 主动伤害与触发式效果层 ──");
+    /// <summary>
+    /// 堆叠2层：主动伤害与触发式效果闭环结算。
+    /// 触发式效果（吸血/反伤等）已通过 BuffManager 向 TriggerManager 注册触发器，
+    /// 在阶段C的 AfterDealDamage / AfterTakeDamage 中统一触发，无需独立 Step2。
+    /// </summary>
+    private void ResolveLayer2_Damage(BattleContext ctx)
+    {
+        ctx.RoundLog.Add("[Layer2] ── 主动伤害与触发式效果层 ──");
 
-            ResolveLayer2_Step1_Damage(ctx);
-            ResolveLayer2_Step2_Triggers(ctx);
-        }
+        ResolveLayer2_Step1_Damage(ctx);
+        // R-05 清理：Step2（PendingTriggerEffects 路径）已删除。
+        // 所有触发式效果（吸血/反伤/ArmorOnHit）统一由 TriggerManager 在阶段C中处理。
+    }
 
         /// <summary>
         /// 堆叠2层-步骤1：所有伤害牌同步、一次性结算。
@@ -435,12 +438,11 @@ namespace CardMoba.BattleCore.Settlement
                         {
                             damages.Add(new DamageToApply
                             {
-                                SourceId     = source.PlayerId,
-                                TargetId     = targetId,
-                                BaseDamage   = effect.Value,
-                                FinalDamage  = outgoing,
-                                CardName     = card.Config.CardName,
-                                HasLifesteal = HasLifestealEffect(card.Config)
+                                SourceId    = source.PlayerId,
+                                TargetId    = targetId,
+                                BaseDamage  = effect.Value,
+                                FinalDamage = outgoing,
+                                CardName    = card.Config.CardName,
                             });
                         }
                     }
@@ -536,11 +538,10 @@ namespace CardMoba.BattleCore.Settlement
 
                     actualHpDamages.Add(new AppliedDamageRecord
                     {
-                        SourceId     = dmg.SourceId,
-                        TargetId     = dmg.TargetId,
-                        HpDamage     = actualDamage,
-                        CardName     = dmg.CardName,
-                        HasLifesteal = dmg.HasLifesteal
+                        SourceId = dmg.SourceId,
+                        TargetId = dmg.TargetId,
+                        HpDamage = actualDamage,
+                        CardName = dmg.CardName,
                     });
 
                     ctx.RoundLog.Add($"[Layer2-Step1] 玩家{dmg.SourceId}的「{dmg.CardName}」" +
@@ -632,69 +633,6 @@ namespace CardMoba.BattleCore.Settlement
                     }
                 }
             }
-        }
-
-        /// <summary>
-        /// 检查卡牌是否含有吸血效果。
-        /// </summary>
-        private bool HasLifestealEffect(CardConfig card)
-        {
-            foreach (var effect in card.Effects)
-            {
-                if (effect.EffectType == EffectType.Lifesteal)
-                    return true;
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// 堆叠2层-步骤2：触发式效果同步闭环结算。
-        /// </summary>
-        private void ResolveLayer2_Step2_Triggers(BattleContext ctx)
-        {
-            if (ctx.PendingTriggerEffects.Count == 0)
-                return;
-
-            ctx.RoundLog.Add("[Layer2-Step2] 触发式效果同步结算");
-
-            // 连锁封顶检查
-            if (ctx.HasChainTriggeredThisRound)
-            {
-                ctx.RoundLog.Add("[Layer2-Step2] 连锁已触发过，跳过后续连锁");
-                ctx.PendingTriggerEffects.Clear();
-                return;
-            }
-
-            ctx.HasChainTriggeredThisRound = true;
-
-            foreach (var trigger in ctx.PendingTriggerEffects)
-            {
-                var source = ctx.GetPlayer(trigger.SourcePlayerId);
-                var target = ctx.GetPlayer(trigger.TargetPlayerId);
-                if (source == null || target == null) continue;
-
-                switch (trigger.EffectType)
-                {
-                    case EffectType.Lifesteal:
-                        target.Hp += trigger.Value;
-                        if (target.Hp > target.MaxHp) target.Hp = target.MaxHp;
-                        ctx.RoundLog.Add($"[Layer2-Step2] {trigger.TriggerReason}，玩家{target.PlayerId}回复{trigger.Value}点生命");
-                        break;
-
-                    case EffectType.Thorns:
-                        target.Hp -= trigger.Value;
-                        if (target.Hp < 0) target.Hp = 0;
-                        ctx.RoundLog.Add($"[Layer2-Step2] {trigger.TriggerReason}，玩家{target.PlayerId}受到{trigger.Value}点反伤");
-                        break;
-
-                    case EffectType.ArmorOnHit:
-                        target.Armor += trigger.Value;
-                        ctx.RoundLog.Add($"[Layer2-Step2] {trigger.TriggerReason}，玩家{target.PlayerId}获得{trigger.Value}点护甲");
-                        break;
-                }
-            }
-
-            ctx.PendingTriggerEffects.Clear();
         }
 
         // ══════════════════════════════════════════════════════════
@@ -862,7 +800,6 @@ namespace CardMoba.BattleCore.Settlement
             public int BaseDamage { get; set; }
             public int FinalDamage { get; set; }
             public string CardName { get; set; } = string.Empty;
-            public bool HasLifesteal { get; set; }
         }
 
         /// <summary>
@@ -879,8 +816,6 @@ namespace CardMoba.BattleCore.Settlement
             public int HpDamage { get; set; }
             /// <summary>来源卡牌名（用于日志）。</summary>
             public string CardName { get; set; } = string.Empty;
-            /// <summary>攻击方该卡是否有吸血效果。</summary>
-            public bool HasLifesteal { get; set; }
         }
     }
 }
