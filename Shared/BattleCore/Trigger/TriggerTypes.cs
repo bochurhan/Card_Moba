@@ -134,6 +134,21 @@ namespace CardMoba.BattleCore.Trigger
     }
 
     /// <summary>
+    /// 伤害来源类型 —— 用于触发器区分伤害性质，决定反弹/反伤是否响应。
+    /// </summary>
+    public enum DamageSourceType
+    {
+        /// <summary>来自卡牌打出的伤害（瞬策牌/定策牌），默认值，可触发 Reflect/Thorns</summary>
+        CardDamage = 0,
+
+        /// <summary>持续伤害（中毒/燃烧/流血），不触发 Reflect/Thorns</summary>
+        DotDamage = 1,
+
+        /// <summary>自伤（来源与目标相同），不触发 Reflect/Thorns</summary>
+        SelfDamage = 2,
+    }
+
+    /// <summary>
     /// 触发器执行上下文 —— 传递给触发器回调的信息。
     /// </summary>
     public class TriggerContext
@@ -164,6 +179,13 @@ namespace CardMoba.BattleCore.Trigger
 
         /// <summary>修改后的数值（触发器可以修改）</summary>
         public int ModifiedValue { get; set; }
+
+        /// <summary>
+        /// 伤害来源类型 —— 仅在伤害相关触发时机（AfterTakeDamage 等）有效。
+        /// 用于 Thorns/Reflect 等触发器判断是否响应：
+        /// 仅 CardDamage（来自卡牌）才触发反弹/反伤；DOT 和自伤不触发。
+        /// </summary>
+        public DamageSourceType DamageSource { get; set; } = DamageSourceType.CardDamage;
     }
 
     /// <summary>

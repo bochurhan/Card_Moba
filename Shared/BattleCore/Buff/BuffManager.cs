@@ -542,18 +542,25 @@ namespace CardMoba.BattleCore.Buff
                     break;
                 }
 
-                // ── 反伤：受到伤害后反弹给攻击者 ──
+                // ── 反伤（荆棘）：受到来自卡牌的敌方伤害后，对攻击者造成固定反伤 ──
+                // 触发条件：
+                //   1. SourcePlayerId == ownerId —— 是自己受伤（AfterTakeDamage 中 Source = 受伤方）
+                //   2. TargetPlayerId != ownerId —— 攻击者不是自己（排除自伤）
+                //   3. DamageSource == CardDamage —— 来自卡牌打出的伤害（排除 DOT/燃烧/流血等持续伤害）
                 case BuffType.Thorns:
                 {
                     var capturedBuff = buff;
                     string triggerId = _ctx.TriggerManager.RegisterTrigger(
                         timing: TriggerTiming.AfterTakeDamage,
                         ownerPlayerId: ownerId,
-                        // 条件：必须是自己受伤才触发
-                        condition: trigCtx => trigCtx.SourcePlayerId == ownerId,
+                        condition: trigCtx =>
+                            trigCtx.SourcePlayerId == ownerId                          // 自己受伤
+                            && trigCtx.TargetPlayerId != ownerId                       // 非自伤
+                            && trigCtx.DamageSource == DamageSourceType.CardDamage,   // 来自卡牌
                         effect: trigCtx =>
                         {
-                            string attackerId = trigCtx.TargetPlayerId; // AfterTakeDamage 中 TargetPlayerId 是攻击者
+                            // AfterTakeDamage 中：SourcePlayerId = 受伤方（自己），TargetPlayerId = 攻击方
+                            string attackerId = trigCtx.TargetPlayerId;
                             var attacker = _ctx.GetPlayer(attackerId);
                             if (attacker == null || !attacker.IsAlive) return;
 
@@ -561,7 +568,7 @@ namespace CardMoba.BattleCore.Buff
                             attacker.Hp -= reflectDmg;
                             attacker.DamageTakenThisRound += reflectDmg;
                             _ctx.RoundLog.Add(
-                                $"[BuffTrigger] {capturedBuff.BuffName}：{ownerId} 反弹 {reflectDmg} 点伤害给 {attackerId}");
+                                $"[BuffTrigger] {capturedBuff.BuffName}：{ownerId} 对 {attackerId} 反伤 {reflectDmg} 点（来源卡牌伤害）");
                             if (attacker.Hp <= 0)
                             {
                                 attacker.Hp = 0;

@@ -267,15 +267,17 @@ namespace CardMoba.BattleCore.Settlement
             // 记录战斗事件（供客户端 UI 同步）
             ctx.EventRecorder.RecordDamage(sourceId, targetId, dotDamage, false, dotSource);
 
-            // ── 3. 触发 AfterTakeDamage（反弹类牌可响应）──
-            // SourcePlayerId = 受伤方，TargetPlayerId = DOT 施加者（反弹归因）
+            // ── 3. 触发 AfterTakeDamage（标记为 DotDamage，Thorns/Reflect 不响应）──
+            // SourcePlayerId = 受伤方，TargetPlayerId = DOT 施加者
+            // DamageSource = DotDamage，确保荆棘/反弹类触发器条件过滤掉此伤害
             ctx.TriggerManager.FireTriggers(ctx, TriggerTiming.AfterTakeDamage, new TriggerContext
             {
                 BattleContext = ctx,
                 Timing = TriggerTiming.AfterTakeDamage,
                 SourcePlayerId = targetId,
                 TargetPlayerId = sourceId,
-                Value = dotDamage
+                Value = dotDamage,
+                DamageSource = DamageSourceType.DotDamage
             });
 
             // ── 4. 濒死检查 ──
