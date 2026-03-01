@@ -723,30 +723,6 @@ namespace CardMoba.BattleCore.Buff
                     break;
                 }
 
-                // ── 受击获甲（ArmorOnHit）：受到来自卡牌的伤害后获得护甲 ──
-                case BuffType.ArmorOnHit:
-                {
-                    var capturedBuff = buff;
-                    string triggerId = _ctx.TriggerManager.RegisterTrigger(
-                        timing: TriggerTiming.AfterTakeDamage,
-                        ownerPlayerId: ownerId,
-                        condition: trigCtx =>
-                            trigCtx.SourcePlayerId == ownerId
-                            && trigCtx.DamageSource == DamageSourceType.CardDamage,
-                        effect: trigCtx =>
-                        {
-                            int armorGain = capturedBuff.TotalValue;
-                            _owner.Armor += armorGain;
-                            _ctx.RoundLog.Add(
-                                $"[BuffTrigger] {capturedBuff.BuffName}：{ownerId} 受击获甲 +{armorGain}");
-                        },
-                        triggerName: $"{buff.BuffName}_ARMORONHIT_{buff.RuntimeId}",
-                        sourceId: buff.RuntimeId
-                    );
-                    if (triggerId != null) buff.RegisteredTriggerIds.Add(triggerId);
-                    break;
-                }
-
                 // 其他类型（Armor/Shield/Stun/Silence 等）为纯属性型，
                 // 在 ApplyBuffModifiers 中已处理，无需注册触发器
                 default:
