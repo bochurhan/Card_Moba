@@ -400,7 +400,12 @@ namespace CardMoba.BattleCore.Trigger
         }
 
         /// <summary>
-        /// 回合结束时处理所有触发器的回合衰减。
+        /// 回合结束时处理触发器的回合衰减。
+        ///
+        /// 单一所有权规则（R-03）：
+        ///   - 有 SourceId 的触发器（即 Buff 归属触发器）生命周期完全由 BuffManager 管理，
+        ///     此处跳过衰减，防止触发器与 Buff 生命周期出现双重计数不同步的问题。
+        ///   - 没有 SourceId 的触发器（卡牌/遗物等一次性触发器）才在此处做轮次衰减。
         /// </summary>
         public void OnRoundEnd()
         {
@@ -410,6 +415,11 @@ namespace CardMoba.BattleCore.Trigger
                 for (int i = list.Count - 1; i >= 0; i--)
                 {
                     var trigger = list[i];
+
+                    // ── 单一所有权：Buff 归属触发器跳过轮次衰减，由 BuffManager 统一管理 ──
+                    if (!string.IsNullOrEmpty(trigger.SourceId))
+                        continue;
+
                     if (trigger.RemainingRounds > 0)
                     {
                         trigger.RemainingRounds--;
@@ -426,6 +436,57 @@ namespace CardMoba.BattleCore.Trigger
             {
                 CleanupExpiredTriggers(timing);
             }
+        }
+
+        /// <summary>
+        /// 检测并清理孤儿触发器（R-03 防御性校验）。
+        ///
+        /// 孤儿触发器定义：SourceId 不为空（属于某个 Buff），
+        /// 但对应 Buff 的 RuntimeId 已不在任何玩家的 BuffManager 中。
+        ///
+        /// 调用时机：
+        ///   - 战斗结束时（EndBattle）— 全量扫描，日志警告并强制清理
+        ///   - 每回合结束后（可选）— 轻量断言，发现即记录
+        /// </summary>
+        /// <param name="activeBuff RuntimeIds">当前所有玩家 BuffManager 中仍存活的 Buff RuntimeId 集合</param>
+        /// <returns>检测到并清理的孤儿触发器数量</returns>
+        public int ValidateOrphanTriggers(System.Collections.Generic.HashSet<string> activeBuffRuntimeIds)
+        {
+            int orphanCount = 0;
+
+            foreach (var kvp in _triggersByTiming)
+            {
+                var list = kvp.Value;
+                for (int i = list.Count - 1; i >= 0; i--)
+                {
+                    var trigger = list[i];
+
+                    // 只检查有 SourceId 的 Buff 归属触发器
+                    if (string.IsNullOrEmpty(trigger.SourceId))
+                        continue;
+
+                    // 若 SourceId 对应的 Buff 已不存在 → 孤儿触发器
+                    if (!activeBuffRuntimeIds.Contains(trigger.SourceId))
+                    {
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[TriggerManager] ⚠️ 孤儿触发器检测：{trigger.TriggerId} " +
+                            $"(名称={trigger.TriggerName}, 归属Buff={trigger.SourceId}) " +
+                            $"已无对应 Buff，强制注销");
+
+                        OnTriggerRemoved?.Invoke(trigger);
+                        list.RemoveAt(i);
+                        orphanCount++;
+                    }
+                }
+            }
+
+            if (orphanCount > 0)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[TriggerManager] 孤儿触发器清理完毕，共移除 {orphanCount} 个");
+            }
+
+            return orphanCount;
         }
 
         /// <summary>

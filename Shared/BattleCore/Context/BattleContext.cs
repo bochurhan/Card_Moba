@@ -339,12 +339,54 @@ namespace CardMoba.BattleCore.Context
 
         /// <summary>
         /// 结束对局。
+        /// 在对局结束时：
+        ///   1. 执行孤儿触发器检测（R-03 防御性校验），发现泄漏立即强制清理并记录警告
+        ///   2. 清理所有 Buff 和触发器，确保下一场对局不受污染
         /// </summary>
         public void EndBattle(int winnerTeamId)
         {
             IsGameOver = true;
             WinnerTeamId = winnerTeamId;
+
+            // ── R-03：战斗结束时孤儿触发器全量扫描 ──
+            // 收集所有玩家仍存活的 Buff RuntimeId 集合
+            var activeBuffRuntimeIds = CollectActiveBuffRuntimeIds();
+            int orphanCount = TriggerManager.ValidateOrphanTriggers(activeBuffRuntimeIds);
+            if (orphanCount > 0)
+            {
+                RoundLog.Add($"[BattleContext] ⚠️ 战斗结束孤儿触发器检测：发现并清理 {orphanCount} 个孤儿触发器，请检查 Buff 生命周期管理！");
+            }
+
+            // 清理所有 Buff 和触发器（防止对象池复用时污染下一场对局）
+            foreach (var player in Players)
+            {
+                var buffManager = GetBuffManager(player.PlayerId);
+                buffManager?.ClearAllBuffs();
+            }
+            TriggerManager.ClearAllTriggers();
+
             EventRecorder.Record(BattleEventType.BattleEnd);
+        }
+
+        /// <summary>
+        /// 收集所有玩家 BuffManager 中当前存活的 Buff RuntimeId 集合。
+        /// 用于 ValidateOrphanTriggers 的输入参数。
+        /// </summary>
+        private System.Collections.Generic.HashSet<string> CollectActiveBuffRuntimeIds()
+        {
+            var result = new System.Collections.Generic.HashSet<string>();
+            foreach (var player in Players)
+            {
+                var buffManager = GetBuffManager(player.PlayerId);
+                if (buffManager == null) continue;
+
+                foreach (var buff in buffManager.Buffs)
+                {
+                    if (!string.IsNullOrEmpty(buff.RuntimeId))
+                        result.Add(buff.RuntimeId);
+                }
+            }
+            return result;
         }
     }
 
