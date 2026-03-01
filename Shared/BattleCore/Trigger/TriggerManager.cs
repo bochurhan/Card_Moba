@@ -64,8 +64,12 @@ namespace CardMoba.BattleCore.Trigger
             if (_triggersByTiming.TryGetValue(trigger.Timing, out var list))
             {
                 list.Add(trigger);
-                // 按优先级排序（高优先级在前）
-                list.Sort((a, b) => b.Priority.CompareTo(a.Priority));
+                // 按优先级排序：Priority 小的在前（先执行），Priority 相同时 SubPriority 小的在前
+                list.Sort((a, b) =>
+                {
+                    int cmp = a.Priority.CompareTo(b.Priority);
+                    return cmp != 0 ? cmp : a.SubPriority.CompareTo(b.SubPriority);
+                });
             }
 
             return trigger.TriggerId;

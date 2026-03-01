@@ -319,10 +319,25 @@ namespace CardMoba.BattleCore.Settlement
                 {
                     if (effect.GetSettlementLayer() == 1)
                     {
-                        layer1Effects.Add(new EffectToResolve { Card = card, Effect = effect, Source = source });
+                        layer1Effects.Add(new EffectToResolve
+                        {
+                            Card        = card,
+                            Effect      = effect,
+                            Source      = source,
+                            Priority    = effect.Priority,
+                            SubPriority = effect.SubPriority,
+                        });
                     }
                 }
             }
+
+            // 按优先级排序：Priority 小的先执行（增益 100-199 先于削弱 300-399）
+            // Priority 相同时，SubPriority 小的先执行
+            layer1Effects.Sort((a, b) =>
+            {
+                int cmp = a.Priority.CompareTo(b.Priority);
+                return cmp != 0 ? cmp : a.SubPriority.CompareTo(b.SubPriority);
+            });
 
             foreach (var item in layer1Effects)
             {
@@ -836,6 +851,15 @@ namespace CardMoba.BattleCore.Settlement
             public PlayedCard Card { get; set; } = null!;
             public CardEffect Effect { get; set; } = null!;
             public PlayerBattleState Source { get; set; } = null!;
+
+            /// <summary>
+            /// 结算优先级（来自 CardEffect.Priority，数值越小越先执行）。
+            /// 排序规则：增益效果（100-199）先于削弱效果（300-399），与 TriggerInstance.Priority 约定一致。
+            /// </summary>
+            public int Priority { get; set; } = 500;
+
+            /// <summary>次级优先级（主优先级相同时的打破平局字段）。</summary>
+            public int SubPriority { get; set; } = 0;
         }
 
         /// <summary>待应用的伤害信息（阶段A收集，阶段B读取）。</summary>

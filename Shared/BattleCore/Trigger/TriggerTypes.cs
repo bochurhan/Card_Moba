@@ -189,7 +189,40 @@ namespace CardMoba.BattleCore.Trigger
     }
 
     /// <summary>
+    /// 触发器来源类型 —— 标记触发器的归属系统，决定生命周期管理方式。
+    /// 
+    /// 生命周期规则：
+    ///   Card  → 由 TriggerManager.OnRoundEnd 自行衰减（无 SourceId 关联）
+    ///   Buff  → 由 BuffManager 控制，TriggerManager 跳过衰减（单一所有权 R-03）
+    ///   Relic → 永久存在于对局内，不受 BuffManager/TriggerManager 衰减影响，
+    ///           仅在对局结束（EndBattle）时由 RelicManager 统一清理
+    /// </summary>
+    public enum TriggerSourceType
+    {
+        /// <summary>来自卡牌效果（一次性或有限回合）</summary>
+        Card = 0,
+
+        /// <summary>来自 Buff（受 BuffManager 生命周期管控，可被清除）</summary>
+        Buff = 1,
+
+        /// <summary>来自遗物（对局内永久，不受清除 Buff 影响）</summary>
+        Relic = 2,
+
+        /// <summary>来自英雄被动技能（对局内永久）</summary>
+        HeroPassive = 3,
+    }
+
+    /// <summary>
     /// 触发器实例 —— 表示一个已注册的触发效果。
+    /// 
+    /// 优先级约定（Priority 数值越小越先执行）：
+    ///   0   - 99  : 系统级（反制、无敌判断）
+    ///   100 - 199 : 增益效果（力量+、护甲+、护盾+、回血）
+    ///   200 - 299 : 己方遗物增益
+    ///   300 - 399 : 削弱效果（力量-、易伤、虚弱）
+    ///   400 - 499 : 敌方遗物削弱
+    ///   500 - 599 : 伤害效果（默认值）
+    ///   900 - 999 : 传说特殊牌
     /// </summary>
     public class TriggerInstance
     {
@@ -205,8 +238,17 @@ namespace CardMoba.BattleCore.Trigger
         /// <summary>所属玩家 ID</summary>
         public string OwnerPlayerId { get; set; }
 
-        /// <summary>优先级（数值越大越先执行）</summary>
-        public int Priority { get; set; } = 0;
+        /// <summary>
+        /// 主优先级（数值越小越先执行，默认 500）。
+        /// 见类注释中的分段约定。
+        /// </summary>
+        public int Priority { get; set; } = 500;
+
+        /// <summary>
+        /// 次级优先级（主优先级相同时的打破平局字段，策划配表控制，默认 0）。
+        /// 数值越小越先执行。
+        /// </summary>
+        public int SubPriority { get; set; } = 0;
 
         /// <summary>剩余触发次数（-1 表示无限）</summary>
         public int RemainingTriggers { get; set; } = -1;
@@ -220,8 +262,16 @@ namespace CardMoba.BattleCore.Trigger
         /// <summary>触发效果</summary>
         public Action<TriggerContext> Effect { get; set; }
 
-        /// <summary>来源（如卡牌 ID、Buff ID、英雄技能 ID）</summary>
+        /// <summary>
+        /// 来源 ID（如卡牌 RuntimeId、Buff RuntimeId、遗物 RelicId）。
+        /// 与 SourceType 配合使用决定生命周期管理方式。
+        /// </summary>
         public string SourceId { get; set; } = string.Empty;
+
+        /// <summary>
+        /// 来源类型 —— 决定生命周期管理方式（见 TriggerSourceType 注释）。
+        /// </summary>
+        public TriggerSourceType SourceType { get; set; } = TriggerSourceType.Card;
 
         /// <summary>是否已被标记为移除</summary>
         public bool IsMarkedForRemoval { get; set; } = false;
