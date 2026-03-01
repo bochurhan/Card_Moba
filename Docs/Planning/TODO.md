@@ -104,6 +104,262 @@
 
 ---
 
+## ⚠️ BattleCore 架构风险清单（2026-03-01 评审）
+
+> 来源：对 `SettlementEngine`、`BattleContext`、`BuffManager`、`TriggerManager`、`DamageHelper` 五个核心文件的全量代码审查。
+> 分级：🔴 高风险（需尽快修复）/ 🟡 中风险（功能正确但脆弱）/ 🟢 低风险（轻微或设计取舍）
+
+---
+
+### 🔴 R-01：Thorns 触发器 Source/Target 语义颠倒（高风险）
+
+**位置**：`Shared/BattleCore/Buff/BuffManager.cs` `RegisterBuffTriggers` → `BuffType.Thorns` 分支
+
+**问题**：  
+`DamageHelper.ApplyDamage` 触发 `AfterTakeDamage` 时约定：
+- `SourcePlayerId` = **受伤方**（targetId）
+- `TargetPlayerId` = **攻击方**（sourceId）
+
+`BuffManager` 中 Thorns 的 condition 写的是 `trigCtx.SourcePlayerId == ownerId`（受伤方），逻辑上刚好对，但注释写"TargetPlayerId 是攻击者"，与 `DamageHelper` 中相同字段的含义相反。  
+两处对同一字段的中文描述方向相反，任何人修改其中一处时极易造成反伤打给错误目标（自己或无关人）。
+
+**修复方案**：  
+统一约定 `AfterTakeDamage` 的语义，在 `TriggerTypes.cs` / `TriggerContext` 上加注释说明，并在 BuffManager 中同步注释，消除歧义。
+
+**优先级**：P1（逻辑凑巧对，但随时可能被破坏）
+
+---
+
+### 🔴 R-02：DOT 触发器绕过 DamageHelper，无敌/护盾/减免对 Poison/Burn/Bleed 无效（高风险）
+
+**位置**：`Shared/BattleCore/Buff/BuffManager.cs` `RegisterBuffTriggers` → `BuffType.Poison/Burn/Bleed` 分支，第 463 行
+
+**问题**：  
+Poison、Burn、Bleed 的 `OnRoundEnd` 触发器直接执行 `_owner.Hp -= dmg`，完全绕过 `DamageHelper.ApplyDamage`，导致以下规则对 DOT 全部失效：
+- 无敌状态（`IsInvincible`）
+- 护盾吸收（`Shield`）
+- 伤害减免（`DamageReductionPercent`）
+- `BeforeTakeDamage` 触发器（可修改/取消伤害的触发器）
+- `OnNearDeath` 触发器（复活 Buff 不会被 DOT 触发）
+
+**修复方案**：见下方"R-02 详细说明"章节。
+
+**优先级**：P0（规则严重缺失，无敌时仍受 DOT 属于明显 bug）
+
+---
+
+### 🔴 R-03：Buff/Trigger 双重生命周期不同步，存在触发器泄漏风险（高风险）
+
+**位置**：`BattleContext.OnRoundEnd()` 步骤2（`BuffManager.OnRoundEnd`）与步骤3（`TriggerManager.OnRoundEnd`）
+
+**问题**：  
+- `BuffManager.OnRoundEnd` 在 Buff 到期时调用 `UnregisterBuffTriggers`，从 `TriggerManager` 中删除触发器。
+- `TriggerManager.OnRoundEnd` 随后再对剩余触发器做 `RemainingRounds--` 衰减。
+- 若触发器注册时 `remainingRounds = -1`（永久），而 Buff 有限时长，Buff 到期后 `UnregisterBuffTriggers` 正常清理。但若 `RemoveBuff` 的调用路径发生异常或被提前拦截，触发器就成为孤儿，永久挂在 `TriggerManager` 中持续触发。
+- Buff 持续时间和触发器持续时间是两个独立计数，设计上要求它们始终同步，但没有任何断言或校验机制保证这一点。
+
+**修复方案**：  
+在触发器注册时，将 `remainingRounds` 始终与 Buff 的 `RemainingRounds` 保持一致，或改为"触发器生命周期完全由 BuffManager 管理，TriggerManager 不做独立衰减"的单一所有权模式。添加战斗结束时的孤儿触发器检测断言。
+
+**优先级**：P1
+
+---
+
+### 🔴 R-04：SettlementEngine Layer2 自建伤害路径，定策牌环境被动 Buff 全部失效（高风险）
+
+**位置**：`Shared/BattleCore/Settlement/SettlementEngine.cs` `ResolveLayer2_Step1_Damage`，约第 395-408 行
+
+**问题**：  
+`SettlementEngine` 的 Layer2 直接操作 `player.Hp += hpDelta`，完全绕开 `DamageHelper.ApplyDamage`，导致定策牌造成的伤害：
+- 不经过 `BeforeDealDamage` / `BeforeTakeDamage` 触发器
+- 不触发 `AfterDealDamage` / `AfterTakeDamage`（Thorns/Lifesteal 对定策牌无响应）
+- 护盾逻辑是另写的一套，与 `DamageHelper` 行为可能不一致
+- 濒死/复活判定也是另写的，`OnNearDeath` 触发器不被调用
+
+**修复方案**：  
+将 Layer2-Step1 的伤害计算结果收集后，统一通过 `DamageHelper.ApplyDamage(triggerCallbacks: true)` 应用，删除自建的扣血逻辑。
+
+**优先级**：P0（定策牌是主要战斗模式，被动 Buff 全部失效属于严重功能缺失）
+
+---
+
+### 🟡 R-05：两套触发效果并行，吸血/反伤可能双重执行（中风险）
+
+**位置**：`BattleContext.PendingTriggerEffects` + `SettlementEngine.ResolveLayer2_Step2_Triggers` 与 `TriggerManager` 并行
+
+**问题**：  
+系统中存在两套触发效果执行路径：
+1. **旧路径**：`SettlementEngine` Layer2-Step1 向 `PendingTriggerEffects` 列表添加吸血效果，由 Step2 统一处理。
+2. **新路径（TD-01 后）**：`BuffManager.AddBuff` 在 `TriggerManager` 注册触发器，由 `DamageHelper` 的 `FireTriggers` 执行。
+
+若两个路径同时命中同一次伤害，吸血/反伤将被双重执行。R-04 修复后（Layer2 改走 DamageHelper）旧路径将不再被触发，届时 `PendingTriggerEffects` 系统应整体删除。
+
+**优先级**：P1（与 R-04 修复联动，R-04 修复后需同步清理）
+
+---
+
+### 🟡 R-06：`GetPlayer` O(n) 线性查找（中风险）
+
+**位置**：`BattleContext.GetPlayer`，`BattleContext.GetPlayerState`，`BattleContext.GetTeamPlayers` 等
+
+**问题**：  
+`GetPlayer` 使用 `List<PlayerBattleState>` + 线性遍历，每次结算的 `DamageHelper`、`TriggerManager` 触发器执行都会调用，每回合调用可达数十次。6 人对战中影响有限，但对于 `Shared` 层"确定性、纯计算"的设计目标，应使用 `Dictionary<string, PlayerBattleState>` 实现 O(1) 查找。
+
+**优先级**：P2
+
+---
+
+### 🟡 R-07：`TryStack` 后 `ApplyBuffModifiers` 全量叠加，数值型 Buff 叠加时属性翻倍（中风险）
+
+**位置**：`BuffManager.AddBuff`，叠加分支第 78 行 `ApplyBuffModifiers(_buffs[i])`
+
+**问题**：  
+`TryStack` 会将新 Buff 的 Value 合并到已有 Buff（使 `TotalValue` 增大），随后 `ApplyBuffModifiers` 再次执行 `_owner.Armor += buff.TotalValue`，这是全量值而不是差值。  
+例：Armor Buff 初始 `Value=5` → `Armor+=5`。再叠加一层 `Value=5`，`TotalValue=10`，此时 `ApplyBuffModifiers` 执行 `Armor+=10`，玩家护甲净增 15 而非 5。
+
+**修复方案**：  
+叠加时 `ApplyBuffModifiers` 应只应用**差值**（`newTotalValue - oldTotalValue`），或先 `RemoveBuffModifiers(旧值)` 再 `ApplyBuffModifiers(新值)`。
+
+**优先级**：P1（属性型 Buff 叠加全部受影响）
+
+---
+
+### 🟡 R-08：`ClearRoundData` 清空 `RoundLog`，UI 回放数据丢失（中风险）
+
+**位置**：`BattleContext.ClearRoundData`，`RoundLog.Clear()` 调用
+
+**问题**：  
+`RoundLog` 是本回合所有日志（含触发器执行记录、伤害事件）的临时容器。`ClearRoundData` 在每回合结束后清空它，但此前 `EventRecorder.RecordRoundEnd` 只记录了结构化事件，文本日志没有被持久化。如果客户端依赖 `RoundLog` 做战斗回放或 UI 动画队列，数据将在下一回合开始前丢失。
+
+**优先级**：P2（当前无客户端回放需求，但应在接入 UI 之前处理）
+
+---
+
+### 🟢 R-09：`TriggerManager.UnregisterTrigger` 全字典遍历（低风险）
+
+**位置**：`TriggerManager.UnregisterTrigger`
+
+**问题**：注销单个触发器时遍历所有 timing 字典，O(timing 数 × trigger 数)。可在 `TriggerInstance` 上缓存 `Timing` 字段，直接定位后 O(1) 删除。
+
+**优先级**：P3
+
+---
+
+### 🟢 R-10：最后一回合 DOT 触发时机语义歧义（低风险）
+
+**位置**：`BattleContext.OnRoundEnd` 的调用顺序（FireTriggers → BuffManager.OnRoundEnd）
+
+**问题**：  
+回合结束时先执行 DOT 触发器扣血，再衰减 Buff 持续时间。因此"持续 1 回合的中毒"会在到期前触发 1 次伤害，然后消失。这在设计上可以接受，但需要明确约定：**"N 回合中毒"= 触发 N 次伤害**。当前行为与此一致，但没有文档约定。
+
+**优先级**：P3（需设计确认并写入 GameDesign/SettlementRules.md）
+
+---
+
+### 🟢 R-11：`TriggerContext.BattleContext` 冗余字段（低风险）
+
+**位置**：`TriggerContext` 类，`BattleContext BattleContext` 字段
+
+**问题**：触发器 lambda 闭包已经通过 `_ctx` 捕获了 `BattleContext`，`TriggerContext.BattleContext` 是同一引用的重复持有，轻微增加内存和理解成本。
+
+**优先级**：P3
+
+---
+
+### R-02 详细说明：DOT 绕过 DamageHelper 的完整影响与修复方案
+
+#### 当前代码路径
+
+```
+BattleContext.OnRoundEnd()
+  └─ TriggerManager.FireTriggers(OnRoundEnd)
+       └─ BuffManager 注册的 Poison/Burn/Bleed 触发器 lambda
+            └─ _owner.Hp -= dmg        ← 直接写 Hp，无任何中间层
+               _owner.DamageTakenThisRound += dmg
+```
+
+#### 失效的规则一览
+
+| 规则 | 失效原因 | 游戏表现 |
+|------|----------|----------|
+| 无敌（IsInvincible） | `DamageHelper` 步骤1检查，被绕过 | 无敌状态下依然受到中毒伤害 |
+| 护盾吸收（Shield） | `DamageHelper` 步骤3处理，被绕过 | 护盾不能抵挡 DOT 伤害 |
+| 伤害减免（DamageReductionPercent） | `CalculateIncomingDamage` 在 `DamageHelper` 步骤2调用，被绕过 | 50% 减伤对中毒无效 |
+| BeforeTakeDamage 触发器 | 只在 `DamageHelper` 中触发 | 无法用卡牌拦截/减少 DOT |
+| AfterTakeDamage 触发器 | 只在 `DamageHelper` 中触发 | Thorns 不会响应 DOT（若目标被中毒） |
+| OnNearDeath 触发器 | 只在 `DamageHelper` 中触发 | 复活 Buff 不会被 DOT 致死触发 |
+| 战斗事件记录 | `EventRecorder.RecordDamage` 在 `DamageHelper` 中调用 | DOT 伤害不出现在战斗事件流中 |
+
+#### 修复方案
+
+将 DOT 触发器 lambda 改为调用 `DamageHelper.ApplyDamage`，并传入 `triggerCallbacks: false` 防止 DOT → Thorns → DOT 的无限递归：
+
+```csharp
+// 修复前（有问题）
+case BuffType.Poison:
+case BuffType.Burn:
+case BuffType.Bleed:
+{
+    var capturedBuff = buff;
+    string triggerId = _ctx.TriggerManager.RegisterTrigger(
+        timing: TriggerTiming.OnRoundEnd,
+        ownerPlayerId: ownerId,
+        effect: trigCtx =>
+        {
+            int dmg = capturedBuff.TotalValue;
+            _owner.Hp -= dmg;                      // ← 直接扣血
+            _owner.DamageTakenThisRound += dmg;
+            // ... 日志 ...
+        }
+    );
+}
+
+// 修复后（走 DamageHelper）
+case BuffType.Poison:
+case BuffType.Burn:
+case BuffType.Bleed:
+{
+    var capturedBuff = buff;
+    string triggerId = _ctx.TriggerManager.RegisterTrigger(
+        timing: TriggerTiming.OnRoundEnd,
+        ownerPlayerId: ownerId,
+        effect: trigCtx =>
+        {
+            int dmg = capturedBuff.TotalValue;
+            // triggerCallbacks: false —— 防止 DOT 触发 Thorns 再触发 DOT 死循环
+            DamageHelper.ApplyDamage(
+                _ctx,
+                sourceId: capturedBuff.SourcePlayerId,  // 中毒来源玩家
+                targetId: ownerId,                       // 中毒承受者
+                baseDamage: dmg,
+                triggerCallbacks: false,                 // 阻断递归
+                ignoreArmor: false,                      // 护甲正常减免（设计取舍：可改为 true）
+                damageSource: capturedBuff.BuffName
+            );
+        }
+    );
+}
+```
+
+#### 关于 `triggerCallbacks: false` 的设计取舍
+
+`triggerCallbacks: false` 阻断了 DOT 触发后续的 `AfterTakeDamage`（Thorns 不会响应中毒），这是否符合游戏设计需要明确：
+
+| 选项 | 效果 | 适用场景 |
+|------|------|----------|
+| `triggerCallbacks: false` | DOT 不触发反伤、不触发二次 DOT | 简单安全，推荐默认 |
+| `triggerCallbacks: true` | DOT 可触发反伤，但需配合触发深度保护（R-03 修复）防止死循环 | 需要实现"中毒被反伤回去"的复杂互动时 |
+
+**建议**：当前阶段使用 `triggerCallbacks: false`；待触发深度保护（R-03 修复，即 TD-01 中的 `MaxTriggerDepth = 8`）实现后，可改为 `true` 以支持更丰富的连锁交互。
+
+#### 需要同步检查的其他直接扣血位置
+
+修复 R-02 时，以下位置也需要检查是否存在相同的绕过问题：
+- `BuffManager` 中 `Resurrection` 触发器的 `_owner.Hp = Math.Max(...)` —— 这是治疗，可以不走 DamageHelper，但应走 `DamageHelper.ApplyHeal`
+- `SettlementEngine.ResolveLayer2_Step2_Triggers` 中的 `target.Hp -= trigger.Value`（Thorns）、`target.Hp += trigger.Value`（Lifesteal）—— 这是 R-05 的问题，待 R-04 修复后一并清理
+
+---
+
 ## 🔧 技术债 - 待处理（优先级高）
 
 ### TD-01/TD-04（合并）：Buff / Trigger 协作架构重构（优先级：中，1v1玩法验证后执行）
