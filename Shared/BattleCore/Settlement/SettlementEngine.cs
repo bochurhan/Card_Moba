@@ -468,24 +468,9 @@ namespace CardMoba.BattleCore.Settlement
                         ctx.RoundLog.Add($"[Layer2-Step1] 玩家{pid}被标记为濒死状态");
                     }
 
-                    // 通知受伤玩家的 BuffManager（触发反伤、受伤获甲等）
-                    int damageTaken = -hpDelta;     // 转为正数
-                    if (damageTaken > 0)
-                    {
-                        // 找出是谁打了这个玩家（可能有多个来源，逐一通知）
-                        foreach (var dmg in damages)
-                        {
-                            if (dmg.TargetId == pid)
-                            {
-                                ctx.GetBuffManager(pid)
-                                   ?.OnDamageTaken(ctx, damageTaken, dmg.SourceId);
-
-                                // 同时通知攻击方 BuffManager（吸血触发）
-                                ctx.GetBuffManager(dmg.SourceId)
-                                   ?.OnDamageDealt(ctx, damageTaken, pid);
-                            }
-                        }
-                    }
+                    // TD-01：Thorns（反伤）/ Lifesteal（吸血）等触发型Buff
+                    // 已由 BuffManager.AddBuff 注册到 TriggerManager，
+                    // 由 DamageHelper.ApplyDamage 内部统一 FireTriggers，此处无需重复调用。
                 }
             }
         }

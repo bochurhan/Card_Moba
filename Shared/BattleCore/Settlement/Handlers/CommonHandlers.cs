@@ -330,8 +330,9 @@ namespace CardMoba.BattleCore.Settlement.Handlers
 
     /// <summary>
     /// 吸血效果处理器 —— 处理 Lifesteal 效果。
-    /// 通过 BuffManager 注册 OnDamageDealt 触发型 Buff，
-    /// 由 BuffManager.TriggerBuffEffect 在伤害结算后执行治疗。
+    /// 向目标 BuffManager 注册 Lifesteal Buff；
+    /// TD-01 后由 BuffManager.AddBuff 自动在 TriggerManager 注册 AfterDealDamage 触发器，
+    /// 每次造成伤害后自动执行治疗。
     /// </summary>
     public class LifestealHandler : IEffectHandler
     {
@@ -381,8 +382,9 @@ namespace CardMoba.BattleCore.Settlement.Handlers
 
     /// <summary>
     /// 反伤效果处理器 —— 处理 Thorns 效果。
-    /// 通过 BuffManager 注册 OnDamageTaken 触发型 Buff，
-    /// 由 BuffManager.TriggerBuffEffect 在受到伤害后执行反伤。
+    /// 向目标 BuffManager 注册 Thorns Buff；
+    /// TD-01 后由 BuffManager.AddBuff 自动在 TriggerManager 注册 AfterTakeDamage 触发器，
+    /// 每次受到伤害后自动对攻击方执行反伤。
     /// </summary>
     public class ThornsHandler : IEffectHandler
     {
