@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using CardMoba.BattleCore.Context;
+using CardMoba.BattleCore.Settlement;
 using CardMoba.BattleCore.Trigger;
 using CardMoba.Protocol.Enums;
 
@@ -448,29 +449,67 @@ namespace CardMoba.BattleCore.Buff
 
             switch (buff.BuffType)
             {
-                // ── 持续伤害：回合结束时扣血 ──
+                // ── 中毒：回合开始时结算，真实伤害，无视护盾/减免，无敌有效，层数-1后归零移除 ──
                 case BuffType.Poison:
+                {
+                    var capturedBuff = buff;
+                    string triggerId = _ctx.TriggerManager.RegisterTrigger(
+                        timing: TriggerTiming.OnRoundStart,
+                        ownerPlayerId: ownerId,
+                        effect: trigCtx =>
+                        {
+                            // 层数为 0 时（已被净化等情况）跳过
+                            if (capturedBuff.Stacks <= 0) return;
+
+                            int dmg = capturedBuff.Stacks; // 伤害 = 当前层数
+                            // 通过 ApplyDot：无敌有效，无视护盾/减免，触发 AfterTakeDamage 和 OnNearDeath
+                            DamageHelper.ApplyDot(
+                                ctx: _ctx,
+                                targetId: ownerId,
+                                sourceId: capturedBuff.SourcePlayerId,
+                                dotDamage: dmg,
+                                dotSource: capturedBuff.BuffName
+                            );
+
+                            // 层数衰减 -1，归零时移除 Buff（触发器会随 RemoveBuff 一并注销）
+                            int oldStacks = capturedBuff.Stacks;
+                            capturedBuff.Stacks--;
+                            OnBuffStackChanged?.Invoke(capturedBuff, oldStacks);
+                            if (capturedBuff.Stacks <= 0)
+                            {
+                                RemoveBuff(capturedBuff);
+                            }
+                        },
+                        triggerName: $"{buff.BuffName}_POISON_{buff.RuntimeId}",
+                        sourceId: buff.RuntimeId
+                    );
+                    if (triggerId != null) buff.RegisteredTriggerIds.Add(triggerId);
+                    break;
+                }
+
+                // ── 燃烧/流血：规则待定，暂在回合结束结算，走 ApplyDot 管道（真实伤害）
+                // TODO: 确认 Burn/Bleed 的结算时机、是否受减免影响、层数衰减方式
                 case BuffType.Burn:
                 case BuffType.Bleed:
                 {
-                    // 使用局部变量捕获 buff 引用，防止闭包捕获循环变量问题
                     var capturedBuff = buff;
                     string triggerId = _ctx.TriggerManager.RegisterTrigger(
                         timing: TriggerTiming.OnRoundEnd,
                         ownerPlayerId: ownerId,
                         effect: trigCtx =>
                         {
+                            if (capturedBuff.Stacks <= 0) return;
+
                             int dmg = capturedBuff.TotalValue;
-                            _owner.Hp -= dmg;
-                            _owner.DamageTakenThisRound += dmg;
-                            _ctx.RoundLog.Add(
-                                $"[BuffTrigger] {capturedBuff.BuffName}：{ownerId} 受到 {dmg} 点持续伤害（HP: {_owner.Hp + dmg} → {_owner.Hp}）");
-                            if (_owner.Hp <= 0)
-                            {
-                                _owner.Hp = 0;
-                                _owner.IsMarkedForDeath = true;
-                                _ctx.RoundLog.Add($"[BuffTrigger] {ownerId} 因持续伤害进入濒死状态");
-                            }
+                            DamageHelper.ApplyDot(
+                                ctx: _ctx,
+                                targetId: ownerId,
+                                sourceId: capturedBuff.SourcePlayerId,
+                                dotDamage: dmg,
+                                dotSource: capturedBuff.BuffName
+                            );
+                            // 注意：Burn/Bleed 的层数衰减由 OnRoundEnd 的 Buff 持续时间机制统一处理，
+                            // 此处不手动衰减，等待规则确认后再调整
                         },
                         triggerName: $"{buff.BuffName}_DOT_{buff.RuntimeId}",
                         sourceId: buff.RuntimeId

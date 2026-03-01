@@ -216,6 +216,97 @@ namespace CardMoba.BattleCore.Settlement
         }
 
         /// <summary>
+        /// 应用持续伤害（DOT）—— 中毒/燃烧/流血专用管道。
+        /// 
+        /// 与 ApplyDamage 的区别：
+        /// - 无视护盾（Shield）
+        /// - 无视伤害减免（DamageReduction / Armor）
+        /// - 无视 Strength / Weak 等攻击加成
+        /// - 无敌（IsInvincible）有效，可阻挡 DOT
+        /// - 触发 AfterTakeDamage（反弹类牌可响应）
+        /// - 触发 OnNearDeath（复活 Buff 可响应）
+        /// - 不触发 BeforeDealDamage / BeforeTakeDamage / AfterDealDamage
+        /// </summary>
+        /// <param name="ctx">战斗上下文</param>
+        /// <param name="targetId">受伤目标玩家ID</param>
+        /// <param name="sourceId">DOT 施加者玩家ID（用于反弹归因）</param>
+        /// <param name="dotDamage">本次 DOT 伤害值</param>
+        /// <param name="dotSource">DOT 来源描述（用于日志）</param>
+        /// <returns>实际造成的伤害值；无敌时返回 0</returns>
+        public static int ApplyDot(
+            BattleContext ctx,
+            string targetId,
+            string sourceId,
+            int dotDamage,
+            string dotSource = "持续伤害")
+        {
+            var target = ctx.GetPlayer(targetId);
+
+            if (target == null || !target.IsAlive || target.IsMarkedForDeath)
+            {
+                return 0;
+            }
+
+            // ── 1. 无敌检查：无敌阻挡 DOT ──
+            if (target.IsInvincible)
+            {
+                ctx.RoundLog.Add($"[DamageHelper] {dotSource}：{targetId} 处于无敌状态，DOT 被阻挡");
+                return 0;
+            }
+
+            // ── 2. 直接扣血（跳过护盾、减免、攻击加成，真实伤害）──
+            if (dotDamage <= 0) return 0;
+
+            target.Hp -= dotDamage;
+            target.DamageTakenThisRound += dotDamage;
+            // 注意：DOT 来源方不累加 DamageDealtThisRound，避免影响"本回合造成伤害"类卡牌判断
+            // 如有需要，可由调用方自行累加
+
+            ctx.RoundLog.Add($"[DamageHelper] {dotSource}：{targetId} 受到 {dotDamage} 点真实伤害（HP: {target.Hp + dotDamage} → {target.Hp}）");
+
+            // 记录战斗事件（供客户端 UI 同步）
+            ctx.EventRecorder.RecordDamage(sourceId, targetId, dotDamage, false, dotSource);
+
+            // ── 3. 触发 AfterTakeDamage（反弹类牌可响应）──
+            // SourcePlayerId = 受伤方，TargetPlayerId = DOT 施加者（反弹归因）
+            ctx.TriggerManager.FireTriggers(ctx, TriggerTiming.AfterTakeDamage, new TriggerContext
+            {
+                BattleContext = ctx,
+                Timing = TriggerTiming.AfterTakeDamage,
+                SourcePlayerId = targetId,
+                TargetPlayerId = sourceId,
+                Value = dotDamage
+            });
+
+            // ── 4. 濒死检查 ──
+            if (target.Hp <= 0)
+            {
+                target.Hp = 0;
+                target.IsMarkedForDeath = true;
+                ctx.RoundLog.Add($"[DamageHelper] {targetId} 因 {dotSource} 进入濒死状态");
+
+                // 触发 OnNearDeath（复活 Buff 可响应）
+                ctx.TriggerManager.FireTriggers(ctx, TriggerTiming.OnNearDeath, new TriggerContext
+                {
+                    BattleContext = ctx,
+                    Timing = TriggerTiming.OnNearDeath,
+                    SourcePlayerId = sourceId,
+                    TargetPlayerId = targetId,
+                    Value = dotDamage
+                });
+
+                // 如果濒死被触发器取消（复活 Buff），清除标记
+                if (target.Hp > 0)
+                {
+                    target.IsMarkedForDeath = false;
+                    ctx.RoundLog.Add($"[DamageHelper] {targetId} 被复活效果救活（{dotSource} 致死被撤销）");
+                }
+            }
+
+            return dotDamage;
+        }
+
+        /// <summary>
         /// 应用治疗 —— 统一的治疗处理入口。
         /// </summary>
         /// <param name="ctx">战斗上下文</param>
