@@ -480,6 +480,7 @@ public class PlayerBattleState
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| V5.2 | 2026-03-02 | 同步更新文档结构：`Architecture.md` 重命名为 `SystemArchitecture.md`；`ConfigSystem.md` 标记为已完成；修正 `QuickStart.md` 中失效链接；`SystemArchitecture.md` 清理旧 `PendingTriggerEffects` 引用，更新集成缺口表格 |
 | V5.1 | 2026-03-01 | R-05：删除 `PendingTriggerEffects` / `HasChainTriggeredThisRound` / `ResolveLayer2_Step2_Triggers` 旧触发路径；R-06：`GetPlayer` 改为 O(1) 字典查找，新增 `RegisterPlayer` 方法；R-08：新增 `HistoryLog` 回合日志快照持久化；更新 BattleContext 数据结构章节 |
 | V5.0 | 2026-02-28 | 修正 EffectType ID 表（对齐实际枚举：跳跃分布 1,2-8,10-14,20-29）；更新 Handler 注册表（移除不存在的 ArmorBreak/ExecuteKill/HealTeam；新增 DoubleStrength(29)）；新增效果流程指向 ConfigSystem.md |
 | V4.0 | 2026-02-26 | 彻底移除旧版 100+ 兼容范围；统一 EffectType 体系；CounterHandler 重构；补充 PlayerBattleState 字段；CardTag 新增 Reflect |

@@ -1,7 +1,7 @@
 # Card_Moba 项目文档中心
 
-**最后更新**：2026年03月01日  
-**文档版本**：V2.1
+**最后更新**：2026年03月02日  
+**文档版本**：V2.2
 
 ---
 
@@ -34,11 +34,11 @@
 | 文档 | 说明 | 状态 |
 |------|------|------|
 | [QuickStart.md](TechGuide/QuickStart.md) | **5分钟快速入门**（必读） | ✅ 完成 |
-| [BattleCore.md](TechGuide/BattleCore.md) | 核心结算引擎详解 | ✅ 完成 |
-| Architecture.md | 项目架构与分层设计 | ⏳ 待补充 |
+| [BattleCore.md](TechGuide/BattleCore.md) | 核心结算引擎详解（Handler 注册表 / EffectType 速查） | ✅ 完成 |
+| [SystemArchitecture.md](TechGuide/SystemArchitecture.md) | 系统分层架构与模块关系图 | ✅ 完成 |
+| [ConfigSystem.md](TechGuide/ConfigSystem.md) | CSV→JSON 配置流水线使用说明 | ✅ 完成 |
 | ClientDev.md | 客户端开发规范与模块 | ⏳ 待补充 |
 | ServerDev.md | 后台服务架构与实现 | ⏳ 待补充 |
-| ConfigSystem.md | 配置系统使用说明 | ⏳ 待补充 |
 | Tools.md | 开发工具使用手册 | ⏳ 待补充 |
 
 ### 📡 API/ — 接口与协议文档
@@ -65,13 +65,13 @@
 
 1. 先看 **[TechGuide/QuickStart.md](TechGuide/QuickStart.md)** — 5分钟了解项目
 2. 再看 **[GameDesign/Overview.md](GameDesign/Overview.md)** — 理解游戏核心玩法
-3. 然后看 **[TechGuide/Architecture.md](TechGuide/Architecture.md)** — 理解代码结构
+3. 然后看 **[TechGuide/SystemArchitecture.md](TechGuide/SystemArchitecture.md)** — 理解模块分层关系
 
 ### 我想添加新卡牌
 
 1. 理解卡牌规则：[GameDesign/CardSystem.md](GameDesign/CardSystem.md)
-2. 查看枚举定义：[API/Enums.md](API/Enums.md)
-3. 使用编辑器工具：[TechGuide/Tools.md](TechGuide/Tools.md)
+2. 查看效果类型：[TechGuide/BattleCore.md](TechGuide/BattleCore.md)（EffectType 速查表）
+3. 配置数据流程：[TechGuide/ConfigSystem.md](TechGuide/ConfigSystem.md)
 
 ### 我想理解结算逻辑
 
@@ -89,7 +89,8 @@
 
 ## 🔄 文档维护规范
 
-1. **枚举变更**：只修改 `API/Enums.md`，其他文档引用它
-2. **架构变更**：更新 `TechGuide/Architecture.md` 并同步 `Changelog.md`
+1. **枚举变更**：修改 `Shared/Protocol/Enums/EffectType.cs` 后同步更新 `TechGuide/BattleCore.md` 和 `TechGuide/ConfigSystem.md`
+2. **架构变更**：更新 `TechGuide/SystemArchitecture.md` 并同步 `Planning/TODO.md`
 3. **玩法变更**：更新对应 `GameDesign/` 文档并同步版本号
 4. **版本号**：重大变更时在文档顶部更新版本号和日期
+5. **Handler 新增**：参考 `TechGuide/BattleCore.md` §添加新效果的步骤，按序执行全部 6 步

@@ -1,7 +1,7 @@
 # BattleCore 系统架构关系图
 
-**文档版本**：V1.0  
-**最后更新**：2026-02-26  
+**文档版本**：V1.1  
+**最后更新**：2026-03-02  
 **适用对象**：初次接触本项目战斗系统的开发者  
 **下一步阅读**：[BattleCore.md](BattleCore.md)（代码级细节）、[../GameDesign/SettlementRules.md](../GameDesign/SettlementRules.md)（游戏规则）  
 **阅读时间**：10 分钟
@@ -34,7 +34,7 @@
 │                                                             │
 │  Players[]          PendingPlanCards    RoundLog            │
 │  ValidPlanCards     CounteredCards      PendingCounterCards │
-│  PendingTriggerEffects  MatchPhase      SeededRandom        │
+│  HistoryLog         MatchPhase          SeededRandom        │
 │                                                             │
 │  内嵌三个副系统的引用：                                       │
 │   ├── TriggerManager   （触发系统）                          │
@@ -114,10 +114,11 @@ RoundManager.EndRound(ctx)
             ├─ Layer 1: ShieldHandler / ArmorHandler
             │     └─ 读取 BuffManager 的防御层数，修正即将受到的伤害
             │
-            ├─ Layer 2: DamageHandler
-            │     ├─ 实际扣血，写入 PlayerBattleState.CurrentHp
-            │     └─ 产生 PendingTriggerEffects（如吸血、荆棘反伤）
-            │           └─ 同一 Layer2 内立即处理
+            ├─ Layer 2: DamageHandler（三阶段 A/B/C 批量结算）
+            │     ├─ 阶段A：只读收集所有伤害，不修改状态
+            │     ├─ 阶段B：批量写入护盾/HP 变化量
+            │     └─ 阶段C：统一触发 AfterDealDamage / AfterTakeDamage
+            │           └─ 吸血/反伤由 BuffManager 注册的 TriggerInstance 在此响应
             │
             └─ Layer 3: HealHandler / StunHandler / DrawHandler / SilenceHandler
                   └─ 写入 BuffManager 或直接修改 PlayerBattleState
@@ -130,7 +131,7 @@ RoundManager.EndRound(ctx)
 | 系统 | 写入时机 | 读取时机 | 与 4层Layer 的关系 |
 |------|---------|---------|------------------|
 | **Buff 系统** | Handler 执行时追加 Buff（如 `StunHandler` 调 `BuffManager.AddBuff`） | `OnRoundStart/End` 衰减；Layer 1 结算时读取 Vulnerable/Weak 层数 | Layer 1/2/3 的 Handler 可追加或消耗 Buff；**Buff 本身不主动触发结算** |
-| **Trigger 系统** | 卡牌配置注册触发器；`SettlementEngine` 在关键时机调 `FireTriggers` | `FireTriggers` 读取注册列表，执行回调后再次调用 `ExecuteEffect` | Layer 2 执行完伤害后处理 `PendingTriggerEffects`；回合开始/结束也会 Fire |
+| **Trigger 系统** | Buff 添加时由 `BuffManager.RegisterBuffTriggers` 向 `TriggerManager` 注册触发器 | `FireTriggers` 读取注册列表，执行回调 | Layer 2 阶段C `FireTriggers(AfterDealDamage/AfterTakeDamage)` 统一触发；回合开始/结束也会 Fire |
 | **Event 系统** | 回合开始/结束、战斗开始/结束等节点由 `BattleContext` 写入 | 客户端读取，播放 UI 动画和回放 | **完全被动，只记录，不参与任何结算计算** |
 
 ---
@@ -256,13 +257,13 @@ RoundManager 驱动时序
 
 ## 当前已知集成缺口（待修复）
 
-以下三点是现阶段系统集成不完整的地方，优先级从高到低：
+以下是现阶段系统集成不完整的地方，按优先级排列：
 
-| # | 问题 | 影响 | 建议修复方向 |
-|---|------|------|------------|
-| 1 | Handler 层没有统一调用 `BuffManager`，部分逻辑直接读写 `PlayerBattleState` 字段 | Buff 与 Handler 耦合不一致，可能造成层数计算双重来源 | Handler 执行时通过 `ctx.GetBuffManager(playerId)` 读写，不再直接操作字段 |
-| 2 | `HandlerRegistry` 里目前没有 Handler 主动调用 `TriggerManager`，Trigger Fire 仅在引擎层 | 若 Handler 内有复杂连锁效果，Trigger 无法感知 | 在 Layer 2 的 DamageHandler 执行后统一 Fire `AfterDamage`  |
-| 3 | `BattleEventRecorder` 只记录了回合级事件，Handler 执行时未写入细粒度事件 | 客户端无法制作卡牌技能动画 | 在每个 Handler 的 `Execute()` 末尾调用 `ctx.EventRecorder.Record(...)` |
+| # | 问题 | 影响 | 建议修复方向 | 优先级 |
+|---|------|------|------------|--------|
+| 1 | DOT（Poison/Burn/Bleed）触发器直接写 `_owner.Hp -= dmg`，绕过 `DamageHelper` | 无敌/护盾/减免对 DOT 全部失效，复活 Buff 不响应 DOT 致死 | 改为调用 `DamageHelper.ApplyDot()`（详见 TODO.md R-02） | 🔴 P0 |
+| 2 | `BuffManager.AddBuff` 叠加时 `ApplyBuffModifiers` 使用全量值而非差值，数值型 Buff 叠加翻倍 | Armor/AttackBuff 等属性型 Buff 叠加值错误 | 叠加时先 `RemoveBuffModifiers(旧值)` 再 `ApplyBuffModifiers(新值)` | 🟡 P1 |
+| 3 | `BattleEventRecorder` 只记录回合级事件，Handler 执行时未写入细粒度事件 | 客户端无法制作卡牌技能动画 | 在每个 Handler 的 `Execute()` 末尾调用 `ctx.EventRecorder.Record(...)` | 🟡 P2 |
 
 ---
 
