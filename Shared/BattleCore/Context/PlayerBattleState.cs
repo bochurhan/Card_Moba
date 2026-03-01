@@ -70,53 +70,23 @@ namespace CardMoba.BattleCore.Context
         /// <summary>伤害减免百分比（0-100）</summary>
         public int DamageReductionPercent { get; set; }
 
-        /// <summary>是否无敌（完全免疫伤害）</summary>
+        /// <summary>是否无敌（完全免疫伤害）。由 BuffManager.ApplyBuffModifiers 写入。</summary>
         public bool IsInvincible { get; set; }
 
-        /// <summary>无敌剩余回合数</summary>
-        public int InvincibleRounds { get; set; }
-
-        /// <summary>是否处于易伤状态（与 VulnerableStacks 不同，这是布尔状态）</summary>
+        /// <summary>是否处于易伤状态。由 BuffManager.ApplyBuffModifiers 写入。</summary>
         public bool IsVulnerable { get; set; }
 
-        /// <summary>易伤状态剩余回合数</summary>
-        public int VulnerableRounds { get; set; }
-
-        /// <summary>是否处于虚弱状态</summary>
+        /// <summary>是否处于虚弱状态。由 BuffManager.ApplyBuffModifiers 写入。</summary>
         public bool IsWeak { get; set; }
 
-        /// <summary>虚弱状态剩余回合数</summary>
-        public int WeakRounds { get; set; }
-
-        /// <summary>伤害减免数值</summary>
-        public int DamageReduction { get; set; }
-
-        /// <summary>伤害减免剩余回合数</summary>
-        public int DamageReductionRounds { get; set; }
-
-        /// <summary>吸血百分比</summary>
+        /// <summary>吸血百分比。由 BuffManager.ApplyBuffModifiers 写入。</summary>
         public int LifestealPercent { get; set; }
 
-        /// <summary>吸血剩余回合数</summary>
-        public int LifestealRounds { get; set; }
-
-        /// <summary>反伤数值</summary>
+        /// <summary>反伤数值。由 BuffManager.ApplyBuffModifiers 写入。</summary>
         public int ThornsValue { get; set; }
 
-        /// <summary>反伤剩余回合数</summary>
-        public int ThornsRounds { get; set; }
-
-        /// <summary>受击获甲数值（受到伤害时获得的护甲量）</summary>
-        public int ArmorOnHitValue { get; set; }
-
-        /// <summary>受击获甲剩余回合数</summary>
-        public int ArmorOnHitRounds { get; set; }
-
-        /// <summary>是否处于减速状态</summary>
+        /// <summary>是否处于减速状态。由 BuffManager.ApplyBuffModifiers 写入。</summary>
         public bool IsSlowed { get; set; }
-
-        /// <summary>减速剩余回合数</summary>
-        public int SlowedRounds { get; set; }
 
         // ── 资源属性 ──
 
@@ -151,17 +121,11 @@ namespace CardMoba.BattleCore.Context
         /// <summary>玩家是否存活</summary>
         public bool IsAlive => Hp > 0;
 
-        /// <summary>是否被沉默（无法使用技能牌）</summary>
+        /// <summary>是否被沉默（无法使用技能牌）。由 BuffManager.ApplyBuffModifiers 写入。</summary>
         public bool IsSilenced { get; set; }
 
-        /// <summary>沉默剩余回合数</summary>
-        public int SilencedRounds { get; set; }
-
-        /// <summary>是否被眩晕（跳过操作回合）</summary>
+        /// <summary>是否被眩晕（跳过操作回合）。由 BuffManager.ApplyBuffModifiers 写入。</summary>
         public bool IsStunned { get; set; }
-
-        /// <summary>眩晕剩余回合数</summary>
-        public int StunnedRounds { get; set; }
 
         // ── 本回合统计（用于触发式效果） ──
 
@@ -176,11 +140,6 @@ namespace CardMoba.BattleCore.Context
 
         /// <summary>本回合是否被标记为濒死（HP<=0 但还未正式判定死亡）</summary>
         public bool IsMarkedForDeath { get; set; }
-
-        // ── Buff/Debuff 列表 ──
-
-        /// <summary>当前生效的 Buff 列表</summary>
-        public List<BuffInstance> ActiveBuffs { get; set; } = new List<BuffInstance>();
 
         // ── 便捷方法 ──
 
@@ -252,76 +211,11 @@ namespace CardMoba.BattleCore.Context
         }
 
         /// <summary>
-        /// 处理回合开始时的状态更新（能量恢复、Buff 持续时间、控制效果等）。
+        /// 处理回合开始时的状态重置（仅重置回合统计，Buff衰减统一由 BuffManager.OnRoundEnd 处理）。
         /// </summary>
         public void OnRoundStart()
         {
             ResetRoundStats();
-
-            // 恢复能量到上限
-            Energy = MaxEnergy;
-
-            // 处理沉默
-            if (IsSilenced && SilencedRounds > 0)
-            {
-                SilencedRounds--;
-                if (SilencedRounds <= 0)
-                    IsSilenced = false;
-            }
-
-            // 处理眩晕
-            if (IsStunned && StunnedRounds > 0)
-            {
-                StunnedRounds--;
-                if (StunnedRounds <= 0)
-                    IsStunned = false;
-            }
-
-            // 处理 Buff 列表
-            for (int i = ActiveBuffs.Count - 1; i >= 0; i--)
-            {
-                ActiveBuffs[i].RemainingRounds--;
-                if (ActiveBuffs[i].RemainingRounds <= 0)
-                {
-                    // 移除效果并从列表中删除
-                    RemoveBuffEffect(ActiveBuffs[i]);
-                    ActiveBuffs.RemoveAt(i);
-                }
-            }
-        }
-
-        /// <summary>
-        /// 添加一个 Buff。
-        /// </summary>
-        public void AddBuff(BuffInstance buff)
-        {
-            // 检查是否已有同名 Buff
-            for (int i = 0; i < ActiveBuffs.Count; i++)
-            {
-                if (ActiveBuffs[i].BuffId == buff.BuffId)
-                {
-                    // 同名 Buff：取最高值（或叠加，根据 Buff 类型决定）
-                    if (buff.Value > ActiveBuffs[i].Value)
-                        ActiveBuffs[i].Value = buff.Value;
-                    if (buff.RemainingRounds > ActiveBuffs[i].RemainingRounds)
-                        ActiveBuffs[i].RemainingRounds = buff.RemainingRounds;
-                    return;
-                }
-            }
-
-            // 新增 Buff
-            ActiveBuffs.Add(buff);
-            ApplyBuffEffect(buff);
-        }
-
-        private void ApplyBuffEffect(BuffInstance buff)
-        {
-            // 由 BuffManager 统一管理，此处为兼容性保留
-        }
-
-        private void RemoveBuffEffect(BuffInstance buff)
-        {
-            // 由 BuffManager 统一管理，此处为兼容性保留
         }
 
         // ══════════════════════════════════════════════════════════

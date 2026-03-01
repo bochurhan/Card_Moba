@@ -397,9 +397,9 @@ namespace CardMoba.BattleCore.RoundStateMachine
                 if (p.WeakStacks > 0)
                     ctx.RoundLog.Add($"[RoundManager] {p.PlayerName} 虚弱:{p.WeakStacks}层");
                 if (p.IsSilenced)
-                    ctx.RoundLog.Add($"[RoundManager] {p.PlayerName} 沉默中（剩余{p.SilencedRounds}回合）");
+                    ctx.RoundLog.Add($"[RoundManager] {p.PlayerName} 沉默中");
                 if (p.IsStunned)
-                    ctx.RoundLog.Add($"[RoundManager] {p.PlayerName} 眩晕中（剩余{p.StunnedRounds}回合）");
+                    ctx.RoundLog.Add($"[RoundManager] {p.PlayerName} 眩晕中");
 
                 // 1d. 固定抽牌（回合结束弃光手牌后，这里重新摸满）
                 int drawCount = DrawPerRound;
