@@ -349,12 +349,27 @@ namespace CardMoba.BattleCore.Settlement
 
         /// <summary>
         /// 堆叠2层-步骤1：所有伤害牌同步、一次性结算。
+        ///
+        /// 执行流程：
+        ///   阶段A（收集）：遍历有效定策牌，计算每张伤害牌的最终伤害值（含攻击方加成），
+        ///                  存入 damages 列表。此阶段只计算，不修改任何状态，保证同步性。
+        ///   阶段B（批量写入）：对每条伤害记录，依次经过无敌检查、护盾吸收、扣血，
+        ///                     写入 hpChanges / shieldChanges 累计变化量。
+        ///   阶段C（触发器统一触发）：批量写入完毕后，按伤害记录顺序统一触发
+        ///                          AfterDealDamage / AfterTakeDamage / OnNearDeath，
+        ///                          确保所有基础伤害先落定再触发二次效果。
+        ///
+        /// 与 DamageHelper.ApplyDamage 的协作关系：
+        ///   - 阶段A/B 替代了 DamageHelper 的内联逻辑（批量语义无法直接复用单次调用）
+        ///   - 阶段C 统一补齐 DamageHelper 中单次触发的所有回调，保证 Buff / Trigger 系统等效
         /// </summary>
         private void ResolveLayer2_Step1_Damage(BattleContext ctx)
         {
             ctx.RoundLog.Add("[Layer2-Step1] 主动伤害同步结算");
 
-            // 收集所有伤害效果
+            // ──────────────────────────────────────────────────────
+            // 阶段A：收集所有伤害效果（只读，不修改状态）
+            // ──────────────────────────────────────────────────────
             var damages = new List<DamageToApply>();
 
             foreach (var card in ctx.ValidPlanCards)
@@ -373,21 +388,55 @@ namespace CardMoba.BattleCore.Settlement
                 {
                     if (effect.EffectType == EffectType.Damage)
                     {
-                        int finalDamage = source.CalculateOutgoingDamage(effect.Value);
-                        damages.Add(new DamageToApply
+                        // BeforeDealDamage 触发器（可修改或取消伤害）
+                        int outgoing = source.CalculateOutgoingDamage(effect.Value);
+                        bool cancelled = false;
+
+                        if (ctx.TriggerManager != null)
                         {
-                            SourceId  = source.PlayerId,
-                            TargetId  = targetId,
-                            BaseDamage = effect.Value,
-                            FinalDamage = finalDamage,
-                            CardName  = card.Config.CardName,
-                            HasLifesteal = HasLifestealEffect(card.Config)
-                        });
+                            var beforeDealCtx = new Trigger.TriggerContext
+                            {
+                                BattleContext   = ctx,
+                                Timing          = Trigger.TriggerTiming.BeforeDealDamage,
+                                SourcePlayerId  = source.PlayerId,
+                                TargetPlayerId  = targetId,
+                                Value           = outgoing,
+                                ModifiedValue   = outgoing
+                            };
+                            ctx.TriggerManager.FireTriggers(ctx, Trigger.TriggerTiming.BeforeDealDamage, beforeDealCtx);
+
+                            if (beforeDealCtx.ShouldCancel)
+                            {
+                                ctx.RoundLog.Add($"[Layer2-Step1] 「{card.Config.CardName}」伤害被 BeforeDealDamage 触发器取消");
+                                cancelled = true;
+                            }
+                            else
+                            {
+                                outgoing = beforeDealCtx.ModifiedValue;
+                            }
+                        }
+
+                        if (!cancelled)
+                        {
+                            damages.Add(new DamageToApply
+                            {
+                                SourceId     = source.PlayerId,
+                                TargetId     = targetId,
+                                BaseDamage   = effect.Value,
+                                FinalDamage  = outgoing,
+                                CardName     = card.Config.CardName,
+                                HasLifesteal = HasLifestealEffect(card.Config)
+                            });
+                        }
                     }
                 }
             }
 
-            // 同步应用所有伤害（先计算，后统一写入）
+            // ──────────────────────────────────────────────────────
+            // 阶段B：批量写入伤害（护盾 → 扣血，累计 delta）
+            // ──────────────────────────────────────────────────────
+            // hpChanges / shieldChanges：累计本阶段所有伤害对各玩家的净变化量，
+            // 避免同一回合多张伤害牌之间互相影响对方的瞬时状态。
             var hpChanges     = new Dictionary<string, int>();
             var shieldChanges = new Dictionary<string, int>();
 
@@ -397,25 +446,70 @@ namespace CardMoba.BattleCore.Settlement
                 shieldChanges[player.PlayerId] = 0;
             }
 
+            // 记录每条伤害的"最终实际 HP 伤害"，供阶段C触发器使用
+            var actualHpDamages = new List<AppliedDamageRecord>();
+
             foreach (var dmg in damages)
             {
                 var target = ctx.GetPlayer(dmg.TargetId);
                 if (target == null || target.IsMarkedForDeath) continue;
 
-                int actualDamage = target.CalculateIncomingDamage(dmg.FinalDamage);
-
-                // 先扣护盾
-                int currentShield = target.Shield + shieldChanges[target.PlayerId];
-                if (currentShield > 0)
+                // ── 无敌检查：无敌时跳过全部伤害 ──
+                if (target.IsInvincible)
                 {
-                    int shieldAbsorb = currentShield >= actualDamage ? actualDamage : currentShield;
-                    shieldChanges[target.PlayerId] -= shieldAbsorb;
-                    actualDamage -= shieldAbsorb;
-                    if (shieldAbsorb > 0)
-                        ctx.RoundLog.Add($"[Layer2-Step1] 「{dmg.CardName}」被护盾吸收{shieldAbsorb}点伤害");
+                    ctx.RoundLog.Add($"[Layer2-Step1] 玩家{dmg.TargetId}处于无敌状态，「{dmg.CardName}」伤害被免疫");
+                    continue;
                 }
 
-                // 再扣血
+                // ── BeforeTakeDamage 触发器（可修改或取消伤害）──
+                int actualDamage = target.CalculateIncomingDamage(dmg.FinalDamage);
+                if (ctx.TriggerManager != null)
+                {
+                    var beforeTakeCtx = new Trigger.TriggerContext
+                    {
+                        BattleContext   = ctx,
+                        Timing          = Trigger.TriggerTiming.BeforeTakeDamage,
+                        SourcePlayerId  = dmg.SourceId,
+                        TargetPlayerId  = dmg.TargetId,
+                        Value           = actualDamage,
+                        ModifiedValue   = actualDamage
+                    };
+                    ctx.TriggerManager.FireTriggers(ctx, Trigger.TriggerTiming.BeforeTakeDamage, beforeTakeCtx);
+
+                    if (beforeTakeCtx.ShouldCancel)
+                    {
+                        ctx.RoundLog.Add($"[Layer2-Step1] 「{dmg.CardName}」伤害被 BeforeTakeDamage 触发器取消");
+                        continue;
+                    }
+                    actualDamage = beforeTakeCtx.ModifiedValue;
+                }
+
+                // ── 护盾吸收（使用累计后的当前护盾值）──
+                int shieldAbsorbed = 0;
+                int currentShield = target.Shield + shieldChanges[target.PlayerId];
+                if (currentShield > 0 && actualDamage > 0)
+                {
+                    shieldAbsorbed = currentShield >= actualDamage ? actualDamage : currentShield;
+                    shieldChanges[target.PlayerId] -= shieldAbsorbed;
+                    actualDamage -= shieldAbsorbed;
+
+                    ctx.RoundLog.Add($"[Layer2-Step1] 「{dmg.CardName}」被护盾吸收 {shieldAbsorbed} 点伤害");
+
+                    // 护盾破碎检测（护盾累计后归零）
+                    if ((target.Shield + shieldChanges[target.PlayerId]) <= 0)
+                    {
+                        ctx.TriggerManager?.FireTriggers(ctx, Trigger.TriggerTiming.OnShieldBroken, new Trigger.TriggerContext
+                        {
+                            BattleContext  = ctx,
+                            Timing         = Trigger.TriggerTiming.OnShieldBroken,
+                            SourcePlayerId = dmg.SourceId,
+                            TargetPlayerId = dmg.TargetId,
+                            Value          = shieldAbsorbed
+                        });
+                    }
+                }
+
+                // ── 扣血（累计 delta）──
                 if (actualDamage > 0)
                 {
                     hpChanges[target.PlayerId] -= actualDamage;
@@ -423,54 +517,112 @@ namespace CardMoba.BattleCore.Settlement
 
                     var source = ctx.GetPlayer(dmg.SourceId);
                     if (source != null)
-                    {
                         source.DamageDealtThisRound += actualDamage;
 
-                        if (dmg.HasLifesteal)
-                        {
-                            ctx.PendingTriggerEffects.Add(new PendingTriggerEffect
-                            {
-                                SourcePlayerId = dmg.SourceId,
-                                TargetPlayerId = dmg.SourceId,
-                                EffectType     = EffectType.Lifesteal,
-                                Value          = actualDamage,
-                                TriggerReason  = $"「{dmg.CardName}」吸血"
-                            });
-                        }
-                    }
-                }
+                    actualHpDamages.Add(new AppliedDamageRecord
+                    {
+                        SourceId     = dmg.SourceId,
+                        TargetId     = dmg.TargetId,
+                        HpDamage     = actualDamage,
+                        CardName     = dmg.CardName,
+                        HasLifesteal = dmg.HasLifesteal
+                    });
 
-                ctx.RoundLog.Add($"[Layer2-Step1] 玩家{dmg.SourceId}的「{dmg.CardName}」" +
-                    $"对玩家{dmg.TargetId}造成{actualDamage}点伤害");
+                    ctx.RoundLog.Add($"[Layer2-Step1] 玩家{dmg.SourceId}的「{dmg.CardName}」" +
+                        $"对玩家{dmg.TargetId}造成 {actualDamage} 点伤害");
+                }
             }
 
-            // 统一应用所有变化，并通知 BuffManager 触发响应型 Buff（反伤/吸血等）
+            // ── 统一写入护盾变化 ──
             foreach (var player in ctx.Players)
             {
                 string pid = player.PlayerId;
-
                 if (shieldChanges[pid] != 0)
                 {
                     player.Shield += shieldChanges[pid];
                     if (player.Shield < 0) player.Shield = 0;
                 }
+            }
 
-                if (hpChanges[pid] != 0)
+            // ── 统一写入 HP 变化并标记濒死 ──
+            foreach (var player in ctx.Players)
+            {
+                string pid = player.PlayerId;
+                if (hpChanges[pid] == 0) continue;
+
+                player.Hp += hpChanges[pid];
+                if (player.Hp > player.MaxHp) player.Hp = player.MaxHp;
+                if (player.Hp < 0) player.Hp = 0;
+            }
+
+            // ──────────────────────────────────────────────────────
+            // 阶段C：批量触发所有伤害后回调
+            // 必须在 HP 统一写入之后执行，确保回调看到的是稳定的最终状态
+            // ──────────────────────────────────────────────────────
+            foreach (var rec in actualHpDamages)
+            {
+                var source = ctx.GetPlayer(rec.SourceId);
+                var target = ctx.GetPlayer(rec.TargetId);
+                if (source == null || target == null) continue;
+
+                // AfterDealDamage（攻击方视角，含吸血 Buff 触发）
+                ctx.TriggerManager?.FireTriggers(ctx, Trigger.TriggerTiming.AfterDealDamage, new Trigger.TriggerContext
                 {
-                    int hpDelta = hpChanges[pid];   // 负值 = 受到伤害
-                    player.Hp += hpDelta;
-                    if (player.Hp > player.MaxHp) player.Hp = player.MaxHp;
+                    BattleContext  = ctx,
+                    Timing         = Trigger.TriggerTiming.AfterDealDamage,
+                    SourcePlayerId = rec.SourceId,
+                    TargetPlayerId = rec.TargetId,
+                    Value          = rec.HpDamage,
+                    DamageSource   = Trigger.DamageSourceType.CardDamage
+                });
 
-                    if (player.Hp <= 0)
+                // AfterTakeDamage（防守方视角，含 Thorns/Reflect Buff 触发）
+                // SourcePlayerId = 受伤方，TargetPlayerId = 攻击方（与 DamageHelper 保持一致）
+                ctx.TriggerManager?.FireTriggers(ctx, Trigger.TriggerTiming.AfterTakeDamage, new Trigger.TriggerContext
+                {
+                    BattleContext  = ctx,
+                    Timing         = Trigger.TriggerTiming.AfterTakeDamage,
+                    SourcePlayerId = rec.TargetId,
+                    TargetPlayerId = rec.SourceId,
+                    Value          = rec.HpDamage,
+                    DamageSource   = Trigger.DamageSourceType.CardDamage
+                });
+
+                // 吸血特殊处理：加入 PendingTriggerEffects，在 Step2 统一结算
+                if (rec.HasLifesteal)
+                {
+                    ctx.PendingTriggerEffects.Add(new PendingTriggerEffect
                     {
-                        player.Hp = 0;
-                        player.IsMarkedForDeath = true;
-                        ctx.RoundLog.Add($"[Layer2-Step1] 玩家{pid}被标记为濒死状态");
-                    }
+                        SourcePlayerId = rec.SourceId,
+                        TargetPlayerId = rec.SourceId,
+                        EffectType     = EffectType.Lifesteal,
+                        Value          = rec.HpDamage,
+                        TriggerReason  = $"「{rec.CardName}」吸血"
+                    });
+                }
 
-                    // TD-01：Thorns（反伤）/ Lifesteal（吸血）等触发型Buff
-                    // 已由 BuffManager.AddBuff 注册到 TriggerManager，
-                    // 由 DamageHelper.ApplyDamage 内部统一 FireTriggers，此处无需重复调用。
+                // OnNearDeath（濒死检查，含复活 Buff 触发）
+                if (target.Hp <= 0)
+                {
+                    target.IsMarkedForDeath = true;
+                    source.HasKilledThisRound = true;
+                    ctx.RoundLog.Add($"[Layer2-Step1] 玩家{rec.TargetId}被标记为濒死状态");
+
+                    ctx.TriggerManager?.FireTriggers(ctx, Trigger.TriggerTiming.OnNearDeath, new Trigger.TriggerContext
+                    {
+                        BattleContext  = ctx,
+                        Timing         = Trigger.TriggerTiming.OnNearDeath,
+                        SourcePlayerId = rec.SourceId,
+                        TargetPlayerId = rec.TargetId,
+                        Value          = rec.HpDamage
+                    });
+
+                    // 如果复活 Buff 将 HP 恢复为正值，撤销濒死标记
+                    if (target.Hp > 0)
+                    {
+                        target.IsMarkedForDeath = false;
+                        ctx.RoundLog.Add($"[Layer2-Step1] 玩家{rec.TargetId}被复活效果救活");
+                    }
                 }
             }
         }
@@ -686,7 +838,7 @@ namespace CardMoba.BattleCore.Settlement
             public PlayerBattleState Source { get; set; } = null!;
         }
 
-        /// <summary>待应用的伤害信息。</summary>
+        /// <summary>待应用的伤害信息（阶段A收集，阶段B读取）。</summary>
         private class DamageToApply
         {
             public string SourceId { get; set; } = string.Empty;
@@ -694,6 +846,24 @@ namespace CardMoba.BattleCore.Settlement
             public int BaseDamage { get; set; }
             public int FinalDamage { get; set; }
             public string CardName { get; set; } = string.Empty;
+            public bool HasLifesteal { get; set; }
+        }
+
+        /// <summary>
+        /// 阶段B写入后的实际伤害记录（阶段C触发器读取）。
+        /// 只记录最终落地到 HP 的伤害，护盾完全吸收的伤害不在此列。
+        /// </summary>
+        private class AppliedDamageRecord
+        {
+            /// <summary>攻击方玩家ID。</summary>
+            public string SourceId { get; set; } = string.Empty;
+            /// <summary>受伤方玩家ID。</summary>
+            public string TargetId { get; set; } = string.Empty;
+            /// <summary>实际造成的 HP 伤害（护盾吸收后的余量）。</summary>
+            public int HpDamage { get; set; }
+            /// <summary>来源卡牌名（用于日志）。</summary>
+            public string CardName { get; set; } = string.Empty;
+            /// <summary>攻击方该卡是否有吸血效果。</summary>
             public bool HasLifesteal { get; set; }
         }
     }
