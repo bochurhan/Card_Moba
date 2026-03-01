@@ -21,8 +21,17 @@ namespace CardMoba.BattleCore.Trigger
     /// </summary>
     public class TriggerManager
     {
+        /// <summary>
+        /// 最大触发链深度（防止 Thorns ↔ Thorns、反制 ↔ 反制等死递归）。
+        /// 超过此深度时，后续触发器将被跳过并记录警告日志。
+        /// </summary>
+        private const int MaxTriggerDepth = 8;
+
         private readonly Dictionary<TriggerTiming, List<TriggerInstance>> _triggersByTiming;
         private int _triggerIdCounter = 0;
+
+        /// <summary>当前触发链深度（用于递归保护）</summary>
+        private int _triggerDepth = 0;
 
         /// <summary>触发器执行事件（用于日志/UI 更新）</summary>
         public event Action<TriggerInstance, TriggerContext> OnTriggerExecuted;
@@ -204,46 +213,63 @@ namespace CardMoba.BattleCore.Trigger
             if (triggers.Count == 0)
                 return false;
 
+            // ── 递归深度保护 ──
+            if (_triggerDepth >= MaxTriggerDepth)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[TriggerManager] ⚠️ 触发链超过最大深度({MaxTriggerDepth})，" +
+                    $"跳过 {timing} 触发器，防止死递归。");
+                return false;
+            }
+
+            _triggerDepth++;
             bool anyExecuted = false;
 
-            // 复制列表以防止迭代时修改
-            var triggersToExecute = new List<TriggerInstance>(triggers);
-
-            foreach (var trigger in triggersToExecute)
+            try
             {
-                // 检查是否应该移除
-                if (trigger.ShouldRemove)
-                    continue;
+                // 复制列表以防止迭代时修改
+                var triggersToExecute = new List<TriggerInstance>(triggers);
 
-                // 检查条件
-                if (trigger.Condition != null && !trigger.Condition(triggerCtx))
-                    continue;
-
-                // 执行效果
-                try
+                foreach (var trigger in triggersToExecute)
                 {
-                    trigger.Effect?.Invoke(triggerCtx);
-                    anyExecuted = true;
+                    // 检查是否应该移除
+                    if (trigger.ShouldRemove)
+                        continue;
 
-                    // 减少触发次数
-                    if (trigger.RemainingTriggers > 0)
+                    // 检查条件
+                    if (trigger.Condition != null && !trigger.Condition(triggerCtx))
+                        continue;
+
+                    // 执行效果
+                    try
                     {
-                        trigger.RemainingTriggers--;
+                        trigger.Effect?.Invoke(triggerCtx);
+                        anyExecuted = true;
+
+                        // 减少触发次数
+                        if (trigger.RemainingTriggers > 0)
+                        {
+                            trigger.RemainingTriggers--;
+                        }
+
+                        OnTriggerExecuted?.Invoke(trigger, triggerCtx);
+
+                        // 检查是否应该取消后续处理
+                        if (triggerCtx.ShouldCancel)
+                        {
+                            break;
+                        }
                     }
-
-                    OnTriggerExecuted?.Invoke(trigger, triggerCtx);
-
-                    // 检查是否应该取消后续处理
-                    if (triggerCtx.ShouldCancel)
+                    catch (Exception ex)
                     {
-                        break;
+                        // 记录错误但继续执行其他触发器
+                        System.Diagnostics.Debug.WriteLine($"[TriggerManager] 触发器执行异常: {trigger.TriggerId} - {ex.Message}");
                     }
                 }
-                catch (Exception ex)
-                {
-                    // 记录错误但继续执行其他触发器
-                    System.Diagnostics.Debug.WriteLine($"[TriggerManager] 触发器执行异常: {trigger.TriggerId} - {ex.Message}");
-                }
+            }
+            finally
+            {
+                _triggerDepth--;
             }
 
             // 清理应该移除的触发器
@@ -280,6 +306,15 @@ namespace CardMoba.BattleCore.Trigger
             if (triggers.Count == 0)
                 return false;
 
+            // ── 递归深度保护 ──
+            if (_triggerDepth >= MaxTriggerDepth)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[TriggerManager] ⚠️ 触发链超过最大深度({MaxTriggerDepth})，" +
+                    $"跳过 {timing} 触发器，防止死递归。");
+                return false;
+            }
+
             // 创建触发上下文
             var triggerCtx = new TriggerContext
             {
@@ -292,47 +327,55 @@ namespace CardMoba.BattleCore.Trigger
                 RelatedCard = relatedCard,
             };
 
+            _triggerDepth++;
             bool anyExecuted = false;
 
-            // 复制列表以防止迭代时修改
-            var triggersToExecute = new List<TriggerInstance>(triggers);
-
-            foreach (var trigger in triggersToExecute)
+            try
             {
-                // 检查是否应该移除
-                if (trigger.ShouldRemove)
-                    continue;
+                // 复制列表以防止迭代时修改
+                var triggersToExecute = new List<TriggerInstance>(triggers);
 
-                // 检查条件
-                if (trigger.Condition != null && !trigger.Condition(triggerCtx))
-                    continue;
-
-                // 执行效果
-                try
+                foreach (var trigger in triggersToExecute)
                 {
-                    trigger.Effect?.Invoke(triggerCtx);
-                    anyExecuted = true;
+                    // 检查是否应该移除
+                    if (trigger.ShouldRemove)
+                        continue;
 
-                    // 减少触发次数
-                    if (trigger.RemainingTriggers > 0)
+                    // 检查条件
+                    if (trigger.Condition != null && !trigger.Condition(triggerCtx))
+                        continue;
+
+                    // 执行效果
+                    try
                     {
-                        trigger.RemainingTriggers--;
+                        trigger.Effect?.Invoke(triggerCtx);
+                        anyExecuted = true;
+
+                        // 减少触发次数
+                        if (trigger.RemainingTriggers > 0)
+                        {
+                            trigger.RemainingTriggers--;
+                        }
+
+                        OnTriggerExecuted?.Invoke(trigger, triggerCtx);
+
+                        // 检查是否应该取消后续处理
+                        if (triggerCtx.ShouldCancel)
+                        {
+                            cancelled = true;
+                            break;
+                        }
                     }
-
-                    OnTriggerExecuted?.Invoke(trigger, triggerCtx);
-
-                    // 检查是否应该取消后续处理
-                    if (triggerCtx.ShouldCancel)
+                    catch (Exception ex)
                     {
-                        cancelled = true;
-                        break;
+                        // 记录错误但继续执行其他触发器
+                        System.Diagnostics.Debug.WriteLine($"[TriggerManager] 触发器执行异常: {trigger.TriggerId} - {ex.Message}");
                     }
                 }
-                catch (Exception ex)
-                {
-                    // 记录错误但继续执行其他触发器
-                    System.Diagnostics.Debug.WriteLine($"[TriggerManager] 触发器执行异常: {trigger.TriggerId} - {ex.Message}");
-                }
+            }
+            finally
+            {
+                _triggerDepth--;
             }
 
             // 清理应该移除的触发器
@@ -360,6 +403,15 @@ namespace CardMoba.BattleCore.Trigger
             if (triggers.Count == 0)
                 return value;
 
+            // ── 递归深度保护 ──
+            if (_triggerDepth >= MaxTriggerDepth)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[TriggerManager] ⚠️ 触发链超过最大深度({MaxTriggerDepth})，" +
+                    $"跳过 {timing} 修改型触发器，防止死递归。");
+                return value;
+            }
+
             var triggerCtx = new TriggerContext
             {
                 BattleContext = ctx,
@@ -370,32 +422,41 @@ namespace CardMoba.BattleCore.Trigger
                 ModifiedValue = value,
             };
 
-            var triggersToExecute = new List<TriggerInstance>(triggers);
+            _triggerDepth++;
 
-            foreach (var trigger in triggersToExecute)
+            try
             {
-                if (trigger.ShouldRemove) continue;
-                if (trigger.Condition != null && !trigger.Condition(triggerCtx)) continue;
+                var triggersToExecute = new List<TriggerInstance>(triggers);
 
-                try
+                foreach (var trigger in triggersToExecute)
                 {
-                    trigger.Effect?.Invoke(triggerCtx);
+                    if (trigger.ShouldRemove) continue;
+                    if (trigger.Condition != null && !trigger.Condition(triggerCtx)) continue;
 
-                    if (trigger.RemainingTriggers > 0)
-                        trigger.RemainingTriggers--;
-
-                    OnTriggerExecuted?.Invoke(trigger, triggerCtx);
-
-                    if (triggerCtx.ShouldCancel)
+                    try
                     {
-                        cancelled = true;
-                        break;
+                        trigger.Effect?.Invoke(triggerCtx);
+
+                        if (trigger.RemainingTriggers > 0)
+                            trigger.RemainingTriggers--;
+
+                        OnTriggerExecuted?.Invoke(trigger, triggerCtx);
+
+                        if (triggerCtx.ShouldCancel)
+                        {
+                            cancelled = true;
+                            break;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[TriggerManager] 触发器执行异常: {trigger.TriggerId} - {ex.Message}");
                     }
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[TriggerManager] 触发器执行异常: {trigger.TriggerId} - {ex.Message}");
-                }
+            }
+            finally
+            {
+                _triggerDepth--;
             }
 
             CleanupExpiredTriggers(timing);

@@ -580,6 +580,7 @@ namespace CardMoba.BattleCore.Buff
                 }
 
                 // ── 持续回复：回合开始时加血 ──
+                // 注意：通过 DamageHelper.ApplyHeal 执行，触发 OnHealed 事件。
                 case BuffType.Regeneration:
                 {
                     var capturedBuff = buff;
@@ -589,12 +590,14 @@ namespace CardMoba.BattleCore.Buff
                         effect: trigCtx =>
                         {
                             int heal = capturedBuff.TotalValue;
-                            int oldHp = _owner.Hp;
-                            _owner.Hp = Math.Min(_owner.Hp + heal, _owner.MaxHp);
-                            int actualHeal = _owner.Hp - oldHp;
-                            if (actualHeal > 0)
-                                _ctx.RoundLog.Add(
-                                    $"[BuffTrigger] {capturedBuff.BuffName}：{ownerId} 回复 {actualHeal} 点生命");
+                            if (heal <= 0) return;
+                            DamageHelper.ApplyHeal(
+                                ctx: _ctx,
+                                sourceId: ownerId,
+                                targetId: ownerId,
+                                healAmount: heal,
+                                healSource: capturedBuff.BuffName
+                            );
                         },
                         triggerName: $"{buff.BuffName}_REGEN_{buff.RuntimeId}",
                         sourceId: buff.RuntimeId
@@ -608,6 +611,8 @@ namespace CardMoba.BattleCore.Buff
                 //   1. SourcePlayerId == ownerId —— 是自己受伤（AfterTakeDamage 中 Source = 受伤方）
                 //   2. TargetPlayerId != ownerId —— 攻击者不是自己（排除自伤）
                 //   3. DamageSource == CardDamage —— 来自卡牌打出的伤害（排除 DOT/燃烧/流血等持续伤害）
+                // 注意：反伤通过 DamageHelper.ApplyDamage（triggerCallbacks:false）执行，
+                //       确保反伤伤害受攻击者的无敌/护盾/减免正确处理，同时阻断递归反伤链。
                 case BuffType.Thorns:
                 {
                     var capturedBuff = buff;
@@ -626,15 +631,19 @@ namespace CardMoba.BattleCore.Buff
                             if (attacker == null || !attacker.IsAlive) return;
 
                             int reflectDmg = capturedBuff.TotalValue;
-                            attacker.Hp -= reflectDmg;
-                            attacker.DamageTakenThisRound += reflectDmg;
+                            // triggerCallbacks:false —— 反伤不再触发 AfterTakeDamage，阻断 Thorns 递归链
+                            // ignoreArmor:true —— 荆棘反伤无视护甲（设计约定：穿透性反弹）
+                            DamageHelper.ApplyDamage(
+                                ctx: _ctx,
+                                sourceId: ownerId,         // 反伤来源 = 拥有荆棘的玩家
+                                targetId: attackerId,       // 受到反伤的 = 攻击者
+                                baseDamage: reflectDmg,
+                                triggerCallbacks: false,    // 阻断递归
+                                ignoreArmor: true,          // 荆棘无视护甲
+                                damageSource: capturedBuff.BuffName
+                            );
                             _ctx.RoundLog.Add(
-                                $"[BuffTrigger] {capturedBuff.BuffName}：{ownerId} 对 {attackerId} 反伤 {reflectDmg} 点（来源卡牌伤害）");
-                            if (attacker.Hp <= 0)
-                            {
-                                attacker.Hp = 0;
-                                attacker.IsMarkedForDeath = true;
-                            }
+                                $"[BuffTrigger] {capturedBuff.BuffName}：{ownerId} 对 {attackerId} 反伤 {reflectDmg} 点");
                         },
                         triggerName: $"{buff.BuffName}_THORNS_{buff.RuntimeId}",
                         sourceId: buff.RuntimeId
@@ -644,6 +653,8 @@ namespace CardMoba.BattleCore.Buff
                 }
 
                 // ── 吸血：造成伤害后按百分比回血 ──
+                // 注意：通过 DamageHelper.ApplyHeal 执行，触发 OnHealed 事件，
+                //       使治疗增益 Buff 可以正确叠加到吸血回复量上。
                 case BuffType.Lifesteal:
                 {
                     var capturedBuff = buff;
@@ -658,12 +669,14 @@ namespace CardMoba.BattleCore.Buff
                             int healAmount = (dealtDamage * capturedBuff.TotalValue) / 100;
                             if (healAmount <= 0) return;
 
-                            int oldHp = _owner.Hp;
-                            _owner.Hp = Math.Min(_owner.Hp + healAmount, _owner.MaxHp);
-                            int actualHeal = _owner.Hp - oldHp;
-                            if (actualHeal > 0)
-                                _ctx.RoundLog.Add(
-                                    $"[BuffTrigger] {capturedBuff.BuffName}：{ownerId} 吸血回复 {actualHeal} 点生命（{capturedBuff.TotalValue}%）");
+                            // 通过 DamageHelper.ApplyHeal：触发 OnHealed、正确受治疗增益影响
+                            DamageHelper.ApplyHeal(
+                                ctx: _ctx,
+                                sourceId: ownerId,
+                                targetId: ownerId,
+                                healAmount: healAmount,
+                                healSource: capturedBuff.BuffName
+                            );
                         },
                         triggerName: $"{buff.BuffName}_LIFESTEAL_{buff.RuntimeId}",
                         sourceId: buff.RuntimeId
@@ -672,7 +685,7 @@ namespace CardMoba.BattleCore.Buff
                     break;
                 }
 
-                // ── 复活：濒死时触发一次 ──
+                // ── 复活：濒死时触发一次，通过 DamageHelper.ApplyHeal 执行实际回血 ──
                 case BuffType.Resurrection:
                 {
                     var capturedBuff = buff;
@@ -682,8 +695,21 @@ namespace CardMoba.BattleCore.Buff
                         condition: trigCtx => trigCtx.TargetPlayerId == ownerId,
                         effect: trigCtx =>
                         {
-                            _owner.Hp = Math.Max(capturedBuff.TotalValue, 1);
+                            int reviveHp = Math.Max(capturedBuff.TotalValue, 1);
+                            // 先把 HP 设回至少 1（避免死亡判定干扰），再用 ApplyHeal 做正式恢复
+                            _owner.Hp = 1;
                             _owner.IsMarkedForDeath = false;
+                            int healAmount = reviveHp - 1; // ApplyHeal 追加剩余量
+                            if (healAmount > 0)
+                            {
+                                DamageHelper.ApplyHeal(
+                                    ctx: _ctx,
+                                    sourceId: ownerId,
+                                    targetId: ownerId,
+                                    healAmount: healAmount,
+                                    healSource: capturedBuff.BuffName
+                                );
+                            }
                             _ctx.RoundLog.Add(
                                 $"[BuffTrigger] {capturedBuff.BuffName}：{ownerId} 触发复活，恢复至 {_owner.Hp} 点生命");
                             // 复活是一次性的，立即移除 Buff
@@ -691,6 +717,30 @@ namespace CardMoba.BattleCore.Buff
                         },
                         remainingTriggers: 1, // 只触发一次
                         triggerName: $"{buff.BuffName}_RESURRECTION_{buff.RuntimeId}",
+                        sourceId: buff.RuntimeId
+                    );
+                    if (triggerId != null) buff.RegisteredTriggerIds.Add(triggerId);
+                    break;
+                }
+
+                // ── 受击获甲（ArmorOnHit）：受到来自卡牌的伤害后获得护甲 ──
+                case BuffType.ArmorOnHit:
+                {
+                    var capturedBuff = buff;
+                    string triggerId = _ctx.TriggerManager.RegisterTrigger(
+                        timing: TriggerTiming.AfterTakeDamage,
+                        ownerPlayerId: ownerId,
+                        condition: trigCtx =>
+                            trigCtx.SourcePlayerId == ownerId
+                            && trigCtx.DamageSource == DamageSourceType.CardDamage,
+                        effect: trigCtx =>
+                        {
+                            int armorGain = capturedBuff.TotalValue;
+                            _owner.Armor += armorGain;
+                            _ctx.RoundLog.Add(
+                                $"[BuffTrigger] {capturedBuff.BuffName}：{ownerId} 受击获甲 +{armorGain}");
+                        },
+                        triggerName: $"{buff.BuffName}_ARMORONHIT_{buff.RuntimeId}",
                         sourceId: buff.RuntimeId
                     );
                     if (triggerId != null) buff.RegisteredTriggerIds.Add(triggerId);
