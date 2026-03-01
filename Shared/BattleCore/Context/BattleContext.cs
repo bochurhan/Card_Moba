@@ -240,40 +240,39 @@ namespace CardMoba.BattleCore.Context
 
         /// <summary>
         /// 回合开始时调用，处理跨回合效果和玩家状态更新。
+        /// TriggerManager 中注册的 OnRoundStart 触发器（含 Buff 的再生效果）在此统一触发。
         /// </summary>
         public void OnRoundStart()
         {
             EventRecorder.RecordRoundStart(CurrentRound);
 
-            // 触发回合开始触发器
-            TriggerManager.FireTriggers(this, TriggerTiming.OnRoundStart);
-
             foreach (var player in Players)
             {
                 player.OnRoundStart();
-
-                // 触发玩家 Buff 的回合开始效果
-                var buffManager = GetBuffManager(player.PlayerId);
-                buffManager?.OnRoundStart(this);
             }
+
+            // 触发所有 OnRoundStart 触发器（含 Regeneration 等 Buff 的回合开始效果）
+            TriggerManager.FireTriggers(this, TriggerTiming.OnRoundStart);
         }
 
         /// <summary>
-        /// 回合结束时调用，处理触发器衰减和 Buff 持续时间。
+        /// 回合结束时调用，处理持续效果、触发器衰减和 Buff 持续时间。
+        /// 顺序：先触发 OnRoundEnd 触发器（中毒/灼烧扣血等），再衰减 Buff 持续时间，
+        /// 最后衰减 TriggerManager 中触发器的回合计数。
         /// </summary>
         public void OnRoundEnd()
         {
-            // 触发回合结束触发器
+            // 1. 触发所有 OnRoundEnd 触发器（含 Poison/Burn/Bleed 等 Buff 的持续伤害效果）
             TriggerManager.FireTriggers(this, TriggerTiming.OnRoundEnd);
 
+            // 2. 衰减 Buff 持续时间（此步骤仅减计数，不再执行效果）
             foreach (var player in Players)
             {
-                // 触发玩家 Buff 的回合结束效果
                 var buffManager = GetBuffManager(player.PlayerId);
-                buffManager?.OnRoundEnd(this);
+                buffManager?.OnRoundEnd();
             }
 
-            // 处理触发器回合衰减
+            // 3. 衰减 TriggerManager 中触发器的回合计数
             TriggerManager.OnRoundEnd();
 
             EventRecorder.RecordRoundEnd(CurrentRound);
@@ -289,11 +288,11 @@ namespace CardMoba.BattleCore.Context
             if (_buffManagers.TryGetValue(playerId, out var manager))
                 return manager;
 
-            // 自动创建
+            // 自动创建（传入 this 作为 BattleContext 引用，使 BuffManager 能注册触发器）
             var player = GetPlayer(playerId);
             if (player != null)
             {
-                manager = new BuffManager(player);
+                manager = new BuffManager(player, this);
                 _buffManagers[playerId] = manager;
                 return manager;
             }
@@ -321,11 +320,11 @@ namespace CardMoba.BattleCore.Context
             WinnerTeamId = -1;
             CardPlayedCountThisRound = 0;
 
-            // 初始化所有玩家的 BuffManager
+            // 初始化所有玩家的 BuffManager（传入 this，使 BuffManager 能注册触发器）
             _buffManagers.Clear();
             foreach (var player in Players)
             {
-                _buffManagers[player.PlayerId] = new BuffManager(player);
+                _buffManagers[player.PlayerId] = new BuffManager(player, this);
             }
 
             // 清空事件记录

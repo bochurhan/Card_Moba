@@ -1,4 +1,3 @@
-using CardMoba.BattleCore.Buff;
 using CardMoba.BattleCore.Context;
 using CardMoba.BattleCore.Trigger;
 using CardMoba.Protocol.Enums;
@@ -155,47 +154,12 @@ namespace CardMoba.BattleCore.Settlement
             }
 
             // ══════════════════════════════════════════════════════════
-            // 5. 触发伤害后回调（吸血、反伤）
+            // 5. 触发伤害后回调（吸血、反伤等由 TriggerManager 统一调度）
             // ══════════════════════════════════════════════════════════
             if (triggerCallbacks && hpDamage > 0)
             {
-                // 获取双方的 BuffManager
-                var sourceBuffMgr = ctx.GetBuffManager(sourceId);
-                var targetBuffMgr = ctx.GetBuffManager(targetId);
-
-                // 攻击方：触发"造成伤害后"效果（如吸血）
-                sourceBuffMgr?.OnDamageDealt(ctx, hpDamage, targetId);
-
-                // 检查攻击方是否有吸血 Buff
-                if (source.LifestealPercent > 0)
-                {
-                    int healAmount = (hpDamage * source.LifestealPercent) / 100;
-                    if (healAmount > 0)
-                    {
-                        source.Hp += healAmount;
-                        if (source.Hp > source.MaxHp)
-                            source.Hp = source.MaxHp;
-                        ctx.RoundLog.Add($"[DamageHelper] {sourceId} 吸血恢复 {healAmount} 点生命（{source.LifestealPercent}%）");
-                    }
-                }
-
-                // 防守方：触发"受到伤害后"效果（如反伤）
-                targetBuffMgr?.OnDamageTaken(ctx, hpDamage, sourceId);
-
-                // 检查防守方是否有反伤 Buff
-                if (target.ThornsValue > 0)
-                {
-                    int thornsDamage = target.ThornsValue;
-                    ctx.RoundLog.Add($"[DamageHelper] {targetId} 反伤 {thornsDamage} 点给 {sourceId}");
-                    
-                    // 递归调用但禁用回调，防止无限递归
-                    ApplyDamage(ctx, targetId, sourceId, thornsDamage, 
-                        triggerCallbacks: false,  // 关键：防止反伤触发反伤
-                        ignoreArmor: true, 
-                        damageSource: $"{targetId}的反伤");
-                }
-
-                // 触发 AfterDealDamage / AfterTakeDamage 触发器
+                // 攻击方造成伤害后触发器（含 Lifesteal Buff 注册的吸血触发器）
+                // 注意：AfterDealDamage 中 SourcePlayerId = 攻击方
                 ctx.TriggerManager.FireTriggers(ctx, TriggerTiming.AfterDealDamage, new TriggerContext
                 {
                     BattleContext = ctx,
@@ -205,6 +169,8 @@ namespace CardMoba.BattleCore.Settlement
                     Value = hpDamage
                 });
 
+                // 防守方受到伤害后触发器（含 Thorns Buff 注册的反伤触发器）
+                // 注意：AfterTakeDamage 中 SourcePlayerId = 受伤方，TargetPlayerId = 攻击方
                 ctx.TriggerManager.FireTriggers(ctx, TriggerTiming.AfterTakeDamage, new TriggerContext
                 {
                     BattleContext = ctx,
@@ -225,7 +191,7 @@ namespace CardMoba.BattleCore.Settlement
                 source.HasKilledThisRound = true;
                 ctx.RoundLog.Add($"[DamageHelper] {targetId} 进入濒死状态");
 
-                // 触发濒死触发器
+                // 触发濒死触发器（含 Resurrection Buff 注册的复活触发器，由 TriggerManager 统一调度）
                 if (triggerCallbacks)
                 {
                     ctx.TriggerManager.FireTriggers(ctx, TriggerTiming.OnNearDeath, new TriggerContext
@@ -237,11 +203,7 @@ namespace CardMoba.BattleCore.Settlement
                         Value = hpDamage
                     });
 
-                    // 触发 BuffManager 的濒死回调（可能有复活效果）
-                    var targetBuffMgr = ctx.GetBuffManager(targetId);
-                    targetBuffMgr?.OnNearDeath(ctx);
-
-                    // 如果濒死被 Buff 取消（如复活），则清除标记
+                    // 如果濒死被触发器取消（如复活 Buff），则清除标记
                     if (target.Hp > 0)
                     {
                         target.IsMarkedForDeath = false;

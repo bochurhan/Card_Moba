@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using CardMoba.Protocol.Enums;
 
 namespace CardMoba.BattleCore.Buff
@@ -55,6 +56,12 @@ namespace CardMoba.BattleCore.Buff
 
         /// <summary>最大触发次数（0 表示无限制）</summary>
         public int MaxTriggerCount { get; set; } = 0;
+
+        /// <summary>
+        /// 此 Buff 在 TriggerManager 中注册的触发器 ID 列表。
+        /// Buff 移除时，BuffManager 会用此列表批量注销对应触发器。
+        /// </summary>
+        public List<string> RegisteredTriggerIds { get; } = new List<string>();
 
         /// <summary>
         /// 获取当前 Buff 的总效果值（考虑层数）。
