@@ -111,22 +111,12 @@
 
 ---
 
-### 🔴 R-01：Thorns 触发器 Source/Target 语义颠倒（高风险）
+### ✅ R-01：Thorns 触发器 Source/Target 语义颠倒（已修复 2026-03-01）
 
-**位置**：`Shared/BattleCore/Buff/BuffManager.cs` `RegisterBuffTriggers` → `BuffType.Thorns` 分支
-
-**问题**：  
-`DamageHelper.ApplyDamage` 触发 `AfterTakeDamage` 时约定：
-- `SourcePlayerId` = **受伤方**（targetId）
-- `TargetPlayerId` = **攻击方**（sourceId）
-
-`BuffManager` 中 Thorns 的 condition 写的是 `trigCtx.SourcePlayerId == ownerId`（受伤方），逻辑上刚好对，但注释写"TargetPlayerId 是攻击者"，与 `DamageHelper` 中相同字段的含义相反。  
-两处对同一字段的中文描述方向相反，任何人修改其中一处时极易造成反伤打给错误目标（自己或无关人）。
-
-**修复方案**：  
-统一约定 `AfterTakeDamage` 的语义，在 `TriggerTypes.cs` / `TriggerContext` 上加注释说明，并在 BuffManager 中同步注释，消除歧义。
-
-**优先级**：P1（逻辑凑巧对，但随时可能被破坏）
+**修复内容**：  
+在 `TriggerTypes.cs` 的 `TriggerContext.SourcePlayerId` 上新增完整触发时机语义对照表，
+明确约定 `AfterTakeDamage` 中 `SourcePlayerId=受伤方`、`TargetPlayerId=攻击方`。
+该约定在 `BuffManager`（Thorns 触发器）、`SettlementEngine`（Layer2-Step1 阶段C）三处一致。
 
 ---
 
