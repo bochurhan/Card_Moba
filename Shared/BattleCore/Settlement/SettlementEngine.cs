@@ -603,18 +603,10 @@ namespace CardMoba.BattleCore.Settlement
                     DamageSource   = Trigger.DamageSourceType.CardDamage
                 });
 
-                // 吸血特殊处理：加入 PendingTriggerEffects，在 Step2 统一结算
-                if (rec.HasLifesteal)
-                {
-                    ctx.PendingTriggerEffects.Add(new PendingTriggerEffect
-                    {
-                        SourcePlayerId = rec.SourceId,
-                        TargetPlayerId = rec.SourceId,
-                        EffectType     = EffectType.Lifesteal,
-                        Value          = rec.HpDamage,
-                        TriggerReason  = $"「{rec.CardName}」吸血"
-                    });
-                }
+                // R-05 修复：吸血效果不再走旧的 PendingTriggerEffects 路径。
+                // Lifesteal Buff 已在 BuffManager.RegisterBuffTriggers 中注册了 AfterDealDamage 触发器，
+                // 由上方的 AfterDealDamage 触发器调用统一处理，无需在此重复加入。
+                // HasLifesteal 字段保留用于日志/调试，逻辑上已无用途。
 
                 // OnNearDeath（濒死检查，含复活 Buff 触发）
                 if (target.Hp <= 0)

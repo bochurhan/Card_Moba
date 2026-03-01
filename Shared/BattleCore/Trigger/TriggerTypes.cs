@@ -159,10 +159,32 @@ namespace CardMoba.BattleCore.Trigger
         /// <summary>触发时机</summary>
         public TriggerTiming Timing { get; set; }
 
-        /// <summary>触发源玩家 ID</summary>
+        /// <summary>
+        /// 触发源玩家 ID —— 含义随触发时机不同而不同：
+        ///
+        /// ┌──────────────────────┬──────────────────┬──────────────────┐
+        /// │ 触发时机              │ SourcePlayerId   │ TargetPlayerId   │
+        /// ├──────────────────────┼──────────────────┼──────────────────┤
+        /// │ BeforeDealDamage     │ 攻击方           │ 被攻击方         │
+        /// │ AfterDealDamage      │ 攻击方           │ 被攻击方         │
+        /// │ BeforeTakeDamage     │ 攻击方           │ 受伤方           │
+        /// │ AfterTakeDamage      │ 受伤方（被打方） │ 攻击方（打人方） │ ← 注意！与上方相反
+        /// │ OnNearDeath          │ 攻击方           │ 濒死方           │
+        /// │ OnShieldBroken       │ 攻击方           │ 护盾破碎方       │
+        /// │ BeforePlayCard       │ 出牌方           │ 牌的目标         │
+        /// │ AfterPlayCard        │ 出牌方           │ 牌的目标         │
+        /// │ OnRoundStart/End     │ 触发 Buff 归属方  │ (通常为空)       │
+        /// └──────────────────────┴──────────────────┴──────────────────┘
+        ///
+        /// 特别注意 AfterTakeDamage：
+        ///   SourcePlayerId = 受伤方（己方）—— Thorns/Reflect 用此判断"是我被打了"
+        ///   TargetPlayerId = 攻击方（对方）—— Thorns/Reflect 用此作为反伤目标
+        ///   这一约定在 BuffManager.RegisterBuffTriggers(Thorns)、SettlementEngine.ResolveLayer2_Step1
+        ///   和 DamageHelper.ApplyDamage 三处均保持一致。
+        /// </summary>
         public string SourcePlayerId { get; set; }
 
-        /// <summary>触发目标玩家 ID</summary>
+        /// <summary>触发目标玩家 ID —— 含义请参考 SourcePlayerId 的注释表格。</summary>
         public string TargetPlayerId { get; set; }
 
         /// <summary>相关数值（如伤害值、治疗量等）</summary>

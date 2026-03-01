@@ -69,14 +69,20 @@ namespace CardMoba.BattleCore.Buff
                 if (_buffs[i].BuffId == buff.BuffId)
                 {
                     int oldStacks = _buffs[i].Stacks;
+                    int oldValue  = _buffs[i].Value;
                     if (_buffs[i].TryStack(buff))
                     {
+                        // R-07 修复：叠加后先撤销旧属性值，再应用新值，避免翻倍累加
+                        // 示例：Armor+5 → TotalValue=5 已写入 Armor；再叠一层后 TotalValue=10，
+                        //        若直接 ApplyBuffModifiers 则 Armor 净增15而非5。
+                        //        正确做法：RemoveBuffModifiers（按旧值回退）→ ApplyBuffModifiers（按新值写入）
+                        RemoveBuffModifiers(_buffs[i], oldStacks, oldValue);
+                        ApplyBuffModifiers(_buffs[i]);
+
                         if (_buffs[i].Stacks != oldStacks)
                         {
                             OnBuffStackChanged?.Invoke(_buffs[i], oldStacks);
                         }
-                        // 叠加刷新后重新应用属性修改（如护甲值变化）
-                        ApplyBuffModifiers(_buffs[i]);
                         return _buffs[i];
                     }
                     // Independent 规则 → 继续添加新实例
@@ -364,6 +370,61 @@ namespace CardMoba.BattleCore.Buff
                 case BuffType.Silence:
                     _owner.IsSilenced = true;
                     break;
+            }
+        }
+
+        /// <summary>
+        /// 移除 Buff 对玩家属性的静态修改（R-07 重载：按叠加前的旧值撤销，避免翻倍累加）。
+        /// 叠加时先用此重载按旧值回退，再调用 ApplyBuffModifiers 按新值写入。
+        /// </summary>
+        /// <param name="buff">目标 Buff（叠加后的新状态，用于读取 BuffType）</param>
+        /// <param name="oldStacks">叠加前的层数</param>
+        /// <param name="oldValue">叠加前的单层 Value</param>
+        private void RemoveBuffModifiers(BuffInstance buff, int oldStacks, int oldValue)
+        {
+            int oldTotalValue = oldValue * oldStacks;
+            switch (buff.BuffType)
+            {
+                case BuffType.Armor:
+                    _owner.Armor -= oldTotalValue;
+                    if (_owner.Armor < 0) _owner.Armor = 0;
+                    break;
+                case BuffType.Strength:
+                    _owner.Strength -= oldTotalValue;
+                    break;
+                case BuffType.MaxHpBonus:
+                    _owner.MaxHp -= oldTotalValue;
+                    if (_owner.Hp > _owner.MaxHp) _owner.Hp = _owner.MaxHp;
+                    break;
+                case BuffType.Lifesteal:
+                    _owner.LifestealPercent -= oldTotalValue;
+                    if (_owner.LifestealPercent < 0) _owner.LifestealPercent = 0;
+                    break;
+                case BuffType.Thorns:
+                    _owner.ThornsValue -= oldTotalValue;
+                    if (_owner.ThornsValue < 0) _owner.ThornsValue = 0;
+                    break;
+                case BuffType.DamageReduction:
+                    _owner.DamageReductionPercent -= oldTotalValue;
+                    if (_owner.DamageReductionPercent < 0) _owner.DamageReductionPercent = 0;
+                    break;
+                case BuffType.Vulnerable:
+                    _owner.VulnerableStacks -= oldStacks;
+                    if (_owner.VulnerableStacks <= 0)
+                    {
+                        _owner.VulnerableStacks = 0;
+                        _owner.IsVulnerable = false;
+                    }
+                    break;
+                case BuffType.Weak:
+                    _owner.WeakStacks -= oldStacks;
+                    if (_owner.WeakStacks <= 0)
+                    {
+                        _owner.WeakStacks = 0;
+                        _owner.IsWeak = false;
+                    }
+                    break;
+                // Shield/Invincible/Stun/Silence 叠加行为与 TotalValue 无关，无需特殊处理
             }
         }
 
