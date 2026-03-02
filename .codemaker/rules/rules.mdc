@@ -4,507 +4,410 @@ alwaysApply: true
 ---
 <rule>
 
-# Card_Moba — AI Coding Rules & Context Map
+# Card Moba — AI Coding Rules & Reference
 
-## 1. High-Level Overview
+## 1. 高层架构概览 (Big-Picture Architecture)
 
-### 1.1 Project Description
-3v3 synchronous turn-based card MOBA game. Core mechanics: 1+2 fixed lane assignment, Instant-Plan dual-track card system, Central Tower PVE+Boss fights, lane-collapse 3v3 final battle, 25-round hard cap.
-
-### 1.2 Monorepo Architecture
+### 项目结构
 ```
-Card_Moba/                          ← Git root
-├── Client/                         ← Unity 2022.3 LTS project root
-│   ├── Assets/Scripts/             ← Client C# code (4-layer architecture)
-│   │   ├── Presentation/           ← View layer (UI, VFX, Audio, Input, Scene)
-│   │   ├── GameLogic/              ← Business logic (RoundFlow, CardSystem, PlayerState, TeamComm)
-│   │   ├── Data/                   ← Data layer (ConfigData, PlayerData, BattleCache)
-│   │   ├── Network/                ← Network layer (Connection, MessageDispatch, Security, Proto)
-│   │   ├── Common/                 ← Shared utilities (Constants, Utils, Extensions, Events)
-│   │   └── Editor/                 ← Editor-only tools (CardEditor, BattleSimulator)
-│   ├── Assets/Resources/Prefabs/   ← Runtime prefabs (Cards, Characters, UI, VFX, Scene)
-│   ├── Assets/ScriptableObjects/   ← SO data files (Cards, Heroes, GameConfig)
-│   ├── Assets/StreamingAssets/Config/ ← Hot-update config JSONs
-│   └── Packages/manifest.json      ← UPM manifest (includes Shared as local package)
+Card_Moba/
+├── Shared/               ★ C/S 共享逻辑（零 UnityEngine 依赖）
+│   ├── BattleCore/       — 战斗结算引擎（唯一权威）
+│   ├── ConfigModels/     — 数据模型（CardConfig/BuffConfig/HeroConfig）
+│   └── Protocol/         — 枚举与协议消息（EffectType/CardTag 等）
 │
-├── Shared/                         ← UPM local package (com.cardmoba.shared v0.1.0)
-│   ├── BattleCore/                 ← Authoritative settlement engine (noEngineReferences!)
-│   │   ├── CardEffects/            ← Card effect components & pipeline
-│   │   ├── Context/                ← Battle context (all mutable game state)
-│   │   ├── Random/                 ← Seeded PRNG for deterministic settlement
-│   │   ├── RoundStateMachine/      ← 7-phase round FSM
-│   │   └── Settlement/             ← Settlement priority engine
-│   ├── Protocol/                   ← Communication protocol (Enums, Messages)
-│   └── ConfigModels/               ← Data models (Card, Hero, Relic, Rule)
+├── Client/Assets/Scripts/ — Unity 客户端（只消费 Shared，不实现结算规则）
+│   ├── Common/           — 入口（GameEntry.cs）
+│   ├── GameLogic/        — BattleGameManager（单机局驱动）
+│   ├── Presentation/     — UI / 动画 / 音效
+│   ├── Data/             — 本地数据访问
+│   └── Network/          — 网络层
 │
-├── Server/                         ← ASP.NET Core backend
-│   ├── src/
-│   │   ├── CardMoba.Gateway/       ← SignalR WebSocket gateway
-│   │   ├── CardMoba.AccountService/
-│   │   ├── CardMoba.MatchService/
-│   │   ├── CardMoba.RoomService/   ← Core game room lifecycle
-│   │   ├── CardMoba.ConfigService/
-│   │   ├── CardMoba.Common/
-│   │   └── CardMoba.DataAccess/    ← EF Core + Redis
-│   ├── tests/
-│   └── sql/init.sql                ← MySQL 8.0 schema
-│
-├── Config/                         ← Game config (Excel source → JSON export)
-│   ├── Excel/
-│   └── Json/{Cards,Heroes,Relics,Rules}/
-│
-├── Tools/                          ← .NET Core CLI tools
-│   ├── ConfigTool/                 ← Config generation & validation
-│   └── ExcelConverter/             ← Excel → JSON converter
-│
-└── Docs/
-    ├── Design/                     ← Game design documents
-    ├── Guides/                     ← Technical guides
-    └── API/                        ← Protocol & API docs
+├── Server/               — 服务端（.NET，同样引用 Shared）
+├── Config/Excel/         — 策划配表（CSV → JSON via ExcelConverter）
+├── Tools/ExcelConverter/ — 配表转换工具
+└── Docs/                 — 文档（BattleCore.md / SystemArchitecture.md）
 ```
 
-### 1.3 Application Entry Point
-- **Client entry**: `GameEntry` MonoBehaviour at `Client/Assets/Scripts/Common/GameEntry.cs`
-  - Attached to root GameObject in the startup scene
-  - `Awake()`: Calls `DontDestroyOnLoad`, initializes managers
-  - `Start()`: Loads config, enters main menu
-- **Server entry**: ASP.NET Core `Program.cs` in each service project (not yet created)
-- **Shared**: Pure library, no entry point — consumed by both Client (via UPM) and Server (via ProjectReference)
-
-### 1.4 Assembly Dependency Graph (ENFORCED by .asmdef)
+### 一句话定位
 ```
-Shared (noEngineReferences: true)
-├── CardMoba.BattleCore    → refs: ConfigModels, Protocol
-├── CardMoba.Protocol      → refs: (none)
-└── CardMoba.ConfigModels  → refs: (none)
-
-Client Assemblies:
-├── CardMoba.Client.Common        → refs: (none)
-├── CardMoba.Client.Network       → refs: Protocol
-├── CardMoba.Client.Data          → refs: ConfigModels, Protocol, Client.Network
-├── CardMoba.Client.GameLogic     → refs: BattleCore, ConfigModels, Protocol, Client.Data, Client.Network
-├── CardMoba.Client.Presentation  → refs: ConfigModels, Client.GameLogic, Client.Data, Client.Common
-└── CardMoba.Client.Editor        → refs: BattleCore, ConfigModels, Client.GameLogic, Client.Data, Client.Common [Editor-only]
+RoundManager（导演）→ BattleContext（唯一状态容器）→ SettlementEngine（核心结算）
+                                    ↑
+           TriggerManager / BuffManager / BattleEventRecorder（三个副系统）
 ```
-**CRITICAL**: Dependencies flow DOWN only. Never add upward references (e.g., Network must NOT reference GameLogic).
+
+### 应用入口
+- **Unity Client 入口**: `Client/Assets/Scripts/Common/GameEntry.cs` (`Awake` → `Start`)
+- **单机局驱动**: `Client/Assets/Scripts/GameLogic/BattleGameManager.cs`
+  - `StartBattle()` / `StartBattleWithDeck(int[] playerIds, int[] aiIds)`
+- **回合生命周期入口**: `Shared/BattleCore/RoundStateMachine/RoundManager.cs`
+  - `InitBattle(...)` → `PlayCard(...)` / `CommitPlanCard(...)` → `EndRound(...)` → `BeginNextRound(...)`
 
 ---
 
-## 2. Code Style & Consistency Enforcers
+## 2. 代码风格与一致性 (Code Style)
 
-### 2.1 Naming Conventions (C# Official + Project-Specific)
-| Element | Convention | Example |
-|---------|-----------|---------|
-| Namespace | `CardMoba.{Layer}.{Module}` PascalCase | `CardMoba.Client.GameLogic.RoundFlow` |
-| Class / Struct / Enum | PascalCase | `RoundStateMachine`, `CardTrackType` |
-| Interface | `I` + PascalCase | `ISettlementHandler`, `ICardEffect` |
-| Public method | PascalCase | `ProcessSettlement()`, `GetPlayerState()` |
-| Public property | PascalCase | `PlayerId`, `CardName` |
-| Public field | PascalCase | `TrackType`, `Cost` |
-| Private field | `_` + camelCase | `_roundNumber`, `_playerStates` |
-| Local variable | camelCase | `currentRound`, `targetPlayer` |
-| Parameter | camelCase | `playerId`, `cardConfig` |
-| Constant | PascalCase | `MaxHandSize`, `HeartbeatInterval` |
-| Enum values | PascalCase (Chinese allowed for game-specific enums) | `瞬策牌 = 1`, `定策牌 = 2` |
-| File name | Must match primary class name | `RoundStateMachine.cs` |
-| asmdef name | `CardMoba.{Assembly}` | `CardMoba.Client.GameLogic.asmdef` |
+### 2.1 命名规范（严格执行）
 
-### 2.2 Comment & Documentation Standards
-- **Every** public class, method, property, and enum MUST have XML doc comments (`/// <summary>`)
-- Core business logic and complex settlement code MUST have inline comments explaining the "why"
-- Use `[Header("Section Name")]` attribute to group fields in MonoBehaviour / ScriptableObject inspectors
-- Debug logs MUST use the format: `Debug.Log("[ModuleName] message")` — e.g., `Debug.Log("[CardSystem] 卡牌打出: " + cardId)`
+| 元素 | 规则 | 示例 |
+|------|------|------|
+| **类名** | PascalCase | `SettlementEngine`, `DamageHelper` |
+| **接口名** | `I` + PascalCase | `IEffectHandler` |
+| **公共方法** | PascalCase | `ApplyDamage`, `FireTriggers` |
+| **私有方法** | PascalCase | `ResolveLayer2_Step1_Damage` |
+| **公共属性** | PascalCase | `PlayerId`, `RemainingRounds` |
+| **私有字段** | `_` + camelCase | `_targetResolver`, `_triggerDepth` |
+| **局部变量** | camelCase | `outgoingDamage`, `actualDamage` |
+| **常量/枚举成员** | PascalCase | `AfterDealDamage`, `CardDamage` |
+| **文件名** | 与主类名完全一致 | `BuffManager.cs`, `TriggerTypes.cs` |
+| **Layer 内部类** | 全大写层名 + 下划线描述 | `ResolveLayer2_Step1_Damage` |
 
-### 2.3 File Structure Template (C# class)
+### 2.2 文件头标准
+
+每个 `Shared/BattleCore/` 下的 C# 文件必须包含：
 ```csharp
-using UnityEngine;               // Unity namespaces first
-using System;                    // System namespaces second
-using System.Collections.Generic;
-using CardMoba.BattleCore;       // Shared namespaces third
-using CardMoba.Client.Data;      // Client namespaces fourth (respect layer order)
+#pragma warning disable CS8632 // nullable 注解警告（Unity C# 版本不支持）
+```
+这一行必须在 `namespace` 声明之前。
 
-namespace CardMoba.Client.GameLogic.RoundFlow
+### 2.3 注释风格
+
+- **公共 API** 必须有 `/// <summary>` XML 注释
+- **关键逻辑块** 用 `// ══════...══════` 横线分隔并命名
+- **参数说明** 对非显而易见的参数使用 `/// <param name="...">` 和 `/// <returns>`
+- **注意事项** 写 `// 注意：` 或 `// ⚠️` 开头
+- **已移除功能** 写 `// R-XX 清理：` 注释，保留意图说明
+
+```csharp
+// ══════════════════════════════════════════════════════════
+// 阶段A：收集所有伤害效果（只读，不修改状态）
+// ══════════════════════════════════════════════════════════
+```
+
+### 2.4 缩进与格式
+
+- 缩进：4 个空格（不使用 Tab）
+- 字段对齐：同一块的赋值语句用空格对齐
+  ```csharp
+  SourceId    = source.PlayerId,
+  TargetId    = targetId,
+  BaseDamage  = effect.Value,
+  ```
+- 链式调用：换行并缩进
+
+---
+
+## 3. 快速参考与上下文映射 (Rapid Reference)
+
+### 3.1 核心工具方法（精确签名）
+
+```csharp
+// ── BattleContext ──
+PlayerBattleState? GetPlayer(string playerId)          // O(1) 字典查找，首选
+void RegisterPlayer(PlayerBattleState player)          // 替代直接 Players.Add
+BuffManager GetBuffManager(string playerId)            // 获取玩家 Buff 管理器
+void ClearRoundData()                                  // 回合开始前清空临时数据
+void OnRoundStart()                                    // 触发回合开始事件链
+
+// ── DamageHelper（统一伤害入口，Handler 内必须通过这里调用）──
+int DamageHelper.ApplyDamage(
+    BattleContext ctx, string sourceId, string targetId,
+    int baseDamage, bool triggerCallbacks = true,
+    bool ignoreArmor = false, string damageSource = "未知")
+
+int DamageHelper.ApplyDot(
+    BattleContext ctx, string targetId, string sourceId,
+    int dotDamage, string dotSource = "持续伤害")
+
+int DamageHelper.ApplyHeal(
+    BattleContext ctx, string sourceId, string targetId,
+    int healAmount, string healSource = "未知")
+
+int DamageHelper.ApplyShield(
+    BattleContext ctx, string sourceId, string targetId,
+    int shieldAmount, string shieldSource = "未知")
+
+// ── PlayerBattleState ──
+int CalculateOutgoingDamage(int baseDamage)            // 含 AttackBuff/Weak 加成
+int CalculateIncomingDamage(int incomingDamage, bool ignoreArmor = false)
+
+// ── TriggerManager ──
+string RegisterTrigger(TriggerInstance trigger)
+bool UnregisterTrigger(string triggerId)
+int UnregisterTriggersByOwner(string ownerPlayerId)
+bool FireTriggers(BattleContext ctx, TriggerTiming timing, TriggerContext triggerCtx)
+
+// ── BuffManager ──
+BuffInstance AddBuff(BuffConfig config, string sourcePlayerId, int? value = null, int? duration = null)
+bool RemoveBuffByRuntimeId(string runtimeId)
+int RemoveBuffsByType(BuffType buffType)
+bool HasBuffType(BuffType buffType)
+int GetTotalStacks(BuffType buffType)
+
+// ── BattleEventRecorder ──
+BattleEvent RecordDamage(string sourceId, string targetId, int damage, bool isCritical = false, string cardId = null)
+BattleEvent RecordHeal(string sourceId, string targetId, int healAmount, string cardId = null)
+BattleEvent RecordBuffGain(string sourceId, string targetId, string buffId, int stacks = 1, int duration = 0)
+```
+
+### 3.2 关键枚举值（按 ID）
+
+**EffectType（Shared/Protocol/Enums/EffectType.cs）**
+```
+Layer 0（反制）:   Counter=1
+Layer 1（防御）:   Shield=2, Armor=3, AttackBuff=4, AttackDebuff=5, Reflect=6, DamageReduction=7, Invincible=8
+Layer 2（伤害）:   Damage=10, Lifesteal=11, Thorns=12, ArmorOnHit=13, Pierce=14
+Layer 3（功能）:   Heal=20, Stun=21, Vulnerable=22, Weak=23, Draw=24, Discard=25,
+                  GainEnergy=26, Silence=27, Slow=28, DoubleStrength=29
+当前最大 ID = 29，新增效果追加于 29 之后，禁止跳跃 ID。
+```
+
+**CardTag（[Flags] 枚举）**
+```
+Damage=1, Defense=2, Counter=4, Buff=8, Debuff=16, Reflect=32768,
+Control=128, CrossLane=512, Exhaust=2048, Recycle=1024
+```
+
+**TriggerTiming（关键节点）**
+```
+OnRoundStart=101, OnRoundEnd=102
+BeforeDealDamage=201, AfterDealDamage=202
+BeforeTakeDamage=203, AfterTakeDamage=204
+OnShieldBroken=205, OnNearDeath=401, OnDeath=402
+BeforePlayCard=301, AfterPlayCard=302
+OnHealed=501, OnGainShield=502
+```
+
+**TriggerInstance.Priority 约定**
+```
+0-99   : 系统级（反制/无敌）
+100-199: 增益效果（力量+/护甲+/护盾+/回血）
+200-299: 己方遗物增益
+300-399: 削弱效果（力量-/易伤/虚弱）
+400-499: 敌方遗物削弱
+500-599: 伤害效果（默认值）
+900-999: 传说特殊牌
+```
+
+### 3.3 全局对象访问方式
+
+```csharp
+// 玩家状态（在结算代码中）
+PlayerBattleState player = ctx.GetPlayer(playerId);   // ✅ 首选，O(1)
+// 不要直接 ctx.Players.Find(p => p.PlayerId == id)  // ❌ 禁止
+
+// BuffManager
+BuffManager bm = ctx.GetBuffManager(playerId);
+
+// TriggerManager
+ctx.TriggerManager.FireTriggers(ctx, timing, triggerCtx);
+
+// EventRecorder
+ctx.EventRecorder.RecordDamage(...);
+
+// 随机数（必须使用种子随机）
+ctx.Random.Next(min, max);  // SeededRandom，不可使用 System.Random / UnityEngine.Random
+```
+
+---
+
+## 4. 游戏特定模式 (Game-Specific Patterns)
+
+### 4.1 添加新效果的完整步骤（必须严格执行）
+
+```
+1. Shared/Protocol/Enums/EffectType.cs       — 追加枚举值（当前最大 ID=29）
+2. Shared/BattleCore/Settlement/Handlers/    — 创建 XxxHandler.cs 实现 IEffectHandler
+3. Shared/BattleCore/Settlement/Handlers/HandlerRegistry.cs — Register(EffectType.Xxx, new XxxHandler())
+4. Config/Excel/Effects.csv                  — 添加使用该效果的卡牌数据行
+5. Tools/ExcelConverter/convert.bat          — 重新生成 JSON
+6. Docs/TechGuide/BattleCore.md              — 更新 EffectType 表和 Handler 注册表
+```
+
+### 4.2 IEffectHandler 实现模板
+
+```csharp
+using CardMoba.BattleCore.Context;
+using CardMoba.BattleCore.Settlement;
+using CardMoba.ConfigModels.Card;
+
+#pragma warning disable CS8632
+
+namespace CardMoba.BattleCore.Settlement.Handlers
 {
     /// <summary>
-    /// Brief description of the class purpose.
+    /// XxxHandler —— 处理 EffectType.Xxx 效果。
+    /// Handler 是无状态单例，禁止存储私有字段。
     /// </summary>
-    public class ClassName : MonoBehaviour  // or plain class
+    public class XxxHandler : IEffectHandler
     {
-        // ── Serialized Fields ──
-        [Header("配置")]
-        [SerializeField] private int _configValue;
-
-        // ── Private Fields ──
-        private int _internalState;
-
-        // ── Public Properties ──
-        public int InternalState => _internalState;
-
-        // ── Unity Lifecycle ──
-        private void Awake() { }
-        private void Start() { }
-        private void OnDestroy() { }
-
-        // ── Public Methods ──
-        // ── Private Methods ──
-    }
-}
-```
-
-### 2.4 Formatting Rules
-- Indentation: **4 spaces** (no tabs)
-- Encoding: **UTF-8**
-- Braces: Allman style (opening brace on new line for methods/classes)
-- Max method length: **100 lines** — split into smaller methods if exceeded
-- `using` statements: Ordered as Unity → System → Shared → Client (layered)
-
----
-
-## 3. Rapid Reference & Context Map
-
-### 3.1 Namespace → Directory Mapping
-| Namespace Root | Directory | Purpose |
-|---------------|-----------|---------|
-| `CardMoba.BattleCore` | `Shared/BattleCore/` | Settlement engine (NO UnityEngine!) |
-| `CardMoba.Protocol` | `Shared/Protocol/` | Enums & message types |
-| `CardMoba.ConfigModels` | `Shared/ConfigModels/` | Card/Hero/Relic/Rule data models |
-| `CardMoba.Client.Common` | `Client/Assets/Scripts/Common/` | Constants, utils, events |
-| `CardMoba.Client.Network` | `Client/Assets/Scripts/Network/` | WebSocket, message dispatch |
-| `CardMoba.Client.Data` | `Client/Assets/Scripts/Data/` | Config cache, player data, battle cache |
-| `CardMoba.Client.GameLogic` | `Client/Assets/Scripts/GameLogic/` | Round FSM, card system, player state |
-| `CardMoba.Client.Presentation` | `Client/Assets/Scripts/Presentation/` | UI, VFX, audio, input, scene |
-| `CardMoba.Client.Editor` | `Client/Assets/Scripts/Editor/` | Card editor, battle simulator |
-
-### 3.2 Key Enums (from design docs, to be implemented in Shared/Protocol/Enums/)
-```csharp
-// Card dual-track types
-public enum CardTrackType { 瞬策牌 = 1, 定策牌 = 2 }
-
-// Card sub-types
-public enum CardSubType { 伤害型 = 1, 功能型 = 2, 反制型 = 3, 传说特殊型 = 4 }
-
-// Card tags
-public enum CardTag { 跨路生效 = 1, 卡组循环 = 2, 防御 = 3, 控制 = 4, 斩杀 = 5 }
-
-// Player operation types
-public enum OperationType
-{
-    OP_UNKNOWN = 0,
-    OP_PLAY_INSTANT_CARD = 1,   // Play instant card
-    OP_COMMIT_PLAN_CARD = 2,    // Submit plan card
-    OP_CANCEL_PLAN_CARD = 3,    // Cancel plan card
-    OP_LOCK_OPERATION = 4,      // Lock current round operations
-    OP_COMMIT_TRANSFER = 10,    // Permanent lane transfer
-    OP_COMMIT_SUPPORT = 11,     // Temporary support request
-    OP_VOTE_TRANSFER = 12,
-    OP_VOTE_SUPPORT = 13,
-    OP_SELECT_MONSTER_LEVEL = 20,
-    OP_COMMIT_SURRENDER = 30,
-    OP_VOTE_SURRENDER = 31,
-    OP_CANCEL_MATCH = 32,
-}
-
-// 7 Round phases (immutable order)
-public enum RoundPhase
-{
-    RoundStartSettle = 1,   // 回合开始结算期
-    OperationWindow = 2,    // 同步操作窗口期
-    CommandLock = 3,        // 指令最终锁定期
-    PlanCardSettle = 4,     // 定策牌统一结算期
-    DeathJudge = 5,         // 濒死判定期
-    RoundEnd = 6,           // 回合结束期
-}
-
-// Match phases
-public enum MatchPhase
-{
-    LanePhase1 = 1,         // 第一分路对线期
-    CentralTower1 = 2,      // 第一中枢塔
-    LanePhase2 = 3,         // 第二分路对线期
-    CentralTower2 = 4,      // 第二中枢塔
-    FinalBattle = 5,        // 全局决战死斗期
-}
-
-// Settlement priority (high → low)
-// 反制牌 → 防御牌 → 增益/减益牌 → 伤害牌 → 支援牌 → 传说特殊牌
-```
-
-### 3.3 Key Constants (to be defined in Common/Constants/)
-```csharp
-public static class GameConstants
-{
-    // Team composition
-    public const int TeamSize = 3;                // Players per team
-    public const int MatchPlayerCount = 6;        // Total players per match
-
-    // Timing
-    public const float HeartbeatIntervalSec = 30f;
-    public const int HeartbeatTimeoutCount = 3;
-    public const int MatchTimeoutSec = 60;
-
-    // Card system
-    public const int MaxHandSize = 10;            // Max cards in hand (TBD by design)
-    public const int MaxRounds = 25;              // Hard cap rounds
-
-    // Performance
-    public const int MaxDrawCalls = 300;
-    public const int MobileTargetFPS = 30;
-    public const int PCTargetFPS = 60;
-}
-```
-
-### 3.4 Key Database Tables (MySQL 8.0)
-- `player_account` — PK: `player_id`, unique: `account`
-- `player_deck` — PK: `deck_id`, FK: `player_id`, `hero_id`
-- `battle_record` — PK: `battle_id`, index: `battle_time`
-
-### 3.5 Shared Package Reference
-- UPM package name: `com.cardmoba.shared`
-- manifest.json entry: `"com.cardmoba.shared": "file:../../Shared"`
-- Unity version requirement: `2022.3`
-
----
-
-## 4. Game-Specific Patterns
-
-### 4.1 Strict Layer Isolation
-- **Presentation** → can reference GameLogic, Data, Common. NEVER reference Network directly.
-- **GameLogic** → can reference BattleCore, Data, Network. NEVER reference Presentation.
-- **Data** → can reference ConfigModels, Protocol, Network. NEVER reference GameLogic or Presentation.
-- **Network** → can reference Protocol ONLY. NEVER reference any other client layer.
-- **Common** → ZERO references. Leaf node.
-- **Shared/BattleCore** → `noEngineReferences: true`. MUST NOT use `UnityEngine.*`. Pure C# only.
-
-### 4.2 Settlement Logic Ownership
-**ALL gameplay settlement logic MUST live in `Shared/BattleCore/`.**
-- Client GameLogic does local pre-calculation by calling the same BattleCore functions
-- Server calls the same BattleCore functions for authoritative settlement
-- Client displays server result as final truth, correcting any prediction mismatch
-- NEVER implement settlement/game rules in Client-only code
-
-### 4.3 Async & Concurrency Patterns
-- **Client → Server communication**: WebSocket via SignalR (async message-based)
-- **Unity main thread**: All MonoBehaviour callbacks run on main thread. Never block.
-- **Coroutine pattern**: Use `IEnumerator` + `StartCoroutine` for sequenced async operations in Unity
-- **async/await**: Prefer `UniTask` or `Task` for non-coroutine async (network calls, file I/O)
-- **Shared/BattleCore**: Purely synchronous. No async. No threading. Deterministic execution.
-
-### 4.4 Lifecycle Management
-```
-Init Flow:
-  GameEntry.Awake() → DontDestroyOnLoad → Initialize managers
-  GameEntry.Start() → Load config → Enter main menu
-
-Per-Battle Flow:
-  Match found → Initialize BattleContext
-  → RoundStateMachine loops through phases
-  → Battle ends → Cleanup BattleCache → Return to menu
-
-CRITICAL CLEANUP RULES:
-  - OnDestroy(): Remove ALL event listeners, cancel ALL coroutines, clear ALL timers
-  - Battle end: Clear BattleCache, reset PlayerState, dispose network subscriptions
-  - Scene transition: Unload unused assets (Resources.UnloadUnusedAssets)
-```
-
-### 4.5 Event-Driven Communication (Presentation ↔ GameLogic)
-Since Presentation cannot directly call GameLogic (and vice versa in some cases), use an **Event System** in `Common/Events/`:
-```csharp
-// Pattern: Define events in Common, publish from GameLogic, subscribe in Presentation
-// This avoids circular dependencies between layers
-```
-
-### 4.6 Performance Rules
-- **UI caching**: Reuse UI elements via object pooling for card displays, damage numbers, buff icons
-- **Sprite Atlas**: ALL UI textures must be packed into atlases. No loose sprites in builds.
-- **Object pooling**: Pool frequently instantiated objects (VFX, projectiles, damage texts)
-- **Scene loading**: Async additive scene loading for lane/tower/battle scenes
-- **DrawCall budget**: ≤ 300 total on screen
-- **Memory budget**: ≤ 2GB resident
-- **Frame rate**: Mobile = 30 FPS locked, PC = 60 FPS locked
-- **Package size**: ≤ 500MB initial download
-
-### 4.7 Error Handling
-- **Network callbacks**: Always check for error codes before processing response data
-- **Null safety**: Use null-conditional operators (`?.`) and null checks for all Unity object references
-- **Operation validation**: Client pre-validates card plays (cost, target, window) before sending to server
-- **Server rejection**: If server rejects an operation, revert local pre-calculation state gracefully
-- **Reconnection**: On disconnect, auto-reconnect and fetch full battle state from server
-
-### 4.8 Serialization
-- **Protocol**: MessagePack (`[MessagePackObject]` + `[Key(n)]` attributes)
-- **Config data**: JSON (loaded from `StreamingAssets/Config/`)
-- **ScriptableObjects**: Unity native serialization for editor-time card/hero data
-- **Local save**: AES-encrypted JSON for player data persistence
-
----
-
-## 5. Developer Workflows
-
-### 5.1 Environment Setup
-```bash
-# Prerequisites
-# - Unity 2022.3 LTS (install via Unity Hub)
-# - .NET SDK 8.0
-# - VSCode with extensions: C# Dev Kit, C#, Unity for VS Code
-
-# Clone & open
-git clone https://github.com/bochurhan/Card_Moba.git
-cd Card_Moba
-
-# Open Client in Unity Hub → Add project from disk → select Client/
-# Open Client/ folder in VSCode for C# IntelliSense (needs Client.sln)
-```
-
-### 5.2 Daily Development Loop
-```
-1. Open Unity Editor (Client/ project)
-2. Open VSCode → File → Open Folder → Client/
-3. Write code in VSCode (AI-assisted) → Ctrl+S
-4. Switch to Unity → auto-compile → Play to test
-5. git add -A && git commit -m "feat: description" && git push
-```
-
-### 5.3 Git Commit Convention
-```
-Format: <type>: <description>
-
-Types:
-  feat:     New feature
-  fix:      Bug fix
-  refactor: Code refactoring
-  docs:     Documentation
-  style:    Formatting (no logic change)
-  test:     Adding tests
-  chore:    Build/config changes
-
-Examples:
-  feat: 实现回合状态机7阶段流转
-  fix: 修复瞬策牌跨路生效校验缺失
-  refactor: 将结算逻辑从Client迁移到BattleCore
-  docs: 更新协议文档
-```
-
-### 5.4 Creating a New Script (Scaffold Template)
-
-#### MonoBehaviour (Client Presentation/GameLogic):
-```csharp
-using UnityEngine;
-
-namespace CardMoba.Client.{Layer}.{Module}
-{
-    /// <summary>
-    /// Brief description of purpose.
-    /// </summary>
-    public class NewComponent : MonoBehaviour
-    {
-        // ── Serialized Fields ──
-
-        // ── Private Fields ──
-
-        // ── Unity Lifecycle ──
-        private void Awake() { }
-        private void OnDestroy()
+        public void Execute(
+            PlayedCard card,
+            CardEffect effect,
+            PlayerBattleState source,
+            PlayerBattleState? target,
+            BattleContext ctx)
         {
-            // MUST: Clean up event listeners, timers, coroutines
-        }
+            // 1. 校验目标（自身增益类 target 可为 null）
+            if (target == null || !target.IsAlive) return;
 
-        // ── Public Methods ──
+            // 2. 执行效果
+            // ...
 
-        // ── Private Methods ──
-    }
-}
-```
+            // 3. 记录日志
+            ctx.RoundLog.Add($"[XxxHandler] 玩家{source.PlayerId} → 玩家{target.PlayerId}: ...");
 
-#### Pure C# Class (Shared/BattleCore):
-```csharp
-namespace CardMoba.BattleCore.{Module}
-{
-    /// <summary>
-    /// Brief description. NO UnityEngine references allowed.
-    /// </summary>
-    public class NewSettlementLogic
-    {
-        // Pure C#, deterministic, no side effects outside BattleContext
-    }
-}
-```
-
-#### ScriptableObject (Config Data):
-```csharp
-using UnityEngine;
-using System.Collections.Generic;
-
-namespace CardMoba.Client.Data.ConfigData
-{
-    /// <summary>
-    /// Brief description.
-    /// </summary>
-    [CreateAssetMenu(fileName = "NewData", menuName = "CardMoba/NewData")]
-    public class NewDataSO : ScriptableObject
-    {
-        [Header("基础信息")]
-        public int id;
-        public string displayName;
-    }
-}
-```
-
-#### Editor Window:
-```csharp
-#if UNITY_EDITOR
-using UnityEditor;
-using UnityEngine;
-
-namespace CardMoba.Client.Editor.Tools
-{
-    /// <summary>
-    /// Brief description.
-    /// </summary>
-    public class NewEditorWindow : EditorWindow
-    {
-        [MenuItem("CardMoba Tools/New Tool")]
-        public static void ShowWindow()
-        {
-            GetWindow<NewEditorWindow>("New Tool");
-        }
-
-        private void OnGUI()
-        {
-            // Editor GUI code
+            // 4. 记录事件（供客户端 UI 同步）
+            ctx.EventRecorder?.RecordEvent(new Event.BattleEvent { ... });
         }
     }
 }
-#endif
+```
+
+### 4.3 TriggerInstance 注册模板（Buff 触发器）
+
+```csharp
+// 在 BuffManager.RegisterBuffTriggers 中调用：
+ctx.TriggerManager.RegisterTrigger(new TriggerInstance
+{
+    TriggerName      = "吸血-AfterDealDamage",
+    Timing           = TriggerTiming.AfterDealDamage,
+    OwnerPlayerId    = buff.OwnerPlayerId,
+    SourceId         = buff.RuntimeId,       // Buff RuntimeId，用于生命周期关联
+    SourceType       = TriggerSourceType.Buff,
+    Priority         = 100,                  // 增益效果区间
+    RemainingTriggers = -1,                  // -1 = 无限次
+    RemainingRounds  = -1,                   // -1 = 永久（跟随 Buff 生命周期）
+    Condition        = tCtx => tCtx.SourcePlayerId == buff.OwnerPlayerId,
+    Effect           = tCtx =>
+    {
+        int healAmt = tCtx.Value * buff.Value / 100;
+        DamageHelper.ApplyHeal(tCtx.BattleContext, buff.OwnerPlayerId, buff.OwnerPlayerId, healAmt, "吸血");
+    }
+});
+```
+
+### 4.4 批量伤害结算（定策牌 Layer 2 模式）
+
+定策牌的伤害**必须**按 A-B-C 三阶段处理，禁止在阶段A中修改任何状态：
+
+```
+阶段A（收集）: 只读计算，所有伤害写入临时列表 damages
+阶段B（批量写入）: 护盾→扣血，累计 delta（hpChanges / shieldChanges），统一写入
+阶段C（触发器）: HP 稳定后才触发 AfterDealDamage / AfterTakeDamage / OnNearDeath
+```
+
+**反例（禁止）**：
+```csharp
+// ❌ 在遍历所有卡牌时直接扣血，会导致同回合卡牌看到的 HP 不一致
+foreach (var card in ValidPlanCards)
+    target.Hp -= damage;  // 破坏同步性
+```
+
+### 4.5 AfterTakeDamage 方向约定（极易出错）
+
+```csharp
+// AfterTakeDamage 的 Source/Target 与其他伤害时机相反！
+// SourcePlayerId = 受伤方（己方），TargetPlayerId = 攻击方（对方）
+// 这一约定在以下三处必须保持完全一致：
+//   - DamageHelper.ApplyDamage
+//   - SettlementEngine.ResolveLayer2_Step1_Damage
+//   - BuffManager.RegisterBuffTriggers (Thorns)
+
+ctx.TriggerManager.FireTriggers(ctx, TriggerTiming.AfterTakeDamage, new TriggerContext
+{
+    SourcePlayerId = rec.TargetId,   // 受伤方（注意：不是攻击方！）
+    TargetPlayerId = rec.SourceId,   // 攻击方
+    Value          = rec.HpDamage,
+    DamageSource   = DamageSourceType.CardDamage
+});
+```
+
+### 4.6 随机数：必须使用 SeededRandom
+
+```csharp
+// ✅ 正确
+int roll = ctx.Random.Next(0, 100);
+
+// ❌ 禁止（破坏 C/S 确定性）
+int roll = new System.Random().Next(0, 100);
+int roll = UnityEngine.Random.Range(0, 100);
+```
+
+### 4.7 Buff 生命周期管理
+
+```csharp
+// Buff 添加：统一通过 BuffManager（自动注册触发器）
+ctx.GetBuffManager(playerId).AddBuff(buffConfig, sourcePlayerId, value, duration);
+
+// Buff 移除：统一通过 BuffManager（自动注销触发器）
+ctx.GetBuffManager(playerId).RemoveBuffByRuntimeId(buff.RuntimeId);
+
+// 回合衰减：由 BattleContext.OnRoundEnd() 统一调用，不要手动调用
+// 孤儿触发器清理：由 BattleContext.CollectActiveBuffRuntimeIds() + TriggerManager.ValidateOrphanTriggers() 处理
+
+// 注意：禁止在 Handler 中直接注册 TriggerInstance 到 TriggerManager
+// 所有 Buff 相关触发器必须通过 BuffManager.RegisterBuffTriggers 集中管理
 ```
 
 ---
 
-## 6. Critical Safety Rules
+## 5. 架构约束（CRITICAL 红线，违反即拒绝）
 
-### 6.1 ABSOLUTE PROHIBITIONS
-1. **NEVER** put settlement/game-rule logic in Client-only code. It MUST be in `Shared/BattleCore/`.
-2. **NEVER** use `UnityEngine.*` in any file under `Shared/`. The asmdef has `noEngineReferences: true`.
-3. **NEVER** add upward assembly references (e.g., Network → GameLogic, Data → Presentation).
-4. **NEVER** hardcode magic numbers. Define them as constants in `Common/Constants/`.
-5. **NEVER** send hidden game state (opponent hand cards, unresolved plan cards, deck contents) to the client.
-6. **NEVER** let the client advance round phases autonomously — server pushes phase transitions.
-7. **NEVER** skip `OnDestroy()` cleanup for event listeners, coroutines, or timers.
-8. **NEVER** commit `Library/`, `Temp/`, `obj/`, `bin/`, `.sln`, `.csproj` to Git (enforced by .gitignore).
+| ❌ 禁止 | 原因 |
+|--------|------|
+| 在 `Shared/BattleCore/` 中使用 `UnityEngine.*` | asmdef `noEngineReferences: true`，服务端兼容性 |
+| 在结算逻辑中使用浮点数 (`float`/`double`) | C/S 精度差异导致结果不一致，一律用整数 |
+| 使用 `System.Random` 或 `UnityEngine.Random` | 破坏确定性，必须使用 `ctx.Random`（SeededRandom） |
+| Handler 内存储私有状态字段 | Handler 是无状态单例，状态必须写入 BattleContext |
+| 在 Client-only 代码中实现结算规则 | 所有结算逻辑在 `Shared/BattleCore/`，客户端只调用 |
+| 跳跃 EffectType ID | 新效果追加在当前最大 ID(29) 之后，保持连续 |
+| 在阶段A（收集期）修改 PlayerBattleState | 破坏批量伤害的同步性语义 |
+| 直接 `ctx.Players.Find(...)` 查找玩家 | 使用 `ctx.GetPlayer(id)`（O(1) 字典） |
+| 手动操作 Buff 触发器（绕过 BuffManager） | 破坏生命周期管理，导致孤儿触发器 |
+| 恢复已删除的字段（如 `HasLifesteal`, `PendingTriggerEffects`） | R-05 已清理，吸血/反伤由 TriggerManager 统一处理 |
 
-### 6.2 MANDATORY PRACTICES
-1. **ALWAYS** validate operations client-side before sending (cost check, target check, window check).
-2. **ALWAYS** treat server response as authoritative truth — revert local predictions if they mismatch.
-3. **ALWAYS** use XML doc comments on all public APIs.
-4. **ALWAYS** use the `[CardMoba]` or `[ModuleName]` prefix in Debug.Log messages.
-5. **ALWAYS** use seeded PRNG (`Shared/BattleCore/Random/`) for any randomness in settlement — never `System.Random` or `UnityEngine.Random`.
-6. **ALWAYS** test settlement logic in isolation (via BattleSimulator or unit tests) before integrating with Client.
-7. **ALWAYS** encrypt local player data with AES before writing to disk.
+---
 
-### 6.3 Language & Localization
-- Code identifiers: English (PascalCase / camelCase)
-- Comments and documentation: Chinese (中文) is the primary language
-- Enum display names: Chinese is acceptable for game-design enums (e.g., `瞬策牌`, `定策牌`)
-- Debug.Log messages: Chinese
-- Git commit messages: Chinese description is fine
+## 6. 开发工作流 (Developer Workflows)
+
+### 6.1 配表更新流程
+```bat
+:: 修改 Config/Excel/Cards.csv 或 Effects.csv 后运行：
+Tools\ExcelConverter\convert.bat
+:: 输出到 Client/Assets/StreamingAssets/Config/
+```
+
+### 6.2 运行单机对战测试
+在 Unity Editor 中：
+1. 打开 `Client/Assets/BattleScene.unity`
+2. 找到 `BattleGameManager` 组件
+3. 调用 `StartBattleWithDeck(playerDeckIds, aiDeckIds)` 或直接 `StartBattle()`
+
+### 6.3 新增 Handler 文件脚手架
+文件位置：`Shared/BattleCore/Settlement/Handlers/XxxHandler.cs`  
+参考 §4.2 模板，创建后在 `HandlerRegistry.Initialize()` 中注册。
+
+### 6.4 关键文档位置
+| 内容 | 文档 |
+|------|------|
+| 结算规则 + Handler 列表 | `Docs/TechGuide/BattleCore.md` |
+| 系统架构关系图 | `Docs/TechGuide/SystemArchitecture.md` |
+| 开发任务规划 | `Docs/Planning/TODO.md` |
+| 配表字段说明 | `Docs/TechGuide/ConfigSystem.md` |
+| 快速上手 | `Docs/TechGuide/QuickStart.md` |
+
+---
+
+## 7. 语言与沟通
+
+- **默认用中文**回复和注释（XML 文档注释和日志字符串均用中文）
+- 代码标识符（类名/方法名/字段名）使用英文 PascalCase/camelCase
+- 提交信息使用 `type: 中文描述` 格式（如 `fix: 修复 AfterTakeDamage 方向约定错误`）
+
+## 8. 其他开发规范
+
+- 如果做了代码修改，如果修改比较重要，把代码修改的内容补充写入Docs文件夹合适的文档
+- 如果使用了字符替换工具，必须检查是否符合语法要求，有没有出现意外的错误匹配
 
 </rule>
