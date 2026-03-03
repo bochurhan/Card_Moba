@@ -297,16 +297,21 @@ namespace CardMoba.BattleCore.Settlement
 
     /// <summary>
     /// 堆叠2层：主动伤害与触发式效果闭环结算。
-    /// 触发式效果（吸血/反伤等）已通过 BuffManager 向 TriggerManager 注册触发器，
-    /// 在阶段C的 AfterDealDamage / AfterTakeDamage 中统一触发，无需独立 Step2。
+    ///
+    /// 结构：
+    ///   Step1 —— Damage 类型效果走 A-B-C 三阶段批量结算（保证同回合伤害同步性）
+    ///   Step2 —— 其他 Layer2 效果（Pierce 等辅助类）按优先级顺序通过 ExecuteEffect 分发
+    ///            （在伤害批量写入后执行，可读到稳定的 HP 状态）
+    ///
+    /// 注意：触发式效果（吸血/反伤/ArmorOnHit）已通过 BuffManager 注册触发器，
+    ///       在 Step1 阶段C的 AfterDealDamage / AfterTakeDamage 中统一触发，无需独立 Step2。
     /// </summary>
     private void ResolveLayer2_Damage(BattleContext ctx)
     {
         ctx.RoundLog.Add("[Layer2] ── 主动伤害与触发式效果层 ──");
 
         ResolveLayer2_Step1_Damage(ctx);
-        // R-05 清理：Step2（PendingTriggerEffects 路径）已删除。
-        // 所有触发式效果（吸血/反伤/ArmorOnHit）统一由 TriggerManager 在阶段C中处理。
+        ResolveLayer2_Step2_Other(ctx);
     }
 
         /// <summary>
@@ -577,6 +582,56 @@ namespace CardMoba.BattleCore.Settlement
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// 堆叠2层-步骤2：非 Damage 类型的其他 Layer2 效果。
+        ///
+        /// 在 Step1 批量伤害写入完毕、HP 已稳定后执行。
+        /// 包括：Heal（ValueSource="LastDamageDealt" 的联动回血）、
+        ///        Pierce（辅助类，通常已在 DamageHandler 内处理，此处兜底）等。
+        ///
+        /// 执行顺序：按各效果的 Priority / SubPriority 排序（与 Layer1 一致）。
+        /// 同一张牌的效果按配置顺序隐式由 Priority 控制，策划设置
+        ///   Damage Priority=500, Heal Priority=510 即可保证 Damage 先于 Heal。
+        /// </summary>
+        private void ResolveLayer2_Step2_Other(BattleContext ctx)
+        {
+            var otherEffects = new List<EffectToResolve>();
+
+            foreach (var card in ctx.ValidPlanCards)
+            {
+                var source = ctx.GetPlayer(card.SourcePlayerId);
+                if (source == null || !source.IsAlive) continue;
+
+                foreach (var effect in card.Config.Effects)
+                {
+                    // 只处理 Layer2 中非 Damage 类型的效果
+                    if (effect.GetSettlementLayer() == 2 && effect.EffectType != EffectType.Damage)
+                    {
+                        otherEffects.Add(new EffectToResolve
+                        {
+                            Card        = card,
+                            Effect      = effect,
+                            Source      = source,
+                            Priority    = effect.Priority,
+                            SubPriority = effect.SubPriority,
+                        });
+                    }
+                }
+            }
+
+            if (otherEffects.Count == 0) return;
+
+            otherEffects.Sort((a, b) =>
+            {
+                int cmp = a.Priority.CompareTo(b.Priority);
+                return cmp != 0 ? cmp : a.SubPriority.CompareTo(b.SubPriority);
+            });
+
+            ctx.RoundLog.Add($"[Layer2-Step2] 处理 {otherEffects.Count} 个非伤害 Layer2 效果");
+            foreach (var item in otherEffects)
+                ExecuteEffect(ctx, item.Card, item.Effect, item.Source);
         }
 
         // ══════════════════════════════════════════════════════════

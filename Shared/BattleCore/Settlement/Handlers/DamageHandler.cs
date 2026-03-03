@@ -47,16 +47,22 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             // 检查是否有穿透效果（无视护甲）
             bool hasPierce = HasPierceEffect(card);
 
+            // 解析实际数值（支持 ValueSource 跨效果依赖）
+            int baseDamage = EffectHandlerHelper.ResolveValue(effect, card, ctx);
+
             // 使用 DamageHelper 统一处理伤害
             int actualDamage = DamageHelper.ApplyDamage(
                 ctx: ctx,
                 sourceId: source.PlayerId,
                 targetId: target.PlayerId,
-                baseDamage: effect.Value,
+                baseDamage: baseDamage,
                 triggerCallbacks: true,
                 ignoreArmor: hasPierce,
                 damageSource: $"「{card.Config.CardName}」"
             );
+
+            // 将实际伤害写入 EffectContext，供后续效果（如吸血、联动回血）读取
+            card.EffectContext["LastDamageDealt"] = actualDamage;
 
             // 检查卡牌自带的吸血效果（不是 Buff 的吸血）
             if (actualDamage > 0 && HasCardLifestealEffect(card, out int lifestealPercent))

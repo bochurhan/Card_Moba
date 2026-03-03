@@ -67,6 +67,18 @@ namespace CardMoba.BattleCore.Context
         /// </summary>
         public bool IsResolved { get; set; }
 
+        /// <summary>
+        /// 效果间传值上下文 —— 同一张牌内多个效果之间共享数值的临时存储。
+        ///
+        /// 生命周期：仅在本张牌的结算过程中有效，结算完毕后不保留。
+        ///
+        /// 约定的 Key（Handler 写入，后续效果读取）：
+        ///   "LastDamageDealt"  —— 本次 DamageHandler 实际造成的 HP 伤害值
+        ///   "LastHealAmount"   —— 本次 HealHandler 实际回复的生命值
+        ///   "LastShieldAmount" —— 本次 ShieldHandler 实际施加的护盾值
+        /// </summary>
+        public Dictionary<string, int> EffectContext { get; set; } = new();
+
         // ── 便捷属性 ──
 
         /// <summary>卡牌轨道类型（瞬策/定策）</summary>

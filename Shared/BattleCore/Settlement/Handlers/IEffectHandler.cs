@@ -36,4 +36,42 @@ namespace CardMoba.BattleCore.Settlement.Handlers
             BattleContext ctx
         );
     }
+
+    /// <summary>
+    /// Handler 公共辅助方法 —— 所有 IEffectHandler 实现类均可调用。
+    /// 静态类，无状态，无副作用。
+    /// </summary>
+    public static class EffectHandlerHelper
+    {
+        /// <summary>
+        /// 解析效果的实际数值。
+        ///
+        /// 若 effect.ValueSource 非空，则从 card.EffectContext[ValueSource] 读取，
+        /// 实现同一张牌内效果间的数值依赖（如「死亡收割」：回血 = 本次实际伤害）。
+        /// 若 EffectContext 中不存在对应 Key，记录警告并回退到 effect.Value。
+        ///
+        /// 若 effect.ValueSource 为空，直接返回 effect.Value（默认行为，向后兼容）。
+        /// </summary>
+        /// <param name="effect">当前效果配置</param>
+        /// <param name="card">当前打出的卡牌实例</param>
+        /// <param name="ctx">战斗上下文（用于写入警告日志）</param>
+        /// <returns>本次效果应使用的数值</returns>
+        public static int ResolveValue(CardEffect effect, PlayedCard card, BattleContext ctx)
+        {
+            if (string.IsNullOrEmpty(effect.ValueSource))
+                return effect.Value;
+
+            if (card.EffectContext.TryGetValue(effect.ValueSource, out int contextValue))
+            {
+                ctx.RoundLog.Add(
+                    $"[EffectHandlerHelper] 效果 {effect.EffectType} 从 EffectContext[{effect.ValueSource}] 读取数值: {contextValue}");
+                return contextValue;
+            }
+
+            ctx.RoundLog.Add(
+                $"[Warning][EffectHandlerHelper] EffectContext 中不存在 Key \"{effect.ValueSource}\"，" +
+                $"效果 {effect.EffectType} 回退使用 Value={effect.Value}");
+            return effect.Value;
+        }
+    }
 }

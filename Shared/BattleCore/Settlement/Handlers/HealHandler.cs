@@ -26,16 +26,19 @@ namespace CardMoba.BattleCore.Settlement.Handlers
                 return;
             }
 
-            int healAmount = effect.Value;
+            // 解析实际数值（支持 ValueSource 跨效果依赖，如等量伤害回血）
+            int healAmount = EffectHandlerHelper.ResolveValue(effect, card, ctx);
             int oldHp = healTarget.Hp;
 
             healTarget.Hp += healAmount;
             if (healTarget.Hp > healTarget.MaxHp)
-            {
                 healTarget.Hp = healTarget.MaxHp;
-            }
 
             int actualHeal = healTarget.Hp - oldHp;
+
+            // 将实际回血量写入 EffectContext，供后续效果读取
+            card.EffectContext["LastHealAmount"] = actualHeal;
+
             ctx.RoundLog.Add($"[HealHandler] 玩家{healTarget.PlayerId}回复{actualHeal}点生命（{oldHp} → {healTarget.Hp}）");
         }
     }

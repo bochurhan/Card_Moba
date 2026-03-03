@@ -29,6 +29,23 @@ namespace CardMoba.ConfigModels.Card
         /// <summary>效果数值（伤害量、护甲量、抽牌数等）</summary>
         public int Value { get; set; }
 
+        /// <summary>
+        /// 数值来源（跨效果依赖，默认为空 = 使用自身 Value）。
+        ///
+        /// 非空时，Handler 将从 PlayedCard.EffectContext[ValueSource] 读取实际数值，
+        /// 忽略 Value 字段。用于同一张牌内效果间的数值依赖。
+        ///
+        /// 约定的 Key（由对应 Handler 写入）：
+        ///   "LastDamageDealt"  —— 上一个 DamageHandler 实际造成的 HP 伤害
+        ///   "LastHealAmount"   —— 上一个 HealHandler 实际回复的生命值
+        ///   "LastShieldAmount" —— 上一个 ShieldHandler 实际施加的护盾值
+        ///
+        /// 示例（「死亡收割」：造成 5 伤害，回复等量生命）：
+        ///   效果1: EffectType=Damage,  Value=5,  ValueSource=""
+        ///   效果2: EffectType=Heal,    Value=0,  ValueSource="LastDamageDealt", TargetOverride=Self
+        /// </summary>
+        public string ValueSource { get; set; } = string.Empty;
+
         /// <summary>效果持续回合数（0=即时生效，>0=持续N回合）</summary>
         public int Duration { get; set; }
 
