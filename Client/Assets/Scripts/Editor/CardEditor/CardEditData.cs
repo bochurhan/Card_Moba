@@ -185,6 +185,16 @@ namespace CardMoba.Client.Editor.CardEditor
         public bool           IsDelayed      = false;
         public string         TriggerCondition = "";
 
+        // ─── 跨效果数值依赖（EffectContext）─────────────────────────
+        /// <summary>
+        /// 数值来源 Key（对应 PlayedCard.EffectContext 字典）。
+        /// 非空时：Handler 从上一个效果写入的执行上下文中读取数值，
+        ///         忽略 Value 静态配置（用于"死亡收割"等联动效果）。
+        /// 为空时：使用 Value 静态配置（默认行为，向后兼容）。
+        /// 预定义 Key：LastDamageDealt / LastHealAmount / LastShieldGained
+        /// </summary>
+        public string         ValueSource    = "";
+
         // ─── 执行模式（ExecutionMode）────────────────────────────────
         /// <summary>
         /// 效果执行模式：
@@ -287,6 +297,7 @@ namespace CardMoba.Client.Editor.CardEditor
                 TargetOverride    = TargetOverride,
                 IsDelayed         = IsDelayed,
                 TriggerCondition  = TriggerCondition,
+                ValueSource       = ValueSource,
                 ExecutionMode     = ExecutionMode,
                 PassiveTriggerTiming = PassiveTriggerTiming,
                 PassiveDuration   = PassiveDuration,

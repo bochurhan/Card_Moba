@@ -613,6 +613,30 @@ namespace CardMoba.Client.Editor.CardEditor
             effect.Value      = EditorGUILayout.IntField("数值", effect.Value);
             effect.Duration   = EditorGUILayout.IntField("持续回合", effect.Duration);
 
+            // ── 数值来源（ValueSource）──────────────────────────────
+            // 预定义 Key 列表（空字符串 = 使用静态 Value 字段）
+            string[] valueSources = { "", "LastDamageDealt", "LastHealAmount", "LastShieldGained" };
+            string[] valueSourceLabels =
+            {
+                "静态数值 (默认)",
+                "LastDamageDealt — 本轮造成的伤害",
+                "LastHealAmount  — 本轮回复的生命",
+                "LastShieldGained — 本轮获得的护盾"
+            };
+            int curVsIdx = Array.IndexOf(valueSources, effect.ValueSource);
+            if (curVsIdx < 0) curVsIdx = 0; // 不认识的 key 也默认为静态
+            int newVsIdx = EditorGUILayout.Popup("数值来源", curVsIdx, valueSourceLabels);
+            effect.ValueSource = valueSources[newVsIdx];
+
+            // 若选了动态来源，显示提示并灰掉 Value 字段
+            if (!string.IsNullOrEmpty(effect.ValueSource))
+            {
+                EditorGUILayout.HelpBox(
+                    $"将从执行上下文读取 [{effect.ValueSource}]，上方「数值」字段仅作备用。\n"
+                  + "确保同一张卡的前置效果（较低 Priority）会写入该 Key。",
+                    MessageType.Info);
+            }
+
             // 目标覆盖（使用 CardTargetType? 枚举）
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("目标覆盖", GUILayout.Width(EditorGUIUtility.labelWidth));
@@ -936,6 +960,7 @@ namespace CardMoba.Client.Editor.CardEditor
                             var eff = new EffectEditData
                             {
                                 Value                = e.value,
+                                ValueSource          = e.valueSource ?? "",
                                 Duration             = e.duration,
                                 IsDelayed            = e.isDelayed,
                                 AppliesBuff          = e.appliesBuff,
@@ -1016,6 +1041,7 @@ namespace CardMoba.Client.Editor.CardEditor
                     {
                         effectType           = (int)e.EffectType,
                         value                = e.Value,
+                        valueSource          = e.ValueSource,
                         duration             = e.Duration,
                         targetOverride       = e.TargetOverride.HasValue ? e.TargetOverride.Value.ToString() : "",
                         isDelayed            = e.IsDelayed,
@@ -1118,6 +1144,7 @@ namespace CardMoba.Client.Editor.CardEditor
         {
             public int    effectType;
             public int    value;
+            public string valueSource;       // 跨效果数值依赖 Key（v4.0 新增）
             public int    duration;
             public string targetOverride;
             public bool   isDelayed;
