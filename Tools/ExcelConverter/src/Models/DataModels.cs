@@ -31,6 +31,7 @@ public class CardJsonOutput
     public string description { get; set; } = "";
     public string trackType { get; set; } = "";
     public string targetType { get; set; } = "";
+    public string heroClass { get; set; } = "Universal";
     public List<string> tags { get; set; } = new();
     public int energyCost { get; set; }
     public int rarity { get; set; }
@@ -80,6 +81,7 @@ public class CardCsvRow
     public string Description { get; set; } = "";
     public string TrackType { get; set; } = "";
     public string TargetType { get; set; } = "";
+    public string HeroClass { get; set; } = "Universal"; // 职业，默认通用
     public string Tags { get; set; } = "";       // 可能是 "Damage|Defense"
     public int EnergyCost { get; set; }
     public int Rarity { get; set; }

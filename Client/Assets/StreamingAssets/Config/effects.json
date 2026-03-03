@@ -10,74 +10,14 @@
     },
     {
       "effectId": "E2002-1",
-      "effectType": 10,
-      "value": 6,
+      "effectType": 2,
+      "value": 5,
       "duration": 0,
-      "description": "造成 6 点伤害"
+      "targetOverride": "Self",
+      "description": "获得 5 点护盾"
     },
     {
       "effectId": "E2003-1",
-      "effectType": 10,
-      "value": 6,
-      "duration": 0,
-      "description": "造成 6 点伤害"
-    },
-    {
-      "effectId": "E2004-1",
-      "effectType": 10,
-      "value": 6,
-      "duration": 0,
-      "description": "造成 6 点伤害"
-    },
-    {
-      "effectId": "E2005-1",
-      "effectType": 10,
-      "value": 6,
-      "duration": 0,
-      "description": "造成 6 点伤害"
-    },
-    {
-      "effectId": "E2006-1",
-      "effectType": 2,
-      "value": 5,
-      "duration": 0,
-      "targetOverride": "Self",
-      "description": "获得 5 点护盾"
-    },
-    {
-      "effectId": "E2007-1",
-      "effectType": 2,
-      "value": 5,
-      "duration": 0,
-      "targetOverride": "Self",
-      "description": "获得 5 点护盾"
-    },
-    {
-      "effectId": "E2008-1",
-      "effectType": 2,
-      "value": 5,
-      "duration": 0,
-      "targetOverride": "Self",
-      "description": "获得 5 点护盾"
-    },
-    {
-      "effectId": "E2009-1",
-      "effectType": 2,
-      "value": 5,
-      "duration": 0,
-      "targetOverride": "Self",
-      "description": "获得 5 点护盾"
-    },
-    {
-      "effectId": "E2010-1",
-      "effectType": 2,
-      "value": 5,
-      "duration": 0,
-      "targetOverride": "Self",
-      "description": "获得 5 点护盾"
-    },
-    {
-      "effectId": "E2011-1",
       "effectType": 4,
       "value": 2,
       "duration": 0,
@@ -85,14 +25,14 @@
       "description": "获得 2 点力量"
     },
     {
-      "effectId": "E2012-1",
+      "effectId": "E2004-1",
       "effectType": 10,
       "value": 3,
       "duration": 0,
       "description": "造成 3 点伤害"
     },
     {
-      "effectId": "E2012-2",
+      "effectId": "E2004-2",
       "effectType": 11,
       "value": 100,
       "duration": 0,
@@ -100,7 +40,28 @@
       "description": "吸血 100%"
     },
     {
-      "effectId": "E2013-1",
+      "effectId": "E2005-1",
+      "effectType": 10,
+      "value": 3,
+      "duration": 0,
+      "description": "造成 3 点伤害"
+    },
+    {
+      "effectId": "E2005-2",
+      "effectType": 10,
+      "value": 3,
+      "duration": 0,
+      "description": "造成 3 点伤害"
+    },
+    {
+      "effectId": "E2005-3",
+      "effectType": 10,
+      "value": 3,
+      "duration": 0,
+      "description": "造成 3 点伤害"
+    },
+    {
+      "effectId": "E2005-4",
       "effectType": 10,
       "value": 3,
       "duration": 0,
@@ -116,11 +77,11 @@
     },
     {
       "effectId": "E1001-2",
-      "effectType": 30,
+      "effectType": 27,
       "value": 0,
       "duration": 1,
       "targetOverride": "Self",
-      "description": "本回合禁止抽牌"
+      "description": "沉默目标，持续 1 回合"
     },
     {
       "effectId": "E1002-1",

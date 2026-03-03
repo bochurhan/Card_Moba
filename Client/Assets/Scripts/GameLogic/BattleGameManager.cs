@@ -140,7 +140,7 @@ namespace CardMoba.Client.GameLogic
             if (player == null) return "错误：玩家不存在";
 
             // 瞬策牌默认目标为对手
-            CardConfig card = player.Hand[handIndex];
+            CardInstance card = player.Hand[handIndex];
             string targetId = GetTargetForCard(card, HumanPlayerId, AiPlayerId);
 
             string result = _roundManager.PlayCard(_ctx, HumanPlayerId, handIndex, targetId);
@@ -170,7 +170,7 @@ namespace CardMoba.Client.GameLogic
             PlayerBattleState player = _ctx.GetPlayer(HumanPlayerId);
             if (player == null) return "错误：玩家不存在";
 
-            CardConfig card = player.Hand[handIndex];
+            CardInstance card = player.Hand[handIndex];
             string targetId = GetTargetForCard(card, HumanPlayerId, AiPlayerId);
 
             string result = _roundManager.CommitPlanCard(_ctx, HumanPlayerId, handIndex, targetId);
@@ -252,7 +252,7 @@ namespace CardMoba.Client.GameLogic
                 {
                     if (ai.Energy <= 0) break;
 
-                    CardConfig card = ai.Hand[i];
+                    CardInstance card = ai.Hand[i];
                     if (ai.Energy < card.EnergyCost) continue;
 
                     string targetId = GetTargetForCard(card, AiPlayerId, HumanPlayerId);
@@ -281,9 +281,9 @@ namespace CardMoba.Client.GameLogic
         /// <summary>
         /// 根据卡牌目标类型决定目标玩家ID。
         /// </summary>
-        private string GetTargetForCard(CardConfig card, string selfId, string opponentId)
+        private string GetTargetForCard(CardInstance card, string selfId, string opponentId)
         {
-            switch (card.TargetType)
+            switch (card.Config.TargetType)
             {
                 case CardTargetType.CurrentEnemy:
                 case CardTargetType.AnyEnemy:
@@ -334,23 +334,24 @@ namespace CardMoba.Client.GameLogic
         // ══════════════════════════════════════════════════════════════
 
         /// <summary>
-        /// 默认测试卡组的 CardId 列表（15张牌）—— 力量战士主题。
+        /// 默认测试卡组的 CardId 列表（10张牌）—— 基础起始卡组。
         /// 对应 StreamingAssets/Config/cards.json 中的卡牌定义。
         /// 
-        /// 瞬策牌：1001战斗专注, 1002突破极限
-        /// 定策牌：2001~2005打击x5, 2006~2010防御x5, 2011观察弱点, 2012死亡收割, 2013飞剑回旋镖
+        /// 同一 CardId 可重复出现多次，每次 CloneCard 会生成独立副本。
+        /// 对应 StreamingAssets/Config/cards.json：
+        ///   2001 打击 | 2002 防御 | 2003 观察弱点 | 2004 死亡收割 | 2005 飞剑回旋镖 | 1001 战斗专注
         /// </summary>
         private static readonly int[] DefaultTestDeckIds = new int[]
         {
-            // ═══ 瞬策牌 (3张) ═══
-            1001, 1001,          // 战斗专注 x2 (抽3张牌)
-            1002,                // 突破极限 x1 (力量翻倍)
-
             // ═══ 定策牌 (12张) ═══
-            2001, 2002, 2003, 2004, 2005,   // 打击 x5 (造成6点伤害)
-            2006, 2007, 2008, 2009, 2010,   // 防御 x5 (获得5点护盾)
-            2011,                            // 观察弱点 x1 (条件获取力量)
-            2012,                            // 死亡收割 x1 (伤害+吸血)
+            2001, 2001, 2001, 2001, 2001,   // 打击       x5（造成6点伤害）
+            2002, 2002, 2002, 2002, 2002,   // 防御       x5（获得5点护盾）
+            2003,                            // 观察弱点   x1（获得2点力量）
+            2004,                            // 死亡收割   x1（3伤害+吸血）
+            2005,                            // 飞剑回旋镖 x1（3×4多段伤害）
+
+            // ═══ 瞬策牌 (2张) ═══
+            1001, 1001,                      // 战斗专注   x2（抽3张牌）
         };
 
         /// <summary>

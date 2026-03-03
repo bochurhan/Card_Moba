@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using CardMoba.Protocol.Enums;
+#pragma warning disable CS8632
 
 namespace CardMoba.ConfigModels.Card
 {
@@ -29,6 +30,12 @@ namespace CardMoba.ConfigModels.Card
 
         /// <summary>双轨类型：瞬策牌 or 定策牌</summary>
         public CardTrackType TrackType { get; set; }
+
+        /// <summary>
+        /// 所属职业 —— 决定哪类英雄可以装备此牌。
+        /// Universal = 通用牌，所有职业可用；其他值限定特定职业。
+        /// </summary>
+        public HeroClass HeroClass { get; set; } = HeroClass.Universal;
 
         /// <summary>
         /// 卡牌标签（词条）：标记卡牌的用途分类和特殊行为。

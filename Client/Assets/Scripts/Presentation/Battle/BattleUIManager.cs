@@ -345,7 +345,7 @@ namespace CardMoba.Client.Presentation.Battle
             // 为每张手牌创建UI
             for (int i = 0; i < player.Hand.Count; i++)
             {
-                CardConfig card = player.Hand[i];
+                CardInstance card = player.Hand[i];
                 GameObject cardObj = Instantiate(_cardPrefab, _handContainer);
                 cardObj.name = $"Card_{i}_{card.CardName}";
 
@@ -360,7 +360,7 @@ namespace CardMoba.Client.Presentation.Battle
         /// <summary>
         /// 设置单张卡牌的UI显示和点击事件。
         /// </summary>
-        private void SetupCardUI(GameObject cardObj, CardConfig card, int index)
+        private void SetupCardUI(GameObject cardObj, CardInstance card, int index)
         {
             // 查找子物体上的文本组件（TextMeshPro版本）
             TextMeshProUGUI nameText = cardObj.transform.Find("CardNameText")?.GetComponent<TextMeshProUGUI>();
@@ -472,7 +472,7 @@ namespace CardMoba.Client.Presentation.Battle
                 return;
             }
 
-            CardConfig card = player.Hand[handIndex];
+            CardInstance card = player.Hand[handIndex];
             Debug.Log($"[BattleUI] 尝试打出: {card.CardName}(ID={card.CardId}) 类型={card.TrackType} 费用={card.EnergyCost} 当前能量={player.Energy}");
 
             // 能量检查

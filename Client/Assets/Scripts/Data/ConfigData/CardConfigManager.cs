@@ -167,6 +167,7 @@ namespace CardMoba.Client.Data.ConfigData
                 Description = original.Description,
                 TrackType = original.TrackType,
                 TargetType = original.TargetType,
+                HeroClass = original.HeroClass,
                 Tags = original.Tags,
                 EnergyCost = original.EnergyCost,
                 Duration = original.Duration,
@@ -318,9 +319,19 @@ namespace CardMoba.Client.Data.ConfigData
                 // 转换基础属性
                 var config = ConvertToCardConfig(cardData);
 
-                // 关联效果
+                // ── 关联效果：优先使用内嵌 effects，兼容旧 effectIds ──
                 config.Effects = new List<CardEffect>();
-                if (cardData.effectIds != null)
+
+                // 新内嵌模式：effects 列表直接写在卡牌数据里
+                if (cardData.effects != null && cardData.effects.Count > 0)
+                {
+                    foreach (var effectData in cardData.effects)
+                    {
+                        config.Effects.Add(ConvertToCardEffect(effectData));
+                    }
+                }
+                // 旧关联模式：通过 effectIds 查 _effectDict
+                else if (cardData.effectIds != null && cardData.effectIds.Count > 0)
                 {
                     foreach (var effectId in cardData.effectIds)
                     {
@@ -333,6 +344,10 @@ namespace CardMoba.Client.Data.ConfigData
                             Debug.LogWarning($"[CardConfigManager] 卡牌 {config.CardId}({config.CardName}) 引用了不存在的效果: {effectId}");
                         }
                     }
+                }
+                else
+                {
+                    Debug.LogWarning($"[CardConfigManager] 卡牌 {config.CardId}({config.CardName}) 没有配置任何效果！");
                 }
 
                 // 检查重复
@@ -408,6 +423,7 @@ namespace CardMoba.Client.Data.ConfigData
                 Description = data.description ?? string.Empty,
                 TrackType = ParseEnum(data.trackType, CardTrackType.Instant),
                 TargetType = ParseEnum(data.targetType, CardTargetType.Self),
+                HeroClass = ParseEnum(data.heroClass, HeroClass.Universal),
                 Tags = ParseTags(data.tags),
                 EnergyCost = data.energyCost,
                 Duration = data.duration,

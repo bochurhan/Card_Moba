@@ -1,7 +1,9 @@
 {
   "name": "CardMoba.Client.Common",
   "rootNamespace": "CardMoba.Client.Common",
-  "references": [],
+  "references": [
+    "CardMoba.Client.Data"
+  ],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,

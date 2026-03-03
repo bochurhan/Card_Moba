@@ -146,15 +146,16 @@ public class CardExcelConverter
             {
                 var row = new CardCsvRow
                 {
-                    CardId = GetInt(values, headerIndex, "CardId"),
-                    CardName = GetString(values, headerIndex, "CardName"),
+                    CardId      = GetInt   (values, headerIndex, "CardId"),
+                    CardName    = GetString(values, headerIndex, "CardName"),
                     Description = GetString(values, headerIndex, "Description"),
-                    TrackType = GetString(values, headerIndex, "TrackType"),
-                    TargetType = GetString(values, headerIndex, "TargetType"),
-                    Tags = GetString(values, headerIndex, "Tags"),
-                    EnergyCost = GetInt(values, headerIndex, "EnergyCost"),
-                    Rarity = GetInt(values, headerIndex, "Rarity", 1),
-                    EffectsRef = GetString(values, headerIndex, "EffectsRef")
+                    TrackType   = GetString(values, headerIndex, "TrackType"),
+                    TargetType  = GetString(values, headerIndex, "TargetType"),
+                    HeroClass   = GetString(values, headerIndex, "HeroClass", "Universal"),
+                    Tags        = GetString(values, headerIndex, "Tags"),
+                    EnergyCost  = GetInt   (values, headerIndex, "EnergyCost"),
+                    Rarity      = GetInt   (values, headerIndex, "Rarity", 1),
+                    EffectsRef  = GetString(values, headerIndex, "EffectsRef")
                 };
 
                 if (row.CardId > 0)
@@ -243,14 +244,15 @@ public class CardExcelConverter
         {
             var card = new CardJsonOutput
             {
-                cardId = row.CardId,
-                cardName = row.CardName,
+                cardId      = row.CardId,
+                cardName    = row.CardName,
                 description = row.Description,
-                trackType = row.TrackType,
-                targetType = row.TargetType,
-                energyCost = row.EnergyCost,
-                rarity = row.Rarity,
-                duration = 0
+                trackType   = row.TrackType,
+                targetType  = row.TargetType,
+                heroClass   = string.IsNullOrEmpty(row.HeroClass) ? "Universal" : row.HeroClass,
+                energyCost  = row.EnergyCost,
+                rarity      = row.Rarity,
+                duration    = 0
             };
 
             // 解析 Tags（支持 "Damage|Defense" 格式）

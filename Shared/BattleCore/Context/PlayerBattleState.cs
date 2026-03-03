@@ -104,14 +104,14 @@ namespace CardMoba.BattleCore.Context
 
         // ── 卡牌区域 ──
 
-        /// <summary>手牌（玩家当前持有的卡牌）</summary>
-        public List<CardConfig> Hand { get; set; } = new List<CardConfig>();
+        /// <summary>手牌（玩家当前持有的卡牌实例）</summary>
+        public List<CardInstance> Hand { get; set; } = new List<CardInstance>();
 
-        /// <summary>牌库（还没摸到的牌，摸牌时从这里抽）</summary>
-        public List<CardConfig> Deck { get; set; } = new List<CardConfig>();
+        /// <summary>牌库（还没摸到的牌实例，摸牌时从这里抽）</summary>
+        public List<CardInstance> Deck { get; set; } = new List<CardInstance>();
 
-        /// <summary>弃牌堆（已打出/已丢弃的牌）</summary>
-        public List<CardConfig> DiscardPile { get; set; } = new List<CardConfig>();
+        /// <summary>弃牌堆（已打出/已丢弃的牌实例）</summary>
+        public List<CardInstance> DiscardPile { get; set; } = new List<CardInstance>();
 
         // ── 状态标记 ──
 
@@ -278,15 +278,14 @@ namespace CardMoba.BattleCore.Context
         }
 
         /// <summary>
-        /// 将一张卡牌丢弃到弃牌堆。
+        /// 将一张卡牌实例丢弃到弃牌堆。
         /// </summary>
-        /// <param name="card">要丢弃的卡牌</param>
+        /// <param name="card">要丢弃的卡牌实例</param>
         /// <returns>是否成功丢弃</returns>
-        public bool DiscardCard(CardConfig card)
+        public bool DiscardCard(CardInstance card)
         {
             if (card == null) return false;
 
-            // 从手牌中移除
             if (Hand.Remove(card))
             {
                 DiscardPile.Add(card);
@@ -297,13 +296,26 @@ namespace CardMoba.BattleCore.Context
         }
 
         /// <summary>
-        /// 将一张卡牌从手牌打出到弃牌堆（出牌时调用）。
+        /// 通过 InstanceId 从手牌中找到并丢弃一张卡牌实例（出牌时调用）。
         /// </summary>
-        /// <param name="card">打出的卡牌</param>
+        /// <param name="instanceId">卡牌实例 ID</param>
         /// <returns>是否成功打出</returns>
-        public bool PlayCard(CardConfig card)
+        public bool PlayCard(string instanceId)
         {
-            // 打出的牌也进入弃牌堆（与丢弃相同）
+            var card = Hand.Find(c => c.InstanceId == instanceId);
+            if (card == null) return false;
+            Hand.Remove(card);
+            DiscardPile.Add(card);
+            return true;
+        }
+
+        /// <summary>
+        /// 将一张卡牌实例从手牌打出到弃牌堆（出牌时调用）。
+        /// </summary>
+        /// <param name="card">打出的卡牌实例</param>
+        /// <returns>是否成功打出</returns>
+        public bool PlayCard(CardInstance card)
+        {
             return DiscardCard(card);
         }
 
@@ -326,14 +338,20 @@ namespace CardMoba.BattleCore.Context
 
                 // 随机选择一张手牌
                 int index = random.Next(Hand.Count);
-                var card = Hand[index];
+                var inst = Hand[index];
                 Hand.RemoveAt(index);
-                DiscardPile.Add(card);
+                DiscardPile.Add(inst);
                 discarded++;
             }
 
             return discarded;
         }
+
+        /// <summary>
+        /// 通过 InstanceId 在手牌中查找卡牌实例。
+        /// </summary>
+        public CardInstance? FindInHand(string instanceId)
+            => Hand.Find(c => c.InstanceId == instanceId);
 
         /// <summary>
         /// 获取当前手牌数量。

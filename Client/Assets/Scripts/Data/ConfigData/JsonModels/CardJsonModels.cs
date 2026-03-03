@@ -47,6 +47,9 @@ namespace CardMoba.Client.Data.ConfigData.JsonModels
         /// <summary>目标类型："Self", "CurrentEnemy", "AllEnemies" 等</summary>
         public string targetType;
 
+        /// <summary>所属职业："Universal", "Warrior", "Assassin", "Mage", "Support", "Tank"</summary>
+        public string heroClass;
+
         /// <summary>标签列表：["Damage", "Defense", "Exhaust"] 等</summary>
         public List<string> tags;
 
@@ -59,8 +62,11 @@ namespace CardMoba.Client.Data.ConfigData.JsonModels
         /// <summary>持续回合数（0=即时）</summary>
         public int duration;
 
-        /// <summary>关联的效果ID列表：["E1001-1", "E1001-2"]</summary>
+        /// <summary>关联的效果ID列表（旧关联模式）：["E1001-1", "E1001-2"]</summary>
         public List<string> effectIds;
+
+        /// <summary>内嵌效果列表（新内嵌模式，与 effectIds 二选一）</summary>
+        public List<EffectJsonData> effects;
     }
 
     // ══════════════════════════════════════════════════════════════

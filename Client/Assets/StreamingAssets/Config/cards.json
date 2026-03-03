@@ -1,248 +1,146 @@
 {
-  "version": "1.0.0",
-  "cards": [
-    {
-      "cardId": 2001,
-      "cardName": "打击",
-      "description": "造成6点伤害",
-      "trackType": "Plan",
-      "targetType": "CurrentEnemy",
-      "tags": [
-        "Damage"
-      ],
-      "energyCost": 1,
-      "rarity": 1,
-      "duration": 0,
-      "effectIds": [
-        "E2001-1"
-      ]
-    },
-    {
-      "cardId": 2002,
-      "cardName": "打击",
-      "description": "造成6点伤害",
-      "trackType": "Plan",
-      "targetType": "CurrentEnemy",
-      "tags": [
-        "Damage"
-      ],
-      "energyCost": 1,
-      "rarity": 1,
-      "duration": 0,
-      "effectIds": [
-        "E2002-1"
-      ]
-    },
-    {
-      "cardId": 2003,
-      "cardName": "打击",
-      "description": "造成6点伤害",
-      "trackType": "Plan",
-      "targetType": "CurrentEnemy",
-      "tags": [
-        "Damage"
-      ],
-      "energyCost": 1,
-      "rarity": 1,
-      "duration": 0,
-      "effectIds": [
-        "E2003-1"
-      ]
-    },
-    {
-      "cardId": 2004,
-      "cardName": "打击",
-      "description": "造成6点伤害",
-      "trackType": "Plan",
-      "targetType": "CurrentEnemy",
-      "tags": [
-        "Damage"
-      ],
-      "energyCost": 1,
-      "rarity": 1,
-      "duration": 0,
-      "effectIds": [
-        "E2004-1"
-      ]
-    },
-    {
-      "cardId": 2005,
-      "cardName": "打击",
-      "description": "造成6点伤害",
-      "trackType": "Plan",
-      "targetType": "CurrentEnemy",
-      "tags": [
-        "Damage"
-      ],
-      "energyCost": 1,
-      "rarity": 1,
-      "duration": 0,
-      "effectIds": [
-        "E2005-1"
-      ]
-    },
-    {
-      "cardId": 2006,
-      "cardName": "防御",
-      "description": "获得5点护盾",
-      "trackType": "Plan",
-      "targetType": "Self",
-      "tags": [
-        "Defense"
-      ],
-      "energyCost": 1,
-      "rarity": 1,
-      "duration": 0,
-      "effectIds": [
-        "E2006-1"
-      ]
-    },
-    {
-      "cardId": 2007,
-      "cardName": "防御",
-      "description": "获得5点护盾",
-      "trackType": "Plan",
-      "targetType": "Self",
-      "tags": [
-        "Defense"
-      ],
-      "energyCost": 1,
-      "rarity": 1,
-      "duration": 0,
-      "effectIds": [
-        "E2007-1"
-      ]
-    },
-    {
-      "cardId": 2008,
-      "cardName": "防御",
-      "description": "获得5点护盾",
-      "trackType": "Plan",
-      "targetType": "Self",
-      "tags": [
-        "Defense"
-      ],
-      "energyCost": 1,
-      "rarity": 1,
-      "duration": 0,
-      "effectIds": [
-        "E2008-1"
-      ]
-    },
-    {
-      "cardId": 2009,
-      "cardName": "防御",
-      "description": "获得5点护盾",
-      "trackType": "Plan",
-      "targetType": "Self",
-      "tags": [
-        "Defense"
-      ],
-      "energyCost": 1,
-      "rarity": 1,
-      "duration": 0,
-      "effectIds": [
-        "E2009-1"
-      ]
-    },
-    {
-      "cardId": 2010,
-      "cardName": "防御",
-      "description": "获得5点护盾",
-      "trackType": "Plan",
-      "targetType": "Self",
-      "tags": [
-        "Defense"
-      ],
-      "energyCost": 1,
-      "rarity": 1,
-      "duration": 0,
-      "effectIds": [
-        "E2010-1"
-      ]
-    },
-    {
-      "cardId": 2011,
-      "cardName": "观察弱点",
-      "description": "若目标本回合使用了伤害定策牌，自身获得2点力量",
-      "trackType": "Plan",
-      "targetType": "CurrentEnemy",
-      "tags": [
-        "Buff"
-      ],
-      "energyCost": 1,
-      "rarity": 2,
-      "duration": 0,
-      "effectIds": [
-        "E2011-1"
-      ]
-    },
-    {
-      "cardId": 2012,
-      "cardName": "死亡收割",
-      "description": "对当前分路全体敌方造成3点伤害，未被护盾格挡的伤害回复等量生命",
-      "trackType": "Plan",
-      "targetType": "AllEnemies",
-      "tags": [
-        "Damage"
-      ],
-      "energyCost": 2,
-      "rarity": 3,
-      "duration": 0,
-      "effectIds": [
-        "E2012-1",
-        "E2012-2"
-      ]
-    },
-    {
-      "cardId": 2013,
-      "cardName": "飞剑回旋镖",
-      "description": "随机造成3点伤害4次，每次随机选择一名敌人",
-      "trackType": "Plan",
-      "targetType": "AnyEnemy",
-      "tags": [
-        "Damage"
-      ],
-      "energyCost": 1,
-      "rarity": 2,
-      "duration": 0,
-      "effectIds": [
-        "E2013-1"
-      ]
-    },
-    {
-      "cardId": 1001,
-      "cardName": "战斗专注",
-      "description": "抽3张牌，本回合剩余时间不能再抽牌",
-      "trackType": "Instant",
-      "targetType": "Self",
-      "tags": [
-        "Resource"
-      ],
-      "energyCost": 0,
-      "rarity": 2,
-      "duration": 0,
-      "effectIds": [
-        "E1001-1",
-        "E1001-2"
-      ]
-    },
-    {
-      "cardId": 1002,
-      "cardName": "突破极限",
-      "description": "使你的力量翻倍",
-      "trackType": "Instant",
-      "targetType": "Self",
-      "tags": [
-        "Buff",
-        "Exhaust"
-      ],
-      "energyCost": 1,
-      "rarity": 3,
-      "duration": 0,
-      "effectIds": [
-        "E1002-1"
-      ]
-    }
-  ]
+    "version": "2.0.0",
+    "cards": [
+        {
+            "cardId": 2001,
+            "cardName": "打击",
+            "description": "造成6点伤害",
+            "trackType": "Plan",
+            "targetType": "CurrentEnemy",
+            "heroClass": "Universal",
+            "effectRange": "SingleEnemy",
+            "layer": "DamageTrigger",
+            "tags": [
+                "Damage"
+            ],
+            "energyCost": 1,
+            "rarity": 1,
+            "effects": [
+                {
+                    "effectType": 10,
+                    "value": 6,
+                    "duration": 0,
+                    "targetOverride": "",
+                    "isDelayed": false,
+                    "appliesBuff": false,
+                    "buffType": "Unknown",
+                    "buffStackRule": "RefreshDuration",
+                    "isBuffDispellable": true,
+                    "priority": 500,
+                    "subPriority": 0
+                }
+            ]
+        },
+        {
+            "cardId": 2002,
+            "cardName": "防御",
+            "description": "获得5点护盾",
+            "trackType": "Plan",
+            "targetType": "Self",
+            "heroClass": "Universal",
+            "effectRange": "Self",
+            "layer": "DefenseModifier",
+            "tags": [
+                "Defense"
+            ],
+            "energyCost": 1,
+            "rarity": 1,
+            "effects": [
+                {
+                    "effectType": 2,
+                    "value": 5,
+                    "duration": 0,
+                    "targetOverride": "",
+                    "isDelayed": false,
+                    "appliesBuff": false,
+                    "buffType": "Unknown",
+                    "buffStackRule": "RefreshDuration",
+                    "isBuffDispellable": true,
+                    "priority": 500,
+                    "subPriority": 0
+                }
+            ]
+        },
+        {
+            "cardId": 2003,
+            "cardName": "观察弱点",
+            "description": "自身获得2点力量",
+            "trackType": "Plan",
+            "targetType": "Self",
+            "heroClass": "Warrior",
+            "effectRange": "SingleEnemy",
+            "layer": "DamageTrigger",
+            "tags": [
+                "Buff"
+            ],
+            "energyCost": 1,
+            "rarity": 2,
+            "effects": []
+        },
+        {
+            "cardId": 2004,
+            "cardName": "死亡收割",
+            "description": "对敌方造成3点伤害，并回复等量生命",
+            "trackType": "Plan",
+            "targetType": "CurrentEnemy",
+            "heroClass": "Assassin",
+            "effectRange": "SingleEnemy",
+            "layer": "DamageTrigger",
+            "tags": [
+                "Damage"
+            ],
+            "energyCost": 2,
+            "rarity": 3,
+            "effects": []
+        },
+        {
+            "cardId": 2005,
+            "cardName": "飞剑回旋镖",
+            "description": "造成3点伤害4次",
+            "trackType": "Plan",
+            "targetType": "CurrentEnemy",
+            "heroClass": "Assassin",
+            "effectRange": "SingleEnemy",
+            "layer": "DamageTrigger",
+            "tags": [
+                "Damage"
+            ],
+            "energyCost": 1,
+            "rarity": 2,
+            "effects": []
+        },
+        {
+            "cardId": 1001,
+            "cardName": "战斗专注",
+            "description": "抽3张牌，本回合不能再抽牌",
+            "trackType": "Instant",
+            "targetType": "Self",
+            "heroClass": "Universal",
+            "effectRange": "SingleEnemy",
+            "layer": "DamageTrigger",
+            "tags": [
+                "Resource"
+            ],
+            "energyCost": 0,
+            "rarity": 2,
+            "effects": []
+        },
+        {
+            "cardId": 1002,
+            "cardName": "突破极限",
+            "description": "使你的力量翻倍",
+            "trackType": "Instant",
+            "targetType": "Self",
+            "heroClass": "Warrior",
+            "effectRange": "SingleEnemy",
+            "layer": "DamageTrigger",
+            "tags": [
+                "Buff",
+                "Exhaust"
+            ],
+            "energyCost": 1,
+            "rarity": 3,
+            "effects": []
+        }
+    ]
 }

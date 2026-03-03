@@ -89,7 +89,6 @@ namespace CardMoba.BattleCore.RoundStateMachine
                 MaxHp = maxHp,
                 Energy = energyPerRound,
                 EnergyPerRound = energyPerRound,
-                Deck = new List<CardConfig>(player1Deck),
             };
 
             // 创建玩家2（队伍2）
@@ -102,16 +101,25 @@ namespace CardMoba.BattleCore.RoundStateMachine
                 MaxHp = maxHp,
                 Energy = energyPerRound,
                 EnergyPerRound = energyPerRound,
-                Deck = new List<CardConfig>(player2Deck),
             };
 
-        // 使用 RegisterPlayer 注册玩家，同步构建 R-06 快速查找字典
-        ctx.RegisterPlayer(p1);
-        ctx.RegisterPlayer(p2);
+            // 使用 RegisterPlayer 注册玩家，同步构建 R-06 快速查找字典
+            ctx.RegisterPlayer(p1);
+            ctx.RegisterPlayer(p2);
+
+            // 将 CardConfig 列表包装为 CardInstance（每张牌分配唯一 InstanceId）
+            foreach (var config in player1Deck)
+                p1.Deck.Add(ctx.CreateCardInstance(player1Id, config));
+            foreach (var config in player2Deck)
+                p2.Deck.Add(ctx.CreateCardInstance(player2Id, config));
+
+            // 开局前用种子随机数洗牌，保证确定性但顺序不固定
+            ctx.Random.Shuffle(p1.Deck);
+            ctx.Random.Shuffle(p2.Deck);
 
             // 各摸初始手牌
-            DrawCards(p1, startHandSize);
-            DrawCards(p2, startHandSize);
+            DrawCards(p1, startHandSize, ctx);
+            DrawCards(p2, startHandSize, ctx);
 
             ctx.RoundLog.Add("[RoundManager] === 对局开始 ===");
             ctx.RoundLog.Add($"[RoundManager] 玩家1 HP:{p1.Hp} 能量:{p1.Energy} 手牌:{p1.Hand.Count}张");
@@ -143,23 +151,20 @@ namespace CardMoba.BattleCore.RoundStateMachine
             if (player.IsLocked) return "错误：已锁定操作，不能再出牌";
             if (handIndex < 0 || handIndex >= player.Hand.Count) return "错误：无效的手牌索引";
 
-            CardConfig card = player.Hand[handIndex];
+            CardInstance inst = player.Hand[handIndex];
+            CardConfig card = inst.Config;
             if (card.TrackType != CardTrackType.Instant) return "错误：这不是瞬策牌，请使用提交定策牌";
             if (player.Energy < card.EnergyCost) return $"错误：能量不足（需要{card.EnergyCost}，当前{player.Energy}）";
 
             // ── 执行 ──
             player.Energy -= card.EnergyCost;
             player.Hand.RemoveAt(handIndex);
-            player.DiscardPile.Add(card);
+            player.DiscardPile.Add(inst);
 
-            // 创建 PlayedCard 用于结算
-            PlayedCard playedCard = new PlayedCard
-            {
-                SourcePlayerId = playerId,
-                Config = card,
-                RuntimeId = $"{playerId}_{ctx.CurrentRound}_{handIndex}",
-                RawTargetGroup = new List<string> { targetPlayerId }
-            };
+            // 创建 PlayedCard 用于结算（RuntimeId 复用 InstanceId，保证可追溯）
+            PlayedCard playedCard = inst.ToPlayedCard();
+            playedCard.SourcePlayerId = playerId;
+            playedCard.RawTargetGroup = new List<string> { targetPlayerId };
 
             // 瞬策牌：立即结算
             _settlement.ResolveInstantCard(ctx, playedCard);
@@ -187,29 +192,26 @@ namespace CardMoba.BattleCore.RoundStateMachine
             if (player.IsLocked) return "错误：已锁定操作，不能再出牌";
             if (handIndex < 0 || handIndex >= player.Hand.Count) return "错误：无效的手牌索引";
 
-            CardConfig card = player.Hand[handIndex];
-            if (card.TrackType != CardTrackType.Plan) return "错误：这不是定策牌，请使用打出瞬策牌";
-            if (player.Energy < card.EnergyCost) return $"错误：能量不足（需要{card.EnergyCost}，当前{player.Energy}）";
+            CardInstance inst2 = player.Hand[handIndex];
+            CardConfig card2   = inst2.Config;
+            if (card2.TrackType != CardTrackType.Plan) return "错误：这不是定策牌，请使用打出瞬策牌";
+            if (player.Energy < card2.EnergyCost) return $"错误：能量不足（需要{card2.EnergyCost}，当前{player.Energy}）";
 
             // ── 执行 ──
-            player.Energy -= card.EnergyCost;
+            player.Energy -= card2.EnergyCost;
             player.Hand.RemoveAt(handIndex);
-            player.DiscardPile.Add(card);
+            player.DiscardPile.Add(inst2);
 
-            // 创建 PlayedCard 用于定策牌结算
-            PlayedCard playedCard = new PlayedCard
-            {
-                SourcePlayerId = playerId,
-                Config = card,
-                RuntimeId = $"{playerId}_{ctx.CurrentRound}_{handIndex}_plan",
-                RawTargetGroup = new List<string> { targetPlayerId }
-            };
+            // 创建 PlayedCard 用于定策牌结算（RuntimeId 复用 InstanceId）
+            PlayedCard playedCard = inst2.ToPlayedCard();
+            playedCard.SourcePlayerId = playerId;
+            playedCard.RawTargetGroup = new List<string> { targetPlayerId };
 
             // 定策牌：加入待结算队列，回合末统一结算
             ctx.PendingPlanCards.Add(playedCard);
             ctx.RoundLog.Add($"[RoundManager] 玩家{playerId}暗置了一张定策牌");
 
-            return $"成功：提交定策牌「{card.CardName}」（回合末结算）";
+            return $"成功：提交定策牌「{card2.CardName}」（回合末结算）";
         }
 
         /// <summary>
@@ -404,7 +406,7 @@ namespace CardMoba.BattleCore.RoundStateMachine
 
                 // 1d. 固定抽牌（回合结束弃光手牌后，这里重新摸满）
                 int drawCount = DrawPerRound;
-                DrawCards(p, drawCount);
+                DrawCards(p, drawCount, ctx);
 
                 ctx.RoundLog.Add($"[RoundManager] {p.PlayerName} 能量回满:{p.Energy} 摸牌:{p.Hand.Count}张 牌库剩余:{p.Deck.Count}张 HP:{p.Hp}/{p.MaxHp}");
             }
@@ -426,7 +428,8 @@ namespace CardMoba.BattleCore.RoundStateMachine
         /// </summary>
         /// <param name="player">目标玩家</param>
         /// <param name="count">摸牌数量</param>
-        private void DrawCards(PlayerBattleState player, int count)
+        /// <param name="ctx">战斗上下文（用于种子随机洗牌）</param>
+        private void DrawCards(PlayerBattleState player, int count, BattleContext ctx = null)
         {
             for (int i = 0; i < count; i++)
             {
@@ -442,11 +445,11 @@ namespace CardMoba.BattleCore.RoundStateMachine
 
                     player.Deck.AddRange(player.DiscardPile);
                     player.DiscardPile.Clear();
-                    // TODO: 使用 seeded PRNG 做随机洗牌，原型阶段暂不打乱
+                    ctx.Random.Shuffle(player.Deck);
                 }
 
-                // 从牌库顶摸一张
-                CardConfig drawn = player.Deck[0];
+                // 从牌库顶摸一张（CardInstance）
+                CardInstance drawn = player.Deck[0];
                 player.Deck.RemoveAt(0);
                 player.Hand.Add(drawn);
             }

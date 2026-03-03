@@ -121,6 +121,11 @@ namespace CardMoba.BattleCore.Context
         private Dictionary<string, BuffManager> _buffManagers = new Dictionary<string, BuffManager>();
 
         /// <summary>
+        /// 全局卡牌实例计数器 —— 每次 CreateCardInstance 调用后自增，保证 InstanceId 全局唯一。
+        /// </summary>
+        private int _cardInstanceCounter = 0;
+
+        /// <summary>
         /// R-06：玩家快速查找字典（PlayerId -> PlayerBattleState），O(1) 替代 O(n) 线性遍历。
         /// 与 Players 列表保持同步，在 RegisterPlayer / Initialize 时写入。
         /// </summary>
@@ -177,13 +182,27 @@ namespace CardMoba.BattleCore.Context
         }
 
         /// <summary>
-        /// 生成下一张打出卡牌的运行时ID。
+        /// 生成下一张打出卡牌的运行时 ID（用于 PlayedCard.RuntimeId）。
         /// 格式："{回合数}_{玩家ID}_{序号}"
         /// </summary>
         public string GenerateCardRuntimeId(string playerId)
         {
             CardPlayedCountThisRound++;
             return $"{CurrentRound}_{playerId}_{CardPlayedCountThisRound}";
+        }
+
+        /// <summary>
+        /// 工厂方法：创建一张卡牌的运行时实例（CardInstance），并分配全局唯一 InstanceId。
+        /// 牌库初始化时统一调用此方法，禁止在外部手动构造 CardInstance。
+        /// 格式："{playerId}_card_{全局计数器:D4}"
+        /// </summary>
+        /// <param name="ownerPlayerId">所属玩家 ID</param>
+        /// <param name="config">静态卡牌配置（只读共享）</param>
+        public CardInstance CreateCardInstance(string ownerPlayerId, CardMoba.ConfigModels.Card.CardConfig config)
+        {
+            _cardInstanceCounter++;
+            string instanceId = $"{ownerPlayerId}_card_{_cardInstanceCounter:D4}";
+            return new CardInstance(instanceId, ownerPlayerId, config);
         }
 
         /// <summary>
