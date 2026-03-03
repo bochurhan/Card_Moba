@@ -43,11 +43,19 @@ namespace CardMoba.Client.Editor.CardEditor
         public bool TagInnate;
         public bool TagRetain;
 
+        // ─── 打出条件（PlayConditions）──────────────────────────────
+        /// <summary>
+        /// 卡牌打出/提交前必须全部满足的条件列表（ANY 一个不满足则阻止使用）。
+        /// 对应 Shared/ConfigModels/Card/CardConfig.PlayConditions。
+        /// </summary>
+        public List<PlayConditionEditData> PlayConditions = new();
+
         // ─── 内嵌效果列表（替代旧版 EffectIds 外键）────────────────
         public List<EffectEditData> Effects = new();
 
         // ─── 折叠状态（编辑器 UI 专用，不序列化）───────────────────
-        [NonSerialized] public bool FoldoutExpanded = true;
+        [NonSerialized] public bool FoldoutExpanded          = true;
+        [NonSerialized] public bool PlayConditionsFoldout    = false;
 
         // ════════════════════════════════════════════════════════════
         // 标签互转工具
@@ -177,6 +185,27 @@ namespace CardMoba.Client.Editor.CardEditor
         public bool           IsDelayed      = false;
         public string         TriggerCondition = "";
 
+        // ─── 执行模式（ExecutionMode）────────────────────────────────
+        /// <summary>
+        /// 效果执行模式：
+        ///   Immediate  — 直接执行 Handler（默认）
+        ///   Conditional — 满足 EffectConditions 才执行
+        ///   Passive    — 打出时注册触发器，由 TriggerManager 在指定时机触发
+        /// </summary>
+        public EffectExecutionMode ExecutionMode = EffectExecutionMode.Immediate;
+
+        // ─── 执行条件（Conditional 模式）────────────────────────────
+        /// <summary>ExecutionMode == Conditional 时生效，所有条件 AND 判定。</summary>
+        public List<EffectConditionEditData> EffectConditions = new();
+
+        // ─── 被动触发配置（Passive 模式）────────────────────────────
+        /// <summary>ExecutionMode == Passive 时：触发时机（对应 TriggerTiming 枚举整数值）</summary>
+        public int  PassiveTriggerTiming = 202;   // 默认 AfterDealDamage
+        /// <summary>ExecutionMode == Passive 时：触发器持续回合数（-1 表示永久跟随卡牌）</summary>
+        public int  PassiveDuration      = 1;
+        /// <summary>ExecutionMode == Passive 时：最大触发次数（-1 无限）</summary>
+        public int  PassiveMaxTriggers   = -1;
+
         // ─── Buff 附加声明 ───────────────────────────────────────────
         public bool           AppliesBuff       = false;
         public BuffType       BuffType          = BuffType.Unknown;
@@ -188,8 +217,10 @@ namespace CardMoba.Client.Editor.CardEditor
         public int            SubPriority = 0;
 
         // ─── 编辑器 UI 专用 ──────────────────────────────────────────
-        [NonSerialized] public bool FoldoutExpanded  = true;
-        [NonSerialized] public bool BuffSectionExpanded = false;
+        [NonSerialized] public bool FoldoutExpanded        = true;
+        [NonSerialized] public bool BuffSectionExpanded    = false;
+        [NonSerialized] public bool ConditionsFoldout      = false;
+        [NonSerialized] public bool PassiveConfigFoldout   = false;
 
         /// <summary>根据字段自动生成人类可读描述（供预览面板使用）</summary>
         public string GenerateDescription()
@@ -234,10 +265,21 @@ namespace CardMoba.Client.Editor.CardEditor
             return desc;
         }
 
+        /// <summary>根据执行模式生成前缀描述</summary>
+        private string GetModePrefixDescription()
+        {
+            return ExecutionMode switch
+            {
+                EffectExecutionMode.Passive     => $"[被动·{PassiveTriggerTiming}] ",
+                EffectExecutionMode.Conditional => "[条件] 若满足条件: ",
+                _                               => ""
+            };
+        }
+
         /// <summary>深复制</summary>
         public EffectEditData Clone()
         {
-            return new EffectEditData
+            var c = new EffectEditData
             {
                 EffectType        = EffectType,
                 Value             = Value,
@@ -245,6 +287,10 @@ namespace CardMoba.Client.Editor.CardEditor
                 TargetOverride    = TargetOverride,
                 IsDelayed         = IsDelayed,
                 TriggerCondition  = TriggerCondition,
+                ExecutionMode     = ExecutionMode,
+                PassiveTriggerTiming = PassiveTriggerTiming,
+                PassiveDuration   = PassiveDuration,
+                PassiveMaxTriggers= PassiveMaxTriggers,
                 AppliesBuff       = AppliesBuff,
                 BuffType          = BuffType,
                 BuffStackRule     = BuffStackRule,
@@ -254,6 +300,63 @@ namespace CardMoba.Client.Editor.CardEditor
                 FoldoutExpanded   = true,
                 BuffSectionExpanded = BuffSectionExpanded
             };
+            foreach (var cond in EffectConditions)
+                c.EffectConditions.Add(cond.Clone());
+            return c;
         }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 打出条件编辑数据 —— 对应 CardConfig.PlayConditions[i]
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 卡牌打出条件：打出/提交前检查，不满足则阻止使用并显示错误提示。
+    /// </summary>
+    [Serializable]
+    public class PlayConditionEditData
+    {
+        /// <summary>条件类型</summary>
+        public EffectConditionType ConditionType = EffectConditionType.MyDeckIsEmpty;
+        /// <summary>参考值（如"牌库张数 ≤ N"中的 N）</summary>
+        public int  Threshold = 0;
+        /// <summary>是否对条件取反（如"牌库不为空"变为"牌库为空"）</summary>
+        public bool Negate    = false;
+        /// <summary>不满足时显示的 UI 提示文本</summary>
+        public string FailMessage = "";
+
+        public PlayConditionEditData Clone() => new()
+        {
+            ConditionType = ConditionType,
+            Threshold     = Threshold,
+            Negate        = Negate,
+            FailMessage   = FailMessage
+        };
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 效果条件编辑数据 —— 对应 CardEffect.EffectConditions[i]
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 效果执行条件（ExecutionMode == Conditional 时使用）：
+    /// 所有条件 AND 判定，全部通过才执行 Handler。
+    /// </summary>
+    [Serializable]
+    public class EffectConditionEditData
+    {
+        /// <summary>条件类型</summary>
+        public EffectConditionType ConditionType = EffectConditionType.MyDeckIsEmpty;
+        /// <summary>参考值（视条件语义而定）</summary>
+        public int  Threshold = 0;
+        /// <summary>是否对条件取反</summary>
+        public bool Negate    = false;
+
+        public EffectConditionEditData Clone() => new()
+        {
+            ConditionType = ConditionType,
+            Threshold     = Threshold,
+            Negate        = Negate
+        };
     }
 }

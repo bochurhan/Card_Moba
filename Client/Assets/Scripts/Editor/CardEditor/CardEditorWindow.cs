@@ -373,9 +373,16 @@ namespace CardMoba.Client.Editor.CardEditor
 
             EditorGUILayout.Space(8);
 
-            // ══════════════════════════════════════════════════════════
-            // 区块4：效果列表（内嵌，核心编辑区）
-            // ══════════════════════════════════════════════════════════
+            // ══════════════════════════════════════════════
+            // 区块4：打出条件
+            // ══════════════════════════════════════════════
+            DrawPlayConditionSection(card);
+
+            EditorGUILayout.Space(8);
+
+            // ══════════════════════════════════════════════
+            // 区块5：效果列表（内嵌，核心编辑区）
+            // ══════════════════════════════════════════════
             DrawEffectSection(card);
 
             EditorGUILayout.Space(16);
@@ -405,6 +412,115 @@ namespace CardMoba.Client.Editor.CardEditor
 
             EditorGUILayout.EndHorizontal();
             EditorGUILayout.EndScrollView();
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        // 打出条件编辑
+        // ══════════════════════════════════════════════════════════════════
+
+        private void DrawPlayConditionSection(CardEditData card)
+        {
+            EditorGUILayout.BeginHorizontal();
+            card.PlayConditionsFoldout = EditorGUILayout.Foldout(
+                card.PlayConditionsFoldout,
+                $"◆ 打出条件  ({card.PlayConditions.Count} 条)",
+                true, EditorStyles.foldoutHeader);
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("＋ 添加条件", GUILayout.Width(90)))
+            {
+                card.PlayConditions.Add(new PlayConditionEditData());
+                card.PlayConditionsFoldout = true;
+                _isDirty = true;
+            }
+            EditorGUILayout.EndHorizontal();
+
+            if (!card.PlayConditionsFoldout) return;
+
+            if (card.PlayConditions.Count == 0)
+            {
+                EditorGUILayout.HelpBox(
+                    "无打出限制。若要限制使用（如[牌库为空才可打出]），请添加条件。",
+                    MessageType.Info);
+                return;
+            }
+
+            EditorGUI.BeginChangeCheck();
+
+            int deleteIdx = -1;
+            for (int i = 0; i < card.PlayConditions.Count; i++)
+            {
+                var cond = card.PlayConditions[i];
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField($"条件 #{i + 1}", EditorStyles.boldLabel, GUILayout.Width(60));
+                GUILayout.FlexibleSpace();
+                GUI.backgroundColor = new Color(1f, 0.5f, 0.5f);
+                if (GUILayout.Button("✕", GUILayout.Width(24))) deleteIdx = i;
+                GUI.backgroundColor = Color.white;
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUI.indentLevel++;
+                cond.ConditionType = (EffectConditionType)EditorGUILayout.EnumPopup("条件类型", cond.ConditionType);
+
+                // 根据条件类型决定是否显示 Threshold（需要数值的条件类型）
+                bool needsThreshold = cond.ConditionType is
+                    EffectConditionType.MyHandCardCountAtMost    or
+                    EffectConditionType.MyHandCardCountAtLeast   or
+                    EffectConditionType.MyPlayedCardCountAtLeast or
+                    EffectConditionType.MyHpPercentAtMost        or
+                    EffectConditionType.MyHpPercentAtLeast       or
+                    EffectConditionType.MyStrengthAtLeast        or
+                    EffectConditionType.EnemyHpPercentAtMost     or
+                    EffectConditionType.RoundNumberAtLeast       or
+                    EffectConditionType.EnemyPlayedCardCountAtLeast;
+
+                if (needsThreshold)
+                    cond.Threshold = EditorGUILayout.IntField("阈值", cond.Threshold);
+
+                cond.Negate      = EditorGUILayout.Toggle("取反 (Not)", cond.Negate);
+                cond.FailMessage = EditorGUILayout.TextField("失败提示", cond.FailMessage);
+
+                // 条件预览
+                string preview = BuildConditionPreview(cond.ConditionType, cond.Threshold, cond.Negate);
+                EditorGUILayout.LabelField("预览:", preview, EditorStyles.miniLabel);
+                EditorGUI.indentLevel--;
+                EditorGUILayout.EndVertical();
+                EditorGUILayout.Space(2);
+            }
+
+            if (deleteIdx >= 0)
+            {
+                card.PlayConditions.RemoveAt(deleteIdx);
+                _isDirty = true;
+            }
+
+            if (EditorGUI.EndChangeCheck()) _isDirty = true;
+        }
+
+        /// <summary>生成条件的人类可读预览文本</summary>
+        private string BuildConditionPreview(EffectConditionType type, int threshold, bool negate)
+        {
+            string raw = type switch
+            {
+                EffectConditionType.MyHandCardCountAtMost      => $"手牌数量 <= {threshold}",
+                EffectConditionType.MyHandCardCountAtLeast     => $"手牌数量 >= {threshold}",
+                EffectConditionType.MyPlayedCardCountAtLeast   => $"本回合出牌数 >= {threshold}",
+                EffectConditionType.MyHpPercentAtMost          => $"我方血量 <= {threshold}%",
+                EffectConditionType.MyHpPercentAtLeast         => $"我方血量 >= {threshold}%",
+                EffectConditionType.MyStrengthAtLeast          => $"我方力量 >= {threshold}",
+                EffectConditionType.EnemyHpPercentAtMost       => $"敌方血量 <= {threshold}%",
+                EffectConditionType.RoundNumberAtLeast         => $"回合数 >= {threshold}",
+                EffectConditionType.EnemyPlayedCardCountAtLeast=> $"敌方本回合出牌数 >= {threshold}",
+                EffectConditionType.MyDeckIsEmpty              => "我方牌库为空",
+                EffectConditionType.EnemyPlayedDamageCard      => "敌方本回合打出了伤害牌",
+                EffectConditionType.EnemyPlayedDefenseCard     => "敌方本回合打出了防御牌",
+                EffectConditionType.EnemyPlayedCounterCard     => "敌方本回合打出了反制牌",
+                EffectConditionType.MyHasBuffType              => "我方拥有指定Buff",
+                EffectConditionType.EnemyHasBuffType           => "敌方拥有指定Buff",
+                EffectConditionType.EnemyIsStunned             => "敌方处于眩晕状态",
+                _                                              => type.ToString()
+            };
+            return negate ? $"NOT ({raw})" : raw;
         }
 
         // ══════════════════════════════════════════════════════════════════
@@ -535,6 +651,110 @@ namespace CardMoba.Client.Editor.CardEditor
                 _     => "传说特殊 (900-999)"
             };
             EditorGUILayout.LabelField("", priHint, EditorStyles.miniLabel);
+
+            // ── 执行模式 ────────────────────────────────────────────
+            EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField("── 执行模式", EditorStyles.boldLabel);
+            effect.ExecutionMode = (EffectExecutionMode)EditorGUILayout.EnumPopup("执行模式", effect.ExecutionMode);
+
+            // 执行模式说明
+            string modeDesc = effect.ExecutionMode switch
+            {
+                EffectExecutionMode.Immediate  => "立即生效：打出后直接执行效果（默认）",
+                EffectExecutionMode.Conditional=> "条件生效：满足所有[效果条件]时才执行",
+                EffectExecutionMode.Passive    => "被动触发：不直接执行，而是注册为被动触发器",
+                _                              => ""
+            };
+            EditorGUILayout.LabelField("", modeDesc, EditorStyles.miniLabel);
+
+            // ── 被动触发器配置（仅 Passive 模式）────────────────────
+            if (effect.ExecutionMode == EffectExecutionMode.Passive)
+            {
+                EditorGUI.indentLevel++;
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+                EditorGUILayout.LabelField("◇ 被动触发器配置", EditorStyles.boldLabel);
+
+                // TriggerTiming 选择（用整数代替枚举保持灵活性）
+                string[] timingOptions =
+                {
+                    "OnRoundStart (101)", "OnRoundEnd (102)",
+                    "BeforeDealDamage (201)", "AfterDealDamage (202)",
+                    "BeforeTakeDamage (203)", "AfterTakeDamage (204)",
+                    "OnShieldBroken (205)", "BeforePlayCard (301)",
+                    "AfterPlayCard (302)", "OnHealed (501)", "OnGainShield (502)",
+                    "OnNearDeath (401)", "OnDeath (402)"
+                };
+                int[] timingValues = { 101, 102, 201, 202, 203, 204, 205, 301, 302, 501, 502, 401, 402 };
+
+                int curTimingIdx = Array.IndexOf(timingValues, effect.PassiveTriggerTiming);
+                if (curTimingIdx < 0) curTimingIdx = 3; // 默认 AfterDealDamage
+                int newTimingIdx = EditorGUILayout.Popup("触发时机", curTimingIdx, timingOptions);
+                effect.PassiveTriggerTiming = timingValues[newTimingIdx];
+
+                effect.PassiveDuration = EditorGUILayout.IntField("持续回合数 (-1=永久)", effect.PassiveDuration);
+
+                EditorGUILayout.EndVertical();
+                EditorGUI.indentLevel--;
+            }
+
+            // ── 效果条件（Conditional 模式必填，其他模式可选）────────
+            EditorGUILayout.Space(4);
+            EditorGUILayout.BeginHorizontal();
+            effect.ConditionsFoldout = EditorGUILayout.Foldout(
+                effect.ConditionsFoldout,
+                $"效果条件  ({effect.EffectConditions.Count} 条)"
+                + (effect.ExecutionMode == EffectExecutionMode.Conditional ? "  ⚠ Conditional 模式必须配置" : ""),
+                true);
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("＋", GUILayout.Width(24)))
+            {
+                effect.EffectConditions.Add(new EffectConditionEditData());
+                effect.ConditionsFoldout = true;
+            }
+            EditorGUILayout.EndHorizontal();
+
+            if (effect.ConditionsFoldout && effect.EffectConditions.Count > 0)
+            {
+                EditorGUI.indentLevel++;
+                int delCondIdx = -1;
+                for (int ci = 0; ci < effect.EffectConditions.Count; ci++)
+                {
+                    var ec = effect.EffectConditions[ci];
+                    EditorGUILayout.BeginHorizontal();
+                    ec.ConditionType = (EffectConditionType)EditorGUILayout.EnumPopup(ec.ConditionType, GUILayout.ExpandWidth(true));
+
+                    bool needsVal = ec.ConditionType is
+                        EffectConditionType.MyHandCardCountAtMost    or
+                        EffectConditionType.MyHandCardCountAtLeast   or
+                        EffectConditionType.MyPlayedCardCountAtLeast or
+                        EffectConditionType.MyHpPercentAtMost        or
+                        EffectConditionType.MyHpPercentAtLeast       or
+                        EffectConditionType.MyStrengthAtLeast        or
+                        EffectConditionType.EnemyHpPercentAtMost     or
+                        EffectConditionType.RoundNumberAtLeast       or
+                        EffectConditionType.EnemyPlayedCardCountAtLeast;
+                    if (needsVal)
+                        ec.Threshold = EditorGUILayout.IntField(ec.Threshold, GUILayout.Width(40));
+
+                    ec.Negate = EditorGUILayout.ToggleLeft("取反", ec.Negate, GUILayout.Width(45));
+
+                    GUI.backgroundColor = new Color(1f, 0.5f, 0.5f);
+                    if (GUILayout.Button("✕", GUILayout.Width(24))) delCondIdx = ci;
+                    GUI.backgroundColor = Color.white;
+                    EditorGUILayout.EndHorizontal();
+
+                    // 预览
+                    string condPreview = BuildConditionPreview(ec.ConditionType, ec.Threshold, ec.Negate);
+                    EditorGUILayout.LabelField("", condPreview, EditorStyles.miniLabel);
+                }
+                if (delCondIdx >= 0) effect.EffectConditions.RemoveAt(delCondIdx);
+                EditorGUI.indentLevel--;
+            }
+            else if (effect.ConditionsFoldout && effect.EffectConditions.Count == 0)
+            {
+                EditorGUILayout.HelpBox("点击右侧 ＋ 按钮添加效果条件（Conditional 模式必须至少一条）", MessageType.Info);
+            }
 
             // ── Buff 附加声明 ────────────────────────────────────────
             EditorGUILayout.Space(4);
@@ -691,6 +911,23 @@ namespace CardMoba.Client.Editor.CardEditor
                     if (c.tags != null)
                         card.SetTagList(new List<string>(c.tags));
 
+                    // 加载打出条件（v3.0 新增）
+                    if (c.playConditions != null)
+                    {
+                        foreach (var pc in c.playConditions)
+                        {
+                            var cond = new PlayConditionEditData
+                            {
+                                Threshold   = pc.threshold,
+                                Negate      = pc.negate,
+                                FailMessage = pc.failMessage ?? ""
+                            };
+                            if (Enum.TryParse<EffectConditionType>(pc.conditionType, true, out var ct))
+                                cond.ConditionType = ct;
+                            card.PlayConditions.Add(cond);
+                        }
+                    }
+
                     // 加载内嵌效果
                     if (c.effects != null)
                     {
@@ -698,14 +935,16 @@ namespace CardMoba.Client.Editor.CardEditor
                         {
                             var eff = new EffectEditData
                             {
-                                Value             = e.value,
-                                Duration          = e.duration,
-                                IsDelayed         = e.isDelayed,
-                                AppliesBuff       = e.appliesBuff,
-                                IsBuffDispellable = e.isBuffDispellable,
-                                Priority          = e.priority,
-                                SubPriority       = e.subPriority,
-                                FoldoutExpanded   = true
+                                Value                = e.value,
+                                Duration             = e.duration,
+                                IsDelayed            = e.isDelayed,
+                                AppliesBuff          = e.appliesBuff,
+                                IsBuffDispellable    = e.isBuffDispellable,
+                                Priority             = e.priority,
+                                SubPriority          = e.subPriority,
+                                PassiveTriggerTiming = e.passiveTriggerTiming == 0 ? 202 : e.passiveTriggerTiming,
+                                PassiveDuration      = e.passiveDuration == 0 ? 1 : e.passiveDuration,
+                                FoldoutExpanded      = true
                             };
                             if (Enum.IsDefined(typeof(EffectType), e.effectType))
                                 eff.EffectType = (EffectType)e.effectType;
@@ -715,6 +954,19 @@ namespace CardMoba.Client.Editor.CardEditor
                                 eff.BuffStackRule = bsr;
                             if (Enum.TryParse<CardTargetType>(e.targetOverride, true, out var to))
                                 eff.TargetOverride = to;
+                            if (Enum.TryParse<EffectExecutionMode>(e.executionMode, true, out var em))
+                                eff.ExecutionMode = em;
+                            // 加载效果条件
+                            if (e.effectConditions != null)
+                            {
+                                foreach (var ec in e.effectConditions)
+                                {
+                                    var ec2 = new EffectConditionEditData { Threshold = ec.threshold, Negate = ec.negate };
+                                    if (Enum.TryParse<EffectConditionType>(ec.conditionType, true, out var ect))
+                                        ec2.ConditionType = ect;
+                                    eff.EffectConditions.Add(ec2);
+                                }
+                            }
                             card.Effects.Add(eff);
                         }
                     }
@@ -753,19 +1005,35 @@ namespace CardMoba.Client.Editor.CardEditor
                     tags        = c.GetTagList().ToArray(),
                     energyCost  = c.EnergyCost,
                     rarity      = c.Rarity,
+                    playConditions = c.PlayConditions.Select(pc => new PlayConditionJsonData
+                    {
+                        conditionType = pc.ConditionType.ToString(),
+                        threshold     = pc.Threshold,
+                        negate        = pc.Negate,
+                        failMessage   = pc.FailMessage
+                    }).ToArray(),
                     effects     = c.Effects.Select(e => new EffectJsonData
                     {
-                        effectType        = (int)e.EffectType,
-                        value             = e.Value,
-                        duration          = e.Duration,
-                        targetOverride    = e.TargetOverride.HasValue ? e.TargetOverride.Value.ToString() : "",
-                        isDelayed         = e.IsDelayed,
-                        appliesBuff       = e.AppliesBuff,
-                        buffType          = e.BuffType.ToString(),
-                        buffStackRule     = e.BuffStackRule.ToString(),
-                        isBuffDispellable = e.IsBuffDispellable,
-                        priority          = e.Priority,
-                        subPriority       = e.SubPriority
+                        effectType           = (int)e.EffectType,
+                        value                = e.Value,
+                        duration             = e.Duration,
+                        targetOverride       = e.TargetOverride.HasValue ? e.TargetOverride.Value.ToString() : "",
+                        isDelayed            = e.IsDelayed,
+                        appliesBuff          = e.AppliesBuff,
+                        buffType             = e.BuffType.ToString(),
+                        buffStackRule        = e.BuffStackRule.ToString(),
+                        isBuffDispellable    = e.IsBuffDispellable,
+                        priority             = e.Priority,
+                        subPriority          = e.SubPriority,
+                        executionMode        = e.ExecutionMode.ToString(),
+                        passiveTriggerTiming = e.PassiveTriggerTiming,
+                        passiveDuration      = e.PassiveDuration,
+                        effectConditions     = e.EffectConditions.Select(ec => new EffectConditionJsonData
+                        {
+                            conditionType = ec.ConditionType.ToString(),
+                            threshold     = ec.Threshold,
+                            negate        = ec.Negate
+                        }).ToArray()
                     }).ToArray()
                 }).ToArray()
             };
@@ -821,18 +1089,28 @@ namespace CardMoba.Client.Editor.CardEditor
         [Serializable]
         private class CardJsonData
         {
-            public int              cardId;
-            public string           cardName;
-            public string           description;
-            public string           trackType;
-            public string           targetType;
-            public string           heroClass;
-            public string           effectRange;
-            public string           layer;
-            public string[]         tags;
-            public int              energyCost;
-            public int              rarity;
-            public EffectJsonData[] effects;
+            public int                     cardId;
+            public string                  cardName;
+            public string                  description;
+            public string                  trackType;
+            public string                  targetType;
+            public string                  heroClass;
+            public string                  effectRange;
+            public string                  layer;
+            public string[]                tags;
+            public int                     energyCost;
+            public int                     rarity;
+            public EffectJsonData[]         effects;
+            public PlayConditionJsonData[] playConditions;  // 打出条件（v3.0 新增）
+        }
+
+        [Serializable]
+        private class PlayConditionJsonData
+        {
+            public string conditionType;
+            public int    threshold;
+            public bool   negate;
+            public string failMessage;
         }
 
         [Serializable]
@@ -849,6 +1127,19 @@ namespace CardMoba.Client.Editor.CardEditor
             public bool   isBuffDispellable;
             public int    priority;
             public int    subPriority;
+            // 执行模式（新增 v3.0）
+            public string executionMode;
+            public int    passiveTriggerTiming;
+            public int    passiveDuration;
+            public EffectConditionJsonData[] effectConditions;
+        }
+
+        [Serializable]
+        private class EffectConditionJsonData
+        {
+            public string conditionType;
+            public int    threshold;
+            public bool   negate;
         }
 
         // ══════════════════════════════════════════════════════════════════
