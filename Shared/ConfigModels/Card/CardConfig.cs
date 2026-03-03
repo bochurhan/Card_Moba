@@ -72,6 +72,19 @@ namespace CardMoba.ConfigModels.Card
         /// <summary>能量消耗（每回合玩家获得固定能量，出牌消耗能量）</summary>
         public int EnergyCost { get; set; }
 
+        // ── 打出条件 ──
+
+        /// <summary>
+        /// 打出条件列表 —— 玩家提交/打出此牌时必须满足的所有条件（AND 语义）。
+        ///
+        /// 空列表 = 无打出限制，任何时候均可打出（绝大多数普通牌）。
+        /// 示例：华丽收场 → PlayConditions = [{ MyDeckIsEmpty }]，牌库为空才可打出。
+        ///
+        /// 由 RoundManager 在 CommitPlanCard / PlayCard 阶段检查；
+        /// 检查失败时拒绝提交并返回错误提示，不消耗费用。
+        /// </summary>
+        public List<EffectCondition> PlayConditions { get; set; } = new List<EffectCondition>();
+
         // ── 效果列表 ──
 
         /// <summary>

@@ -64,18 +64,32 @@
         {
             "cardId": 2003,
             "cardName": "观察弱点",
-            "description": "自身获得2点力量",
+            "description": "每当对手结算伤害定策牌时，你获得2点力量",
             "trackType": "Plan",
             "targetType": "Self",
             "heroClass": "Warrior",
-            "effectRange": "SingleEnemy",
-            "layer": "DamageTrigger",
+            "effectRange": "CurrentLaneEnemies",
+            "layer": "Counter",
             "tags": [
-                "Buff"
+                "Counter"
             ],
             "energyCost": 1,
             "rarity": 2,
-            "effects": []
+            "effects": [
+                {
+                    "effectType": 1,
+                    "value": 5,
+                    "duration": 0,
+                    "targetOverride": "",
+                    "isDelayed": false,
+                    "appliesBuff": false,
+                    "buffType": "Unknown",
+                    "buffStackRule": "RefreshDuration",
+                    "isBuffDispellable": true,
+                    "priority": 500,
+                    "subPriority": 0
+                }
+            ]
         },
         {
             "cardId": 2004,

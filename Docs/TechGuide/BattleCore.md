@@ -1,7 +1,7 @@
 ﻿# BattleCore 核心代码解读
 
-**文档版本**：V5.1
-**最后更新**：2026-03-01
+**文档版本**：V5.3
+**最后更新**：2026-03-03
 **适用对象**：需要理解或修改结算逻辑的开发者
 **前置阅读**：[QuickStart.md](QuickStart.md)、[SystemArchitecture.md](SystemArchitecture.md)（系统关系总览）、[../GameDesign/SettlementRules.md](../GameDesign/SettlementRules.md)
 **阅读时间**：20 分钟
@@ -309,20 +309,28 @@ public void ResolvePlanCards(BattleContext ctx)
 └───────────────────────────────────────────────────────────────┘
 ```
 
-### 单个效果执行路径
+### 单个效果执行路径（含 ExecutionMode 路由）
 
 ```
 ExecuteEffect(ctx, card, effect, source)
     │
-    ├─ HandlerRegistry.TryGet(effect.EffectType, out handler)
+    ├─ ExecutionMode == Passive
+    │       └─ return（已在打出时由 PassiveHandler 注册，结算时跳过）
+    │
+    ├─ ExecutionMode == Conditional
+    │       └─ EffectConditionChecker.EvaluateAll(effect.EffectConditions)
+    │               ├─ false → return（条件不满足，记录日志）
+    │               └─ true  → 继续
+    │
+    ├─ HandlerRegistry.GetHandler(effect.EffectType)
     │       ↓ 未注册
-    │   ctx.RoundLog.Add("[警告] 未注册的 EffectType: XXX")
+    │   ctx.RoundLog.Add("[Warning] 未注册的 EffectType: XXX")
     │   return
     │       ↓ 已注册
-    ├─ TargetResolver.ResolveForEffect(...)  → 确定本次效果目标
-    │
     └─ handler.Execute(card, effect, source, target, ctx)
 ```
+
+> 📖 卡牌从打出到结算的完整生命周期，请参阅 [CardLifecycle.md](CardLifecycle.md)。
 
 ---
 
@@ -480,6 +488,7 @@ public class PlayerBattleState
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| V5.3 | 2026-03-03 | R-Counter 重构：移除 `SettlementEngine` 中的 `ProcessCounterCard` / `FindFirstDamageCard` / `ApplyCounterEffects` 硬编码方法；Counter 效果统一走 `PassiveHandler` + `TriggerManager` 体系；新增 `ExecutionMode`（Immediate/Conditional/Passive）路由；新增 `EffectConditionChecker` 条件评估器；新增 `PlayConditions` 打出条件；新增 `PassiveHandler` 触发器注册系统；`ExecuteEffect` 补充 ExecutionMode 路由分支；新建 `CardLifecycle.md` 文档 |
 | V5.2 | 2026-03-02 | 同步更新文档结构：`Architecture.md` 重命名为 `SystemArchitecture.md`；`ConfigSystem.md` 标记为已完成；修正 `QuickStart.md` 中失效链接；`SystemArchitecture.md` 清理旧 `PendingTriggerEffects` 引用，更新集成缺口表格 |
 | V5.1 | 2026-03-01 | R-05：删除 `PendingTriggerEffects` / `HasChainTriggeredThisRound` / `ResolveLayer2_Step2_Triggers` 旧触发路径；R-06：`GetPlayer` 改为 O(1) 字典查找，新增 `RegisterPlayer` 方法；R-08：新增 `HistoryLog` 回合日志快照持久化；更新 BattleContext 数据结构章节 |
 | V5.0 | 2026-02-28 | 修正 EffectType ID 表（对齐实际枚举：跳跃分布 1,2-8,10-14,20-29）；更新 Handler 注册表（移除不存在的 ArmorBreak/ExecuteKill/HealTeam；新增 DoubleStrength(29)）；新增效果流程指向 ConfigSystem.md |
@@ -495,6 +504,7 @@ public class PlayerBattleState
 |------|------|
 | 结算规则设计 | [../GameDesign/SettlementRules.md](../GameDesign/SettlementRules.md) |
 | 卡牌系统设计 | [../GameDesign/CardSystem.md](../GameDesign/CardSystem.md) |
+| **卡牌生命周期与 Buff 管理** | [CardLifecycle.md](CardLifecycle.md) ★ 新增 |
 | 配置系统说明 | [ConfigSystem.md](ConfigSystem.md) |
 | 快速入门 | [QuickStart.md](QuickStart.md) |
 | 代码位置 | `Shared/BattleCore/Settlement/` |

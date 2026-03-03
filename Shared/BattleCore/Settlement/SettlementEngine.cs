@@ -188,30 +188,35 @@ namespace CardMoba.BattleCore.Settlement
         // ══════════════════════════════════════════════════════════
 
         /// <summary>
-        /// 堆叠0层：结算上回合提交的反制牌，校验触发条件，执行无效化效果。
+        /// 堆叠0层：处理反制效果层。
+        ///
+        /// 新架构说明（R-Counter 重构）：
+        ///   反制牌在打出时已通过 PassiveHandler 注册了 BeforePlayCard 触发器，
+        ///   触发器在对方卡牌进入 PendingPlanCards 时触发，自动将目标加入 ctx.CounteredCards。
+        ///   Layer0 只负责：
+        ///     1. 筛除带 Counter 标签的本回合新提交牌（下回合才生效，从 ValidPlanCards 排除）
+        ///     2. 筛除已被触发器判定为"被反制"的卡牌（CounteredCards 中的）
+        ///
+        /// 旧方法 ProcessCounterCard / FindFirstDamageCard / ApplyCounterEffects 已移除（R-Counter 清理）。
+        /// Counter 效果的具体逻辑已迁移到 CounterHandler + PassiveHandler 体系。
         /// </summary>
         private void ResolveLayer0_Counter(BattleContext ctx)
         {
             ctx.RoundLog.Add("[Layer0] ── 反制效果结算层 ──");
-
-            foreach (var counterAction in ctx.PendingCounterCards)
-            {
-                ProcessCounterCard(ctx, counterAction);
-            }
 
             // 筛选出本回合有效的定策牌（未被反制的）
             ctx.ValidPlanCards.Clear();
 
             foreach (var playedCard in ctx.PendingPlanCards)
             {
-                // 跳过本回合新提交的反制牌（下回合才生效）
+                // 跳过带 Counter 标签的本回合新提交反制牌（下回合才生效）
                 if (playedCard.Config.HasTag(CardTag.Counter))
                 {
-                    ctx.RoundLog.Add($"[Layer0] 反制牌「{playedCard.Config.CardName}」已锁定，下回合生效");
+                    ctx.RoundLog.Add($"[Layer0] 反制牌「{playedCard.Config.CardName}」本回合锁定，下回合生效");
                     continue;
                 }
 
-                // 检查是否被反制
+                // 检查是否已被触发器反制（PassiveHandler 注册的 BeforePlayCard 触发器写入 CounteredCards）
                 bool isCountered = false;
                 foreach (var counteredCard in ctx.CounteredCards)
                 {
@@ -222,78 +227,17 @@ namespace CardMoba.BattleCore.Settlement
                     }
                 }
 
-                if (!isCountered)
+                if (isCountered)
+                {
+                    ctx.RoundLog.Add($"[Layer0] 「{playedCard.Config.CardName}」已被反制，跳过结算");
+                }
+                else
+                {
                     ctx.ValidPlanCards.Add(playedCard);
+                }
             }
 
             ctx.RoundLog.Add($"[Layer0] 有效定策牌数量: {ctx.ValidPlanCards.Count}");
-        }
-
-        /// <summary>
-        /// 处理单张反制牌的效果。
-        /// </summary>
-        private void ProcessCounterCard(BattleContext ctx, PlayedCard counterCard)
-        {
-            var source = ctx.GetPlayer(counterCard.SourcePlayerId);
-            if (source == null || !source.IsAlive) return;
-
-            string? targetPlayerId = counterCard.ResolvedTargets?.Count > 0
-                ? counterCard.ResolvedTargets[0]
-                : (counterCard.RawTargetGroup?.Count > 0 ? counterCard.RawTargetGroup[0] : null);
-
-            if (string.IsNullOrEmpty(targetPlayerId)) return;
-
-            var target = ctx.GetPlayer(targetPlayerId);
-            if (target == null) return;
-
-            PlayedCard? targetDamageCard = FindFirstDamageCard(ctx, target.PlayerId);
-
-            if (targetDamageCard != null)
-            {
-                ctx.CounteredCards.Add(targetDamageCard);
-                ctx.RoundLog.Add($"[Layer0] 玩家{source.PlayerId}的反制牌「{counterCard.Config.CardName}」" +
-                    $"成功反制了玩家{target.PlayerId}的「{targetDamageCard.Config.CardName}」！");
-
-                ApplyCounterEffects(ctx, counterCard, targetDamageCard);
-            }
-            else
-            {
-                ctx.RoundLog.Add($"[Layer0] 玩家{source.PlayerId}的反制牌「{counterCard.Config.CardName}」" +
-                    $"未找到可反制的目标，效果落空");
-            }
-        }
-
-        /// <summary>
-        /// 查找指定玩家本回合提交的首张伤害牌。
-        /// </summary>
-        private PlayedCard? FindFirstDamageCard(BattleContext ctx, string playerId)
-        {
-            foreach (var card in ctx.PendingPlanCards)
-            {
-                if (card.SourcePlayerId == playerId && card.Config.HasTag(CardTag.Damage))
-                    return card;
-            }
-            return null;
-        }
-
-        /// <summary>
-        /// 应用反制牌的额外效果（如反弹伤害）。
-        /// </summary>
-        private void ApplyCounterEffects(BattleContext ctx, PlayedCard counterCard, PlayedCard targetCard)
-        {
-            foreach (var effect in counterCard.Config.Effects)
-            {
-                if (effect.EffectType == EffectType.Counter && counterCard.Config.HasTag(CardTag.Reflect))
-                {
-                    var attacker = ctx.GetPlayer(targetCard.SourcePlayerId);
-                    if (attacker != null && attacker.IsAlive)
-                    {
-                        int reflectDamage = targetCard.Config.EffectValue;
-                        attacker.Hp -= reflectDamage;
-                        ctx.RoundLog.Add($"[Layer0] 反弹{reflectDamage}点伤害给玩家{attacker.PlayerId}");
-                    }
-                }
-            }
         }
 
         // ══════════════════════════════════════════════════════════
@@ -698,13 +642,42 @@ namespace CardMoba.BattleCore.Settlement
         /// <summary>
         /// 执行单个效果 —— 通过 HandlerRegistry 找到对应 Handler 并执行。
         /// 若无对应 Handler，则记录警告日志并跳过（不抛异常）。
-        /// 
+        ///
+        /// 执行模式路由：
+        ///   Immediate   —— 直接执行
+        ///   Conditional —— 先通过 EffectConditionChecker 评估条件，满足再执行
+        ///   Passive     —— 跳过（Passive 效果在打出时由 PassiveHandler 注册，此处无需处理）
+        ///
         /// 目标优先级：
         ///   1. effect.TargetOverride（单个效果的目标覆盖，如护盾牌自身效果覆盖为 Self）
         ///   2. card.ResolvedTargets（整张卡的解析目标）
         /// </summary>
         private void ExecuteEffect(BattleContext ctx, PlayedCard card, CardEffect effect, PlayerBattleState source)
         {
+            // ── Passive 模式：打出时已由 PassiveHandler 注册触发器，结算时跳过 ──
+            if (effect.ExecutionMode == EffectExecutionMode.Passive)
+                return;
+
+            // ── Conditional 模式：评估 EffectConditions，不满足则跳过 ──
+            if (effect.ExecutionMode == EffectExecutionMode.Conditional
+                && effect.EffectConditions != null
+                && effect.EffectConditions.Count > 0)
+            {
+                string? targetId = card.ResolvedTargets?.Count > 0 ? card.ResolvedTargets[0] : null;
+                bool conditionMet = EffectConditionChecker.EvaluateAll(
+                    effect.EffectConditions, source.PlayerId, targetId, ctx);
+
+                if (!conditionMet)
+                {
+                    ctx.RoundLog.Add(
+                        $"[Settlement] 「{card.Config.CardName}」效果 {effect.EffectType} 条件不满足，跳过");
+                    return;
+                }
+
+                ctx.RoundLog.Add(
+                    $"[Settlement] 「{card.Config.CardName}」效果 {effect.EffectType} 条件满足，执行");
+            }
+
             var handler = HandlerRegistry.GetHandler(effect.EffectType);
             if (handler == null)
             {

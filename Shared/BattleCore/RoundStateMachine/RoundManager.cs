@@ -1,8 +1,11 @@
 using System.Collections.Generic;
 using CardMoba.BattleCore.Context;
 using CardMoba.BattleCore.Settlement;
+using CardMoba.BattleCore.Settlement.Handlers;
 using CardMoba.ConfigModels.Card;
 using CardMoba.Protocol.Enums;
+
+#pragma warning disable CS8632
 
 namespace CardMoba.BattleCore.RoundStateMachine
 {
@@ -156,6 +159,19 @@ namespace CardMoba.BattleCore.RoundStateMachine
             if (card.TrackType != CardTrackType.Instant) return "错误：这不是瞬策牌，请使用提交定策牌";
             if (player.Energy < card.EnergyCost) return $"错误：能量不足（需要{card.EnergyCost}，当前{player.Energy}）";
 
+            // ── 打出条件检查（PlayConditions）──
+            // 目标方：在瞬策牌场景下，条件检查时目标 ID 也需传入（如"敌方有 Buff"类条件）
+            if (card.PlayConditions != null && card.PlayConditions.Count > 0)
+            {
+                bool playable = EffectConditionChecker.EvaluateAll(
+                    card.PlayConditions, playerId, targetPlayerId, ctx);
+                if (!playable)
+                {
+                    string reason = BuildPlayConditionFailReason(card.PlayConditions);
+                    return $"错误：不满足打出条件（{reason}）";
+                }
+            }
+
             // ── 执行 ──
             player.Energy -= card.EnergyCost;
             player.Hand.RemoveAt(handIndex);
@@ -165,6 +181,9 @@ namespace CardMoba.BattleCore.RoundStateMachine
             PlayedCard playedCard = inst.ToPlayedCard();
             playedCard.SourcePlayerId = playerId;
             playedCard.RawTargetGroup = new List<string> { targetPlayerId };
+
+            // 注册 Passive 效果（必须在结算前注册，确保本回合后续事件可触发）
+            PassiveHandler.RegisterPassiveEffects(playedCard, ctx);
 
             // 瞬策牌：立即结算
             _settlement.ResolveInstantCard(ctx, playedCard);
@@ -197,6 +216,21 @@ namespace CardMoba.BattleCore.RoundStateMachine
             if (card2.TrackType != CardTrackType.Plan) return "错误：这不是定策牌，请使用打出瞬策牌";
             if (player.Energy < card2.EnergyCost) return $"错误：能量不足（需要{card2.EnergyCost}，当前{player.Energy}）";
 
+            // ── 打出条件检查（PlayConditions）──
+            // 定策牌在提交时检查打出条件，此时目标 ID 可能未知（暗置），
+            // 但条件中"敌方"状态类可通过 targetPlayerId 传入，若为空则由 EffectConditionChecker 自动推断。
+            if (card2.PlayConditions != null && card2.PlayConditions.Count > 0)
+            {
+                bool playable = EffectConditionChecker.EvaluateAll(
+                    card2.PlayConditions, playerId, targetPlayerId, ctx);
+                if (!playable)
+                {
+                    // 注意：条件不满足时退还扣除的费用（未扣，校验在扣费前）
+                    string reason = BuildPlayConditionFailReason(card2.PlayConditions);
+                    return $"错误：不满足打出条件（{reason}）";
+                }
+            }
+
             // ── 执行 ──
             player.Energy -= card2.EnergyCost;
             player.Hand.RemoveAt(handIndex);
@@ -206,6 +240,9 @@ namespace CardMoba.BattleCore.RoundStateMachine
             PlayedCard playedCard = inst2.ToPlayedCard();
             playedCard.SourcePlayerId = playerId;
             playedCard.RawTargetGroup = new List<string> { targetPlayerId };
+
+            // 注册 Passive 效果（定策牌提交时立即注册，使触发器在同回合结算前生效）
+            PassiveHandler.RegisterPassiveEffects(playedCard, ctx);
 
             // 定策牌：加入待结算队列，回合末统一结算
             ctx.PendingPlanCards.Add(playedCard);
@@ -490,6 +527,26 @@ namespace CardMoba.BattleCore.RoundStateMachine
                     ctx.RoundLog.Add("[RoundManager] 双方同归于尽，平局！");
                 }
             }
+        }
+
+        /// <summary>
+        /// 构建打出条件未满足时的用户可读原因字符串。
+        /// 从条件列表中收集所有未满足的条件描述，用 "、" 连接。
+        /// </summary>
+        /// <param name="conditions">打出条件列表</param>
+        /// <returns>用户可读的原因字符串（如"我方牌库为空、手牌 ≤ 1 张"）</returns>
+        private static string BuildPlayConditionFailReason(List<EffectCondition> conditions)
+        {
+            if (conditions == null || conditions.Count == 0)
+                return "未知条件";
+
+            var parts = new System.Text.StringBuilder();
+            for (int i = 0; i < conditions.Count; i++)
+            {
+                if (i > 0) parts.Append("、");
+                parts.Append(conditions[i].ToString());
+            }
+            return parts.ToString();
         }
 
         /// <summary>
