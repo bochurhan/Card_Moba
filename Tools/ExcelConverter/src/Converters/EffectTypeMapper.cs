@@ -30,6 +30,7 @@ namespace CardMoba.Tools.ExcelConverter.Converters;
 ///   Silence         = 27
 ///   Slow            = 28
 ///   DoubleStrength  = 29
+///   BanDraw         = 30
 /// </summary>
 public static class EffectTypeMapper
 {
@@ -71,6 +72,7 @@ public static class EffectTypeMapper
         { "Silence",            27 },   // 沉默
         { "Slow",               28 },   // 减速
         { "DoubleStrength",     29 },   // 力量翻倍
+        { "BanDraw",            30 },   // 禁止抽牌
     };
 
     /// <summary>

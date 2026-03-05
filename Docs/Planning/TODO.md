@@ -1,10 +1,91 @@
 # Card_Moba 待办事项 (TODO)
 
-**更新日期**：2026年03月02日
+**更新日期**：2026年03月05日
+
+> ⚠️ **BattleCore V2 重构已启动（2026-03-04）**  
+> 当前 Sprint 切换为大规模重构，V1 阶段的 P0/P1 风险不再单独修复（将在 V2 中系统性解决）。  
+> 完整重构计划：[BattleCoreRefactorPlan.md](BattleCoreRefactorPlan.md)
 
 ---
 
-## 📌 当前 Sprint - 核心结算引擎完善
+## 🔥 当前 Sprint - BattleCore V2 重构
+
+**更新**：2026-03-05 — 集成测试全部通过，旧版代码归档完毕。
+
+| Phase | 内容 | 状态 |
+|-------|------|------|
+| Phase 0 | 基础数据结构（Foundation） | ✅ 完成 |
+| Phase 1 | BattleContext + 管理器骨架 | ✅ 完成 |
+| Phase 2 | SettlementEngine + Handlers | ✅ 完成 |
+| Phase 3 | TriggerManager 完整实现 | ✅ 完成 |
+| Phase 4 | CardManager 完整实现 | ✅ 完成 |
+| Phase 5 | BuffManager + EventBus + Resolvers | ✅ 完成 |
+| Phase 6 | BattleFactory（战斗启动入口） | ✅ 完成 |
+| Phase 7 | 集成测试（xUnit 8项全通过） | ✅ 完成 |
+| Phase 8 | 首批卡牌配置 + 客户端接入 | 🟡 进行中 |
+
+### ✅ V2 已完成模块清单（2026-03-04）
+
+| 文件 | 说明 |
+|------|------|
+| `Foundation/Entity.cs` | 运行时实体（HP/Shield/Armor/Invincible/Silenced）|
+| `Foundation/BattleCard.cs` | 战斗卡牌实例（Zone 流转）|
+| `Foundation/EffectUnit.cs` | 效果原子（表达式 + 条件 + 层级）|
+| `Foundation/EffectResult.cs` | 效果执行结果（PerTargetValues）|
+| `Foundation/TriggerUnit.cs` | 触发器描述（支持 InlineExecute lambda）|
+| `Foundation/TriggerTiming.cs` | 完整触发时机枚举（含 OnStatCardHeld）|
+| `Foundation/BuffUnit.cs` | Buff 实例（StackRule / RemainingRounds）|
+| `Foundation/CardZone.cs` | 卡牌区域枚举（Hand/Deck/Discard/StrategyZone/StatZone）|
+| `Foundation/SettleLayer` | 结算层枚举（Counter/Defense/Damage/Resource/BuffSpecial）|
+| `Context/BattleContext.cs` | 唯一状态容器（所有管理器挂载于此）|
+| `Context/PlayerData.cs` | 玩家数据（HeroEntity + AllCards + DefenseSnapshot）|
+| `Context/LaneData.cs` | 分路数据（预留扩展）|
+| `Core/PendingEffectQueue.cs` | 延迟效果队列（触发器产生的子效果）|
+| `Core/SettlementEngine.cs` | 五层结算引擎（Layer 0-4 + DrainPendingQueue）|
+| `Core/RoundManager.cs` | 回合生命周期（BeginRound/EndRound/死亡检查）|
+| `Core/BattleFactory.cs` | **战斗工厂（组装所有对象 + 启动入口）** ← 新增 |
+| `Managers/TriggerManager.cs` | 触发器注册/Fire/TickDecay（按时机分组存储）|
+| `Managers/BuffManager.cs` | Buff CRUD + 触发器/修正器生命周期同步 |
+| `Managers/CardManager.cs` | 卡组初始化/抽牌/区域流转/临时牌生命周期 |
+| `Managers/ValueModifierManager.cs` | 数值修正（Add/Mul/Set，Add→Mul→Set 顺序）|
+| `Handlers/HandlerPool.cs` | Handler 注册表 + 条件检查 + 表达式解析前置 |
+| `Handlers/CoreHandlers.cs` | Damage/Heal/Shield/AddBuff/DrawCard/GenerateCard |
+| `Handlers/IEffectHandler.cs` | Handler 接口定义 |
+| `Resolvers/DynamicParamResolver.cs` | 表达式求值（{{self.hp}}、算术、preEffect 引用）|
+| `Resolvers/ConditionChecker.cs` | 效果/触发器条件检查（hasBuff/比较/百分比）|
+| `Resolvers/TargetResolver.cs` | 目标解析（Self/Opponent/AllEnemies 等）|
+| `EventBus/BattleEventBus.cs` | 事件总线（Subscribe/Publish/Unsubscribe）|
+| `EventBus/BattleEvents.cs` | 所有事件类型（DamageDealt/Heal/Shield/CardDrawn…）|
+| `Random/SeededRandom.cs` | 确定性随机（Fisher-Yates 洗牌）|
+
+### ✅ Phase 7 完成 — 集成测试（2026-03-05）
+
+- [x] **编写集成测试**（`Tests/BattleCore.Tests/BattleCoreIntegrationTests.cs`）
+  - [x] T-01 `BattleFactory` 创建战斗 + 玩家注册验证
+  - [x] T-02 瞬策伤害牌 → 敌方 HP 正确扣减
+  - [x] T-03 治疗牌 → HP 恢复且不超上限
+  - [x] T-04 护盾先吸伤害 → HP 不受影响；护盾耗尽后扣 HP
+  - [x] T-05 定策牌批量结算 → 双方同回合互相造成伤害
+  - [x] T-06 HP 归零 → 战斗结束 + 胜者正确
+  - [x] T-07 相同种子两场战斗 → 结果完全一致（确定性随机验证）
+  - [x] T-08 多回合战斗 → 累计伤害超过 HP 上限后战斗结束
+  - **结果：8/8 通过，耗时 21ms**
+
+### 🟡 Phase 8 进行中 — 首批卡牌配置 + 客户端接入
+
+- [ ] **首批卡牌配置（Config/Excel/Cards.csv）**
+  - [ ] 3 张基础伤害定策牌（Damage Layer 2）
+  - [ ] 2 张护盾防御定策牌（Shield Layer 1）
+  - [ ] 1 张吸血卡（Damage + AddBuff 组合）
+  - [ ] 1 张反制牌（Counter Layer 0）
+
+- [ ] **客户端接入（BattleGameManager 对接 V2 API）**
+  - [ ] `BattleGameManager.StartBattle()` 调用 `BattleFactory.CreateBattle()`
+  - [ ] UI 订阅 `EventBus`（`DamageDealtEvent` / `HealEvent` / `RoundStartEvent`）
+
+---
+
+## 📌 V1 阶段历史记录 - 核心结算引擎完善（已归档）
 
 ### 优先级 P0（必须）
 
@@ -498,6 +579,26 @@ public class TargetSelection
 - [x] CardEditorWindow Unity 编辑器窗口
 - [x] Excel 模板创建（Cards.xlsx）
 - [x] `E` 前缀 ID 格式避免日期问题
+
+### 2026-03-05 BattleCore V2 集成测试 + 代码归档
+- [x] **集成测试项目搭建**（`Tests/BattleCore.Tests/` — xUnit + FluentAssertions）
+  - [x] `BattleCoreIntegrationTests.cs`：8 项测试全通过（T-01 ~ T-08），耗时 21ms
+  - [x] 测试覆盖：工厂初始化、瞬策伤害、治疗上限、护盾优先、定策批量结算、死亡判定、确定性随机、多回合胜负
+- [x] **编译期 Bug 修复**（测试驱动发现）
+  - [x] `Entity.cs`：补充 `DeathEventFired` 字段（`RoundManager` 引用但缺失）
+  - [x] `HandlerPool.cs`：补充 `using CardMoba.Protocol.Enums`
+  - [x] `TriggerUnit.cs`：补充 `using CardMoba.BattleCore.Managers`（`TriggerContext` 引用）
+  - [x] `RoundManager.cs`：补充 `using CardMoba.BattleCore.Managers`
+  - [x] `BattleEvents.cs`：补充 `BattleStartEvent`、`BattleEndEvent`、`PlayerDeathEvent` 三个缺失事件类
+- [x] **旧版代码归档到 `_Archive_V1/`**
+  - [x] `BattleCore/RoundStateMachine/` → `_Archive_V1/RoundStateMachine/`
+  - [x] `BattleCore/Settlement/` → `_Archive_V1/Settlement/`
+  - [x] `BattleCore/Trigger/` → `_Archive_V1/Trigger/`
+  - [x] `BattleCore/Event/` → `_Archive_V1/Event/`
+  - [x] `BattleCore/Context/` 旧版文件（PlayerBattleState/CardInstance/PlayedCard/LaneState）→ `_Archive_V1/Context/`
+  - [x] `BattleCore/Buff/BuffManager.cs`（旧版 Manager）→ 删除（数据类 BuffConfig/BuffInstance/BuffType 保留）
+  - [x] `Protocol/Enums/TriggerTiming.cs`（空桥接文件）→ `Protocol/_Archive_V1/Enums/`
+  - [x] `Protocol/Enums/RoundPhase.cs`、`EffectConditionType.cs`、`EffectExecutionMode.cs`、`EffectRange.cs`（仅 V1 引用）→ `Protocol/_Archive_V1/Enums/`
 
 ### 架构决策
 - [x] **CardSubType 合并到 CardTag** — 统一使用 `Tags` 字段

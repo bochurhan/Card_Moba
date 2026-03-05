@@ -1,6 +1,12 @@
-# BattleCore 系统架构关系图
+# ⚠️ BattleCore 系统架构关系图（V1 归档）
 
-**文档版本**：V1.1  
+> **本文档已归档**（2026-03-04）。BattleCore V2 重构已启动，请参阅：
+> - 新架构总览：[SystemArchitecture_V2.md](SystemArchitecture_V2.md) ← **当前有效文档**
+> - 重构计划：[../Planning/BattleCoreRefactorPlan.md](../Planning/BattleCoreRefactorPlan.md)
+>
+> 本文档保留供历史参考，不再更新维护。
+
+**文档版本**：V1.1（最终版，已停止维护）  
 **最后更新**：2026-03-02  
 **适用对象**：初次接触本项目战斗系统的开发者  
 **下一步阅读**：[BattleCore.md](BattleCore.md)（代码级细节）、[../GameDesign/SettlementRules.md](../GameDesign/SettlementRules.md)（游戏规则）  

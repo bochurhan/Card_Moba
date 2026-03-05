@@ -1,12 +1,14 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "effects": [
     {
       "effectId": "E2001-1",
       "effectType": 10,
       "value": 6,
       "duration": 0,
-      "description": "造成 6 点伤害"
+      "targetOverride": "",
+      "triggerCondition": "",
+      "isDelayed": false
     },
     {
       "effectId": "E2002-1",
@@ -14,7 +16,8 @@
       "value": 5,
       "duration": 0,
       "targetOverride": "Self",
-      "description": "获得 5 点护盾"
+      "triggerCondition": "",
+      "isDelayed": false
     },
     {
       "effectId": "E2003-1",
@@ -22,14 +25,17 @@
       "value": 2,
       "duration": 0,
       "targetOverride": "Self",
-      "description": "获得 2 点力量"
+      "triggerCondition": "EnemyUsedDamageCardThisRound",
+      "isDelayed": false
     },
     {
       "effectId": "E2004-1",
       "effectType": 10,
       "value": 3,
       "duration": 0,
-      "description": "造成 3 点伤害"
+      "targetOverride": "AllEnemies",
+      "triggerCondition": "",
+      "isDelayed": false
     },
     {
       "effectId": "E2004-2",
@@ -37,35 +43,44 @@
       "value": 100,
       "duration": 0,
       "targetOverride": "Self",
-      "description": "吸血 100%"
+      "triggerCondition": "",
+      "isDelayed": false
     },
     {
       "effectId": "E2005-1",
       "effectType": 10,
       "value": 3,
       "duration": 0,
-      "description": "造成 3 点伤害"
+      "targetOverride": "Enemy",
+      "triggerCondition": "",
+      "isDelayed": false
     },
     {
       "effectId": "E2005-2",
       "effectType": 10,
       "value": 3,
       "duration": 0,
-      "description": "造成 3 点伤害"
+      "targetOverride": "Enemy",
+      "triggerCondition": "",
+      "isDelayed": false
     },
     {
       "effectId": "E2005-3",
       "effectType": 10,
       "value": 3,
       "duration": 0,
-      "description": "造成 3 点伤害"
+      "targetOverride": "Enemy",
+      "triggerCondition": "",
+      "isDelayed": false
     },
     {
       "effectId": "E2005-4",
       "effectType": 10,
       "value": 3,
       "duration": 0,
-      "description": "造成 3 点伤害"
+      "targetOverride": "Enemy",
+      "triggerCondition": "",
+      "isDelayed": false
     },
     {
       "effectId": "E1001-1",
@@ -73,15 +88,17 @@
       "value": 3,
       "duration": 0,
       "targetOverride": "Self",
-      "description": "抽 3 张牌"
+      "triggerCondition": "",
+      "isDelayed": false
     },
     {
       "effectId": "E1001-2",
-      "effectType": 27,
+      "effectType": 30,
       "value": 0,
-      "duration": 1,
+      "duration": 99,
       "targetOverride": "Self",
-      "description": "沉默目标，持续 1 回合"
+      "triggerCondition": "",
+      "isDelayed": false
     },
     {
       "effectId": "E1002-1",
@@ -89,7 +106,8 @@
       "value": 0,
       "duration": 0,
       "targetOverride": "Self",
-      "description": "你的力量翻倍"
+      "triggerCondition": "",
+      "isDelayed": false
     }
   ]
 }

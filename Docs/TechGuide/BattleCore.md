@@ -1,6 +1,12 @@
-﻿# BattleCore 核心代码解读
+﻿# ⚠️ BattleCore 核心代码解读（V1 归档）
 
-**文档版本**：V5.3
+> **本文档已归档**（2026-03-04）。BattleCore V2 重构已启动，请参阅：
+> - 新架构：[SystemArchitecture_V2.md](SystemArchitecture_V2.md)
+> - 重构计划：[../Planning/BattleCoreRefactorPlan.md](../Planning/BattleCoreRefactorPlan.md)
+>
+> 本文档保留供历史参考，不再更新维护。
+
+**文档版本**：V5.3（最终版，已停止维护）
 **最后更新**：2026-03-03
 **适用对象**：需要理解或修改结算逻辑的开发者
 **前置阅读**：[QuickStart.md](QuickStart.md)、[SystemArchitecture.md](SystemArchitecture.md)（系统关系总览）、[../GameDesign/SettlementRules.md](../GameDesign/SettlementRules.md)
