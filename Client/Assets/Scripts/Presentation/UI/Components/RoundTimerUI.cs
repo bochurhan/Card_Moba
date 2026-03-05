@@ -1,8 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
-using CardMoba.BattleCore.RoundStateMachine;
-using CardMoba.Protocol.Enums;
 using CardMoba.Client.GameLogic.RoundFlow;
 
 namespace CardMoba.Client.Presentation.UI.Components

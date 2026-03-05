@@ -609,9 +609,12 @@ namespace CardMoba.Client.Editor.CardEditor
             EditorGUI.indentLevel++;
 
             // ── 基础字段 ────────────────────────────────────────────
-            effect.EffectType = (EffectType)EditorGUILayout.EnumPopup("效果类型", effect.EffectType);
-            effect.Value      = EditorGUILayout.IntField("数值", effect.Value);
-            effect.Duration   = EditorGUILayout.IntField("持续回合", effect.Duration);
+            effect.EffectType   = (EffectType)EditorGUILayout.EnumPopup("效果类型", effect.EffectType);
+            effect.Value        = EditorGUILayout.IntField("数值", effect.Value);
+            effect.RepeatCount  = EditorGUILayout.IntSlider("重复次数", effect.RepeatCount, 1, 12);
+            if (effect.RepeatCount > 1)
+                EditorGUILayout.LabelField("", $"→ 共造成 {effect.Value * effect.RepeatCount} 点（{effect.RepeatCount}×{effect.Value}，每段独立触发）", EditorStyles.miniLabel);
+            effect.Duration     = EditorGUILayout.IntField("持续回合", effect.Duration);
 
             // ── 数值来源（ValueSource）──────────────────────────────
             // 预定义 Key 列表（空字符串 = 使用静态 Value 字段）
@@ -960,6 +963,7 @@ namespace CardMoba.Client.Editor.CardEditor
                             var eff = new EffectEditData
                             {
                                 Value                = e.value,
+                                RepeatCount          = e.repeatCount > 0 ? e.repeatCount : 1,
                                 ValueSource          = e.valueSource ?? "",
                                 Duration             = e.duration,
                                 IsDelayed            = e.isDelayed,
@@ -1041,6 +1045,7 @@ namespace CardMoba.Client.Editor.CardEditor
                     {
                         effectType           = (int)e.EffectType,
                         value                = e.Value,
+                        repeatCount          = e.RepeatCount,
                         valueSource          = e.ValueSource,
                         duration             = e.Duration,
                         targetOverride       = e.TargetOverride.HasValue ? e.TargetOverride.Value.ToString() : "",
@@ -1144,6 +1149,7 @@ namespace CardMoba.Client.Editor.CardEditor
         {
             public int    effectType;
             public int    value;
+            public int    repeatCount;       // 重复执行次数（v4.1 新增）
             public string valueSource;       // 跨效果数值依赖 Key（v4.0 新增）
             public int    duration;
             public string targetOverride;

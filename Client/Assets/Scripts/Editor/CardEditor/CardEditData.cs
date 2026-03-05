@@ -185,6 +185,13 @@ namespace CardMoba.Client.Editor.CardEditor
         public bool           IsDelayed      = false;
         public string         TriggerCondition = "";
 
+        // ─── 重复执行 ─────────────────────────────────────────────────
+        /// <summary>
+        /// 效果重复执行次数（默认 1）。
+        /// 大于 1 时 Handler 独立循环 N 次，每次完整触发荆棘/护盾等。
+        /// </summary>
+        public int            RepeatCount    = 1;
+
         // ─── 跨效果数值依赖（EffectContext）─────────────────────────
         /// <summary>
         /// 数值来源 Key（对应 PlayedCard.EffectContext 字典）。
@@ -293,6 +300,7 @@ namespace CardMoba.Client.Editor.CardEditor
             {
                 EffectType        = EffectType,
                 Value             = Value,
+                RepeatCount       = RepeatCount,
                 Duration          = Duration,
                 TargetOverride    = TargetOverride,
                 IsDelayed         = IsDelayed,
