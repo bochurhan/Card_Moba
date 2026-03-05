@@ -46,8 +46,47 @@ namespace CardMoba.ConfigModels.Card
         /// </summary>
         public string ValueSource { get; set; } = string.Empty;
 
+        /// <summary>
+        /// 动态数值表达式（V2 新增，优先级高于 ValueSource）。
+        ///
+        /// 支持运行时计算，例如：
+        ///   "{{preEffect[0].RealHpDamage}}"   —— 引用同卡牌第0个效果的实际 HP 伤害
+        ///   "{{self.hand.count * 2}}"          —— 己方手牌数 × 2
+        ///   "{{6 - self.hand.count}}"          —— 6 减去手牌数
+        ///
+        /// 非空时，由 DynamicParamResolver.Resolve() 在执行前求值，结果替换 Value。
+        /// 为空则使用 Value 字段。
+        /// </summary>
+        public string ValueExpression { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Buff 配置 ID（EffectType = AddBuff 时必填）。
+        /// 对应 BuffConfig 中的 ConfigId，由 BuffManager.AddBuff() 使用。
+        /// </summary>
+        public string BuffConfigId { get; set; } = string.Empty;
+
+        /// <summary>
+        /// 生成卡牌的配置 ID（EffectType = GenerateCard 时必填）。
+        /// 对应 CardConfig 中的卡牌 ID，以字符串形式存储。
+        /// </summary>
+        public string GenerateCardConfigId { get; set; } = string.Empty;
+
+        /// <summary>
+        /// 生成卡牌的目标区域（EffectType = GenerateCard 时使用）。
+        /// 默认生成到手牌（Hand）。
+        /// </summary>
+        public string GenerateCardZone { get; set; } = "Hand";
+
         /// <summary>效果持续回合数（0=即时生效，>0=持续N回合）</summary>
         public int Duration { get; set; }
+
+        /// <summary>
+        /// 效果重复执行次数（默认 1 = 执行一次）。
+        /// 大于 1 时，Handler 将独立循环执行 N 次，每次均触发完整的伤害/护盾/触发器流程。
+        /// 典型用途：多段伤害（如「飞剑回旋镖」4次独立伤害）。
+        /// 注意：每次执行后 EffectContext 的写入值均会被覆盖（取最后一次结果）。
+        /// </summary>
+        public int RepeatCount { get; set; } = 1;
 
         /// <summary>效果目标类型（覆盖卡牌默认目标类型）</summary>
         public CardTargetType? TargetOverride { get; set; }
@@ -166,11 +205,12 @@ namespace CardMoba.ConfigModels.Card
         // ═══════════════════════════════════════════════════════════
 
         /// <summary>
-        /// 获取该效果所属的结算堆叠层。
-        ///   Layer 0: 反制 (Counter)
-        ///   Layer 1: 防御/修正 (Shield, Armor, AttackBuff/Debuff, Reflect, DamageReduction, Invincible)
-        ///   Layer 2: 伤害 (Damage, Lifesteal, Thorns, ArmorOnHit)
-        ///   Layer 3: 功能 (Heal, Stun, Vulnerable, Weak, Draw, Discard, GainEnergy, Silence, Slow)
+        /// 获取该效果所属的结算堆叠层（V2 五层）。
+        ///   Layer 0 Counter    : Counter
+        ///   Layer 1 Defense    : Shield, Armor, AttackBuff, AttackDebuff, Reflect, DamageReduction, Invincible
+        ///   Layer 2 Damage     : Damage, Lifesteal, Thorns, ArmorOnHit, Pierce, DOT
+        ///   Layer 3 Resource   : Draw, Discard, GainEnergy, GenerateCard
+        ///   Layer 4 BuffSpecial: Heal, Stun, Vulnerable, Weak, Silence, Slow, DoubleStrength, BanDraw, AddBuff
         /// </summary>
         public int GetSettlementLayer()
         {
@@ -180,23 +220,30 @@ namespace CardMoba.ConfigModels.Card
                 EffectType.Counter => 0,
 
                 // Layer 1: 防御/修正
-                EffectType.Shield         => 1,
-                EffectType.Armor          => 1,
-                EffectType.AttackBuff     => 1,
-                EffectType.AttackDebuff   => 1,
-                EffectType.Reflect        => 1,
-                EffectType.DamageReduction=> 1,
-                EffectType.Invincible     => 1,
+                EffectType.Shield          => 1,
+                EffectType.Armor           => 1,
+                EffectType.AttackBuff      => 1,
+                EffectType.AttackDebuff    => 1,
+                EffectType.Reflect         => 1,
+                EffectType.DamageReduction => 1,
+                EffectType.Invincible      => 1,
 
                 // Layer 2: 伤害
-                EffectType.Damage         => 2,
-                EffectType.Lifesteal      => 2,
-                EffectType.Thorns         => 2,
-                EffectType.ArmorOnHit     => 2,
-                EffectType.Pierce         => 2,
+                EffectType.Damage          => 2,
+                EffectType.Lifesteal       => 2,
+                EffectType.Thorns          => 2,
+                EffectType.ArmorOnHit      => 2,
+                EffectType.Pierce          => 2,
+                EffectType.DOT             => 2,
 
-                // Layer 3: 功能（默认）
-                _ => 3
+                // Layer 3: 资源
+                EffectType.Draw            => 3,
+                EffectType.Discard         => 3,
+                EffectType.GainEnergy      => 3,
+                EffectType.GenerateCard    => 3,
+
+                // Layer 4: Buff/特殊（默认）
+                _ => 4
             };
         }
 

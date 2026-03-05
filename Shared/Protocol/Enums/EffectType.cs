@@ -4,11 +4,14 @@ namespace CardMoba.Protocol.Enums
     /// 卡牌效果类型 —— 定义单个效果的具体行为类型。
     /// Card effect type — Defines the specific behavior of a single effect.
     ///
-    /// 效果按所属结算堆叠层分类：
-    ///   Layer 0 (反制层)：Counter
-    ///   Layer 1 (防御/修正层)：Shield, Armor, AttackBuff, AttackDebuff, Reflect, DamageReduction, Invincible
-    ///   Layer 2 (伤害层)：Damage, Lifesteal, Thorns, ArmorOnHit
-    ///   Layer 3 (功能层)：Heal, Stun, Vulnerable, Weak, Draw, Discard, GainEnergy, Silence, Slow
+    /// 效果按所属结算堆叠层分类（对应 SettlementLayer 枚举）：
+    ///   Layer 0 (Counter)   ：Counter
+    ///   Layer 1 (Defense)   ：Shield, Armor, AttackBuff, AttackDebuff, Reflect, DamageReduction, Invincible
+    ///   Layer 2 (Damage)    ：Damage, Lifesteal, Thorns, ArmorOnHit, Pierce, DOT
+    ///   Layer 3 (Resource)  ：Draw, Discard, GainEnergy, GenerateCard
+    ///   Layer 4 (BuffSpecial)：Heal, Stun, Vulnerable, Weak, Silence, Slow, DoubleStrength, BanDraw, AddBuff
+    ///
+    /// ⚠️ ID 规则：已分配 ID 永不修改，新增效果追加于当前最大 ID(33) 之后。
     /// </summary>
     public enum EffectType
     {
@@ -102,5 +105,18 @@ namespace CardMoba.Protocol.Enums
 
         /// <summary>施加"禁止抽牌"Debuff（本回合剩余时间内无法抽牌）</summary>
         BanDraw = 30,
+
+        // ═══════════════════════════════════════════════════════════
+        // V2 新增
+        // ═══════════════════════════════════════════════════════════
+
+        /// <summary>添加 Buff（通过 BuffManager 注册，配合 BuffConfigId 使用）</summary>
+        AddBuff = 31,
+
+        /// <summary>生成临时卡牌（放入指定区域，配合 GenerateCardConfigId 使用）</summary>
+        GenerateCard = 32,
+
+        /// <summary>持续伤害（DOT，每回合结束时触发一次伤害，配合 Duration 使用）</summary>
+        DOT = 33,
     }
 }

@@ -3,45 +3,61 @@ namespace CardMoba.Protocol.Enums
     /// <summary>
     /// 定策牌结算堆叠层 —— 决定效果的结算顺序。
     /// Settlement stack layer — Determines effect resolution order.
-    /// 
-    /// 根据《定策牌结算机制 V4.0》，层级顺序永久不可颠倒：
-    /// 堆叠0层 → 堆叠1层 → 堆叠2层 → 堆叠3层
+    ///
+    /// V2 五层结构（层序永久不可颠倒）：
+    ///   Layer 0 Counter     → 反制效果
+    ///   Layer 1 Defense     → 防御/数值修正（护甲、护盾、力量增减）
+    ///   Layer 2 Damage      → 主动伤害（含快照隔离，己方顺序依赖）
+    ///   Layer 3 Resource    → 资源类（抽牌、能量、生成牌）
+    ///   Layer 4 BuffSpecial → Buff/控制/治疗/传说特殊
+    ///
+    /// ⚠️ 与 V1 的差异：V1 只有 4 层（0-3），V2 将 Utility 拆分为 Resource(3) + BuffSpecial(4)。
     /// </summary>
     public enum SettlementLayer
     {
         /// <summary>
-        /// 堆叠0层：反制效果结算层
-        /// Layer 0: Counter effects resolution
-        /// - 结算上回合提交的反制定策牌
-        /// - 校验触发条件，执行无效化/惩罚效果
-        /// - 统计本回合所有有效定策牌
+        /// Layer 0：反制层
+        /// - 结算反制定策牌，被反制的牌本回合无效
         /// </summary>
         Counter = 0,
 
         /// <summary>
-        /// 堆叠1层：防御与数值修正层
-        /// Layer 1: Defense and stat modifiers
-        /// - 护甲、护盾、伤害减免、无敌、免伤
-        /// - 攻击/力量增减、破甲、穿透、易伤、虚弱
-        /// - 锁定后续伤害计算的基准数值
+        /// Layer 1：防御与数值修正层
+        /// - 护甲、护盾、无敌、伤害减免、力量增减（AttackBuff/Debuff）
+        /// - Layer 1 结束后拍摄防御快照，供 Layer 2 计算使用
         /// </summary>
+        Defense = 1,
+
+        /// <summary>
+        /// Layer 2：伤害层（含快照隔离机制）
+        /// - 同一玩家的伤害牌按提交顺序依次结算（顺序依赖）
+        /// - 不同玩家之间以 Layer 1 结束时的防御快照为计算基准（互相隔离）
+        /// - 每张牌完整走 A(计算)→B(写入)→C(触发) 三阶段后消化 PendingQueue
+        /// </summary>
+        Damage = 2,
+
+        /// <summary>
+        /// Layer 3：资源层
+        /// - 抽牌（Draw）、弃牌（Discard）、能量回复（GainEnergy）、生成牌（GenerateCard）
+        /// </summary>
+        Resource = 3,
+
+        /// <summary>
+        /// Layer 4：Buff 与特殊效果层
+        /// - 治疗（Heal）、控制（Stun/Silence/Slow）、Buff/Debuff 施加（AddBuff）
+        /// - 易伤（Vulnerable）、虚弱（Weak）、传说特殊效果
+        /// </summary>
+        BuffSpecial = 4,
+
+        // ── 向后兼容别名（V1 代码暂时可用，后续逐步迁移）──
+
+        /// <summary>[V1 兼容] 等同于 Defense</summary>
         DefenseModifier = 1,
 
-        /// <summary>
-        /// 堆叠2层：主动伤害与触发式效果闭环层
-        /// Layer 2: Active damage and triggered effects
-        /// - 步骤1：所有伤害牌同步、一次性结算
-        /// - 步骤2：触发式效果（反伤、吸血等）同步闭环结算
-        /// - 连锁封顶：触发效果不再触发新的连锁
-        /// </summary>
+        /// <summary>[V1 兼容] 等同于 Damage</summary>
         DamageTrigger = 2,
 
-        /// <summary>
-        /// 堆叠3层：全局非依赖效果收尾层
-        /// Layer 3: Global non-dependent effects (utility)
-        /// - 子阶段1：控制、资源、支援类效果
-        /// - 子阶段2：传说特殊牌专属结算
-        /// </summary>
-        Utility = 3,
+        /// <summary>[V1 兼容] 等同于 BuffSpecial</summary>
+        Utility = 4,
     }
 }
