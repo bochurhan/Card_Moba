@@ -1,7 +1,5 @@
 using UnityEngine;
 using System;
-using CardMoba.BattleCore.RoundStateMachine;
-using CardMoba.Protocol.Enums;
 
 namespace CardMoba.Client.GameLogic.RoundFlow
 {
@@ -23,10 +21,6 @@ namespace CardMoba.Client.GameLogic.RoundFlow
         // ══════════════════════════════════════════════════════════
         // 配置
         // ══════════════════════════════════════════════════════════
-
-        [Header("校正设置")]
-        [Tooltip("本地时间与服务端时间戳偏差超过此值（毫秒）时触发校正")]
-        [SerializeField] private int _clockSyncThresholdMs = 500;
 
         // ══════════════════════════════════════════════════════════
         // 运行时状态

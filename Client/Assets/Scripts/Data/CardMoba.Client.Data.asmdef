@@ -2,6 +2,7 @@
   "name": "CardMoba.Client.Data",
   "rootNamespace": "CardMoba.Client.Data",
   "references": [
+    "CardMoba.BattleCore",
     "CardMoba.ConfigModels",
     "CardMoba.Protocol",
     "CardMoba.Client.Network"

@@ -1,7 +1,11 @@
+#pragma warning disable CS8632
+
 using System;
 using System.Collections.Generic;
 using CardMoba.BattleCore.Context;
-using CardMoba.BattleCore.RoundStateMachine;
+using CardMoba.BattleCore.Core;
+using CardMoba.BattleCore.EventBus;
+using CardMoba.BattleCore.Foundation;
 using CardMoba.ConfigModels.Card;
 using CardMoba.Protocol.Enums;
 using CardMoba.Client.Data.ConfigData;
@@ -9,422 +13,545 @@ using CardMoba.Client.Data.ConfigData;
 namespace CardMoba.Client.GameLogic
 {
     /// <summary>
-    /// 战斗流程管理器 —— 连接 UI 层和 BattleCore 的桥梁。
-    /// 
+    /// 战斗流程管理器（V2）—— 连接 UI 层和 BattleCore V2 的桥梁。
+    ///
     /// 职责：
-    ///   - 管理单局对战的完整生命周期
+    ///   - 通过 BattleFactory 创建并驱动一局战斗的完整生命周期
     ///   - 提供 UI 层调用的操作接口（出牌、结束回合等）
-    ///   - 内置简单AI控制对手行为
-    ///   - 通过事件通知 UI 层刷新显示
-    /// 
-    /// 设计原则：
-    ///   - 本类属于 GameLogic 层，不依赖 UnityEngine（除非需要协程）
-    ///   - UI 层通过事件订阅获取状态变化，不直接读取 BattleCore
+    ///   - 内置简单 AI 控制对手行为
+    ///   - 通过 C# 事件通知 UI 层刷新显示
+    ///
+    /// 架构：
+    ///   BattleUIManager (Presentation)
+    ///     → BattleGameManager (GameLogic)   ← 本类
+    ///       → BattleFactory / RoundManager (BattleCore V2)
     /// </summary>
     public class BattleGameManager
     {
-        // ── 事件定义（UI层订阅这些事件来刷新显示） ──
+        // ══════════════════════════════════════════════════════════════════════
+        // UI 层订阅事件
+        // ══════════════════════════════════════════════════════════════════════
 
-        /// <summary>对局状态发生变化时触发（HP/能量/护盾变化、手牌变化等）</summary>
+        /// <summary>对局状态发生变化时触发（HP / 护盾 / 手牌等变化）</summary>
         public event Action OnStateChanged;
 
-        /// <summary>新增日志消息时触发</summary>
+        /// <summary>新增日志消息时触发（参数：可含 TMP RichText 着色标签的字符串）</summary>
         public event Action<string> OnLogMessage;
 
-        /// <summary>对局结束时触发（参数：胜者ID，-1为平局）</summary>
+        /// <summary>
+        /// 对局结束时触发。
+        /// 参数 winnerCode：1 = 玩家胜，2 = AI 胜，-1 = 平局。
+        /// </summary>
         public event Action<int> OnGameOver;
 
-        /// <summary>回合阶段切换时触发（参数：阶段描述）</summary>
+        /// <summary>回合阶段切换时触发（参数：阶段描述文字，用于更新 phaseText 和驱动计时器）</summary>
         public event Action<string> OnPhaseChanged;
 
-        // ── 内部状态 ──
+        // ══════════════════════════════════════════════════════════════════════
+        // 玩家 ID 常量
+        // ══════════════════════════════════════════════════════════════════════
 
-        private RoundManager _roundManager;
-        private BattleContext _ctx;
-
-        /// <summary>人类玩家的ID（字符串，与BattleCore保持一致）</summary>
         public const string HumanPlayerId = "player1";
+        public const string AiPlayerId    = "player2";
 
-        /// <summary>AI玩家的ID（字符串，与BattleCore保持一致）</summary>
-        public const string AiPlayerId = "player2";
+        // ══════════════════════════════════════════════════════════════════════
+        // V2 核心对象
+        // ══════════════════════════════════════════════════════════════════════
 
-        // ── 公开属性（供UI层读取） ──
+        private BattleContext _ctx;
+        private RoundManager  _roundManager;
 
-        /// <summary>当前战斗上下文（只读访问）</summary>
+        // configId → CardConfig 映射（BattleFactory 初始化后由 RebuildCardConfigMap 填充）
+        private readonly Dictionary<string, CardConfig> _cardConfigMap
+            = new Dictionary<string, CardConfig>();
+
+        // ══════════════════════════════════════════════════════════════════════
+        // 公开状态属性（UI 层只读）
+        // ══════════════════════════════════════════════════════════════════════
+
+        /// <summary>当前战斗上下文</summary>
         public BattleContext Context => _ctx;
 
-        /// <summary>当前是否处于玩家操作阶段</summary>
+        /// <summary>是否处于玩家操作阶段</summary>
         public bool IsPlayerTurn { get; private set; }
 
         /// <summary>对局是否已结束</summary>
-        public bool IsGameOver => _ctx != null && _ctx.IsGameOver;
+        public bool IsGameOver => _roundManager?.IsBattleOver ?? false;
 
         /// <summary>当前回合数</summary>
-        public int CurrentRound => _ctx?.CurrentRound ?? 0;
+        public int CurrentRound => _roundManager?.CurrentRound ?? 0;
 
-        // ── 初始化 ──
+        // ══════════════════════════════════════════════════════════════════════
+        // 战斗启动
+        // ══════════════════════════════════════════════════════════════════════
 
         /// <summary>
-        /// 开始一场新的1v1对战。
+        /// 开始一场新的 1v1 对战（使用默认战士测试卡组）。
         /// </summary>
         public void StartBattle()
         {
-            // 确保配置已加载
+            StartBattleWithDeck(DefaultWarriorDeckIds, DefaultWarriorDeckIds);
+        }
+
+        /// <summary>
+        /// 使用指定卡牌 ID 列表开始对战。
+        /// </summary>
+        public void StartBattleWithDeck(int[] playerDeckIds, int[] aiDeckIds)
+        {
             EnsureConfigLoaded();
+            _cardConfigMap.Clear();
 
-            _roundManager = new RoundManager();
+            // ── 构建 configId 映射表（供后续 instanceId 查找） ──
+            BuildCardConfigMap();
 
-            // 从配置加载卡组
-            List<CardConfig> deck1 = CreateDeckFromConfig();
-            List<CardConfig> deck2 = CreateDeckFromConfig();
+            // ── 构建 DeckConfig ──────────────────────────────────
+            var humanDeck = BuildDeckConfig(playerDeckIds);
+            var aiDeck    = BuildDeckConfig(aiDeckIds);
 
-            // 初始化对局（使用新的API签名）
-            _ctx = _roundManager.InitBattle(HumanPlayerId, AiPlayerId, deck1, deck2);
+            // ── 创建 EventBus 适配器 ─────────────────────────────
+            var eventBus = new InternalEventBus(this);
 
-            // 输出初始化日志
+            // ── BattleFactory 创建战斗 ────────────────────────────
+            var factory = new BattleFactory();
+            var result  = factory.CreateBattle(
+                battleId:   "local-battle",
+                randomSeed: 42,
+                players: new List<PlayerSetupData>
+                {
+                    new PlayerSetupData
+                    {
+                        PlayerId     = HumanPlayerId,
+                        MaxHp        = 30,
+                        InitialHp    = 30,
+                        InitialArmor = 0,
+                        DeckConfig   = humanDeck,
+                    },
+                    new PlayerSetupData
+                    {
+                        PlayerId     = AiPlayerId,
+                        MaxHp        = 30,
+                        InitialHp    = 30,
+                        InitialArmor = 0,
+                        DeckConfig   = aiDeck,
+                    },
+                },
+                eventBus: eventBus);
+
+            _ctx          = result.Context;
+            _roundManager = result.RoundManager;
+
+            // 输出 setup 日志
+            foreach (var log in result.SetupLog)
+                OnLogMessage?.Invoke(ColorizeLog(log));
+
+            // ── 开始第一回合 ──────────────────────────────────────
+            _roundManager.BeginRound(_ctx);
             FlushLogs();
 
-            // 进入玩家操作阶段
             IsPlayerTurn = true;
-            OnPhaseChanged?.Invoke($"第{_ctx.CurrentRound}回合 · 你的操作期");
+            OnPhaseChanged?.Invoke($"第 {_roundManager.CurrentRound} 回合 · 你的操作期");
             OnStateChanged?.Invoke();
         }
 
-        /// <summary>
-        /// 使用指定卡牌ID列表开始对战（供外部指定卡组）。
-        /// </summary>
-        /// <param name="playerDeckIds">玩家卡组ID列表</param>
-        /// <param name="aiDeckIds">AI卡组ID列表（null则使用默认）</param>
-        public void StartBattleWithDeck(int[] playerDeckIds, int[] aiDeckIds = null)
-        {
-            EnsureConfigLoaded();
-
-            _roundManager = new RoundManager();
-
-            List<CardConfig> deck1 = CreateDeckFromCardIds(playerDeckIds);
-            List<CardConfig> deck2 = aiDeckIds != null 
-                ? CreateDeckFromCardIds(aiDeckIds) 
-                : CreateDeckFromConfig();
-
-            _ctx = _roundManager.InitBattle(HumanPlayerId, AiPlayerId, deck1, deck2);
-            FlushLogs();
-
-            IsPlayerTurn = true;
-            OnPhaseChanged?.Invoke($"第{_ctx.CurrentRound}回合 · 你的操作期");
-            OnStateChanged?.Invoke();
-        }
+        // ══════════════════════════════════════════════════════════════════════
+        // 玩家操作接口
+        // ══════════════════════════════════════════════════════════════════════
 
         /// <summary>
-        /// 确保配置管理器已加载。
+        /// 玩家打出一张瞬策牌（立即结算）。
         /// </summary>
-        private void EnsureConfigLoaded()
-        {
-            if (!CardConfigManager.Instance.IsLoaded)
-            {
-                CardConfigManager.Instance.LoadAll();
-            }
-        }
-
-        // ── 玩家操作接口（由UI层调用） ──
-
-        /// <summary>
-        /// 玩家打出一张瞬策牌。
-        /// </summary>
-        /// <param name="handIndex">手牌索引</param>
+        /// <param name="handIndex">在人类玩家手牌列表中的位置</param>
         /// <returns>操作结果描述</returns>
         public string PlayerPlayInstantCard(int handIndex)
         {
-            if (!IsPlayerTurn || _ctx.IsGameOver) return "错误：当前不是操作阶段";
-
-            PlayerBattleState player = _ctx.GetPlayer(HumanPlayerId);
-            if (player == null) return "错误：玩家不存在";
-
-            // 瞬策牌默认目标为对手
-            CardInstance card = player.Hand[handIndex];
-            string targetId = GetTargetForCard(card, HumanPlayerId, AiPlayerId);
-
-            string result = _roundManager.PlayCard(_ctx, HumanPlayerId, handIndex, targetId);
-
-            FlushLogs();
-            OnLogMessage?.Invoke($"你 → {result}");
-            OnStateChanged?.Invoke();
-
-            // 检查游戏结束（使用 WinnerTeamId）
-            if (_ctx.IsGameOver)
-            {
-                OnGameOver?.Invoke(_ctx.WinnerTeamId);
-            }
-
-            return result;
+            if (!IsPlayerTurn || IsGameOver) return "当前不是操作阶段";
+            return PlayCardInternal(HumanPlayerId, handIndex, instant: true);
         }
 
         /// <summary>
-        /// 玩家提交一张定策牌（暗置）。
+        /// 玩家提交一张定策牌（等待 EndRound 结算）。
         /// </summary>
-        /// <param name="handIndex">手牌索引</param>
-        /// <returns>操作结果描述</returns>
         public string PlayerCommitPlanCard(int handIndex)
         {
-            if (!IsPlayerTurn || _ctx.IsGameOver) return "错误：当前不是操作阶段";
-
-            PlayerBattleState player = _ctx.GetPlayer(HumanPlayerId);
-            if (player == null) return "错误：玩家不存在";
-
-            CardInstance card = player.Hand[handIndex];
-            string targetId = GetTargetForCard(card, HumanPlayerId, AiPlayerId);
-
-            string result = _roundManager.CommitPlanCard(_ctx, HumanPlayerId, handIndex, targetId);
-
-            FlushLogs();
-            OnLogMessage?.Invoke($"你 → {result}");
-            OnStateChanged?.Invoke();
-
-            return result;
+            if (!IsPlayerTurn || IsGameOver) return "当前不是操作阶段";
+            return PlayCardInternal(HumanPlayerId, handIndex, instant: false);
         }
 
         /// <summary>
-        /// 玩家结束回合 —— 触发AI操作 → 定策牌结算 → 回合结束 → 下一回合开始。
+        /// 玩家结束回合：AI 操作 → 定策结算 → 下一回合开始。
         /// </summary>
         public void PlayerEndTurn()
         {
-            if (!IsPlayerTurn || _ctx.IsGameOver) return;
+            if (!IsPlayerTurn || IsGameOver) return;
 
             IsPlayerTurn = false;
 
-            // ── 锁定玩家操作 ──
-            _roundManager.LockOperation(_ctx, HumanPlayerId);
-            FlushLogs();
-
-            // ── AI操作阶段 ──
-            OnPhaseChanged?.Invoke($"第{_ctx.CurrentRound}回合 · 对手操作中...");
+            // ── AI 操作阶段 ────────────────────────────────────────
+            OnPhaseChanged?.Invoke($"第 {_roundManager.CurrentRound} 回合 · 对手操作中...");
             OnStateChanged?.Invoke();
-
             ExecuteAiTurn();
             FlushLogs();
 
-            if (_ctx.IsGameOver)
-            {
-                OnGameOver?.Invoke(_ctx.WinnerTeamId);
-                return;
-            }
+            if (IsGameOver) { NotifyGameOver(); return; }
 
-            // ── 锁定AI操作 ──
-            _roundManager.LockOperation(_ctx, AiPlayerId);
-            FlushLogs();
-
-            // ── 回合结算（阶段4~7：定策牌结算 → 濒死判定 → 弃牌清能量） ──
-            OnPhaseChanged?.Invoke($"第{_ctx.CurrentRound}回合 · 结算中...");
+            // ── 定策五层结算 ───────────────────────────────────────
+            OnPhaseChanged?.Invoke($"第 {_roundManager.CurrentRound} 回合 · 结算中...");
             _roundManager.EndRound(_ctx);
             FlushLogs();
             OnStateChanged?.Invoke();
 
-            if (_ctx.IsGameOver)
-            {
-                OnGameOver?.Invoke(_ctx.WinnerTeamId);
-                return;
-            }
+            if (IsGameOver) { NotifyGameOver(); return; }
 
-            // ── 下一回合开始 ──
-            _roundManager.BeginNextRound(_ctx);
+            // ── 下一回合 ───────────────────────────────────────────
+            _roundManager.BeginRound(_ctx);
             FlushLogs();
 
-            // 进入新的玩家操作阶段
             IsPlayerTurn = true;
-            OnPhaseChanged?.Invoke($"第{_ctx.CurrentRound}回合 · 你的操作期");
+            OnPhaseChanged?.Invoke($"第 {_roundManager.CurrentRound} 回合 · 你的操作期");
             OnStateChanged?.Invoke();
         }
 
-        // ── AI逻辑 ──
+        // ══════════════════════════════════════════════════════════════════════
+        // 数据访问（UI 层调用）
+        // ══════════════════════════════════════════════════════════════════════
+
+        /// <summary>获取人类玩家数据（V2 PlayerData）</summary>
+        public PlayerData GetHumanPlayer() => _ctx?.GetPlayer(HumanPlayerId);
+
+        /// <summary>获取 AI 玩家数据（V2 PlayerData）</summary>
+        public PlayerData GetAiPlayer() => _ctx?.GetPlayer(AiPlayerId);
 
         /// <summary>
-        /// 简单AI：尽量把能量用完，优先出伤害牌。
+        /// 获取人类玩家手牌（含对应 CardConfig 显示信息）。
+        /// 返回列表顺序与 PlayerData.Hand 中的 BattleCard 顺序一致。
         /// </summary>
+        public List<(BattleCard Card, CardConfig Config)> GetHumanHandCards()
+        {
+            var list   = new List<(BattleCard, CardConfig)>();
+            var player = _ctx?.GetPlayer(HumanPlayerId);
+            if (player == null) return list;
+
+            foreach (var bc in player.GetCardsInZone(CardZone.Hand))
+            {
+                _cardConfigMap.TryGetValue(bc.ConfigId, out var cfg);
+                list.Add((bc, cfg));
+            }
+            return list;
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // 调试
+        // ══════════════════════════════════════════════════════════════════════
+
+        /// <summary>打印战场完整状态快照，通过 OnLogMessage 推送给 UI。</summary>
+        public void PrintBattleStatus()
+        {
+            if (_ctx == null)
+            {
+                OnLogMessage?.Invoke("<color=#ff4444>[状态快照] BattleContext 为空，对局尚未开始</color>");
+                return;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("<color=#ffffff>╔══════════ [战场状态快照] ══════════╗</color>");
+            sb.AppendLine($"<color=#aaaaaa>  第 {_roundManager.CurrentRound} 回合</color>");
+            sb.AppendLine();
+            AppendPlayerSnapshot(sb, _ctx.GetPlayer(HumanPlayerId), "我方");
+            sb.AppendLine();
+            AppendPlayerSnapshot(sb, _ctx.GetPlayer(AiPlayerId),    "对手");
+            sb.AppendLine("<color=#ffffff>╚══════════════════════════════════════╝</color>");
+
+            foreach (var line in sb.ToString().Split('\n'))
+                if (!string.IsNullOrWhiteSpace(line))
+                    OnLogMessage?.Invoke(line.TrimEnd('\r'));
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // 内部：出牌核心逻辑
+        // ══════════════════════════════════════════════════════════════════════
+
+        private string PlayCardInternal(string playerId, int handIndex, bool instant)
+        {
+            var player = _ctx.GetPlayer(playerId);
+            if (player == null) return "玩家不存在";
+
+            var hand = player.GetCardsInZone(CardZone.Hand);
+            if (handIndex < 0 || handIndex >= hand.Count)
+                return $"手牌索引越界（{handIndex}/{hand.Count}）";
+
+            var battleCard = hand[handIndex];
+            if (!_cardConfigMap.TryGetValue(battleCard.ConfigId, out var cardConfig))
+                return $"找不到卡牌配置 configId={battleCard.ConfigId}";
+
+            // ── 能量校验 ──────────────────────────────────────────────
+            int cost = cardConfig.EnergyCost;
+            if (player.Energy < cost)
+            {
+                string reason = $"能量不足（当前 {player.Energy}，需要 {cost}）";
+                OnLogMessage?.Invoke($"<color=#ff8866>[!] {reason}</color>");
+                return reason;
+            }
+
+            // ── 消耗能量 ──────────────────────────────────────────────
+            player.Energy -= cost;
+
+            // ── CardConfig → EffectUnit 转换 ──────────────────────────
+            string defaultTarget = CardConfigToEffectAdapter.CardTargetTypeToString(cardConfig.TargetType);
+            var effects = CardConfigToEffectAdapter.ConvertEffects(cardConfig, defaultTarget);
+            string cardName = cardConfig.CardName;
+
+            // ── 出牌 ─────────────────────────────────────────────────
+            if (instant)
+            {
+                // 瞬策牌：先移出手牌区，再结算，最后根据标签决定去向
+                MoveCardAfterPlay(battleCard, cardConfig);
+                _roundManager.PlayInstantCard(_ctx, playerId, battleCard.InstanceId, effects);
+                FlushLogs();
+                OnLogMessage?.Invoke($"<color=#aaffaa>{(playerId == HumanPlayerId ? "你" : "对手")} → 打出瞬策牌【{cardName}】（花费 {cost} 点能量）</color>");
+            }
+            else
+            {
+                // 定策牌：移入策略区，等待 EndRound 统一结算
+                _ctx.CardManager.CommitPlanCard(_ctx, battleCard.InstanceId);
+                _roundManager.CommitPlanCard(_ctx, new CommittedPlanCard
+                {
+                    PlayerId       = playerId,
+                    CardInstanceId = battleCard.InstanceId,
+                    Effects        = effects,
+                });
+                FlushLogs();
+                OnLogMessage?.Invoke($"<color=#aaddff>{(playerId == HumanPlayerId ? "你" : "对手")} → 提交定策牌【{cardName}】（花费 {cost} 点能量）</color>");
+            }
+
+            OnStateChanged?.Invoke();
+            if (IsGameOver) NotifyGameOver();
+            return cardName;
+        }
+
+        /// <summary>
+        /// 出牌后根据卡牌标签决定卡牌去向。
+        /// Exhaust 标签 → 从游戏中移除；普通牌 → 进弃牌堆。
+        /// </summary>
+        private void MoveCardAfterPlay(BattleCard battleCard, CardConfig cardConfig)
+        {
+            bool isExhaust = cardConfig.Tags.HasFlag(CardTag.Exhaust);
+            if (isExhaust)
+            {
+                // 消耗牌：从 AllCards 中彻底移除
+                var owner = _ctx.GetPlayer(battleCard.OwnerId);
+                owner?.AllCards.Remove(battleCard);
+                _ctx.RoundLog.Add($"[BattleGameManager] 卡牌【{cardConfig.CardName}】已消耗（Exhaust）。");
+            }
+            else
+            {
+                // 普通牌：移入弃牌堆
+                _ctx.CardManager.MoveCard(_ctx, battleCard, CardZone.Discard);
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // 内部：AI 逻辑
+        // ══════════════════════════════════════════════════════════════════════
+
         private void ExecuteAiTurn()
         {
-            PlayerBattleState ai = _ctx.GetPlayer(AiPlayerId);
-            if (ai == null || !ai.IsAlive) return;
+            var player = _ctx.GetPlayer(AiPlayerId);
+            if (player == null || !player.HeroEntity.IsAlive) return;
 
-            bool playedAny = true;
-            while (playedAny && ai.Energy > 0 && ai.Hand.Count > 0)
+            // 简单策略：把所有手牌都打/提交（测试用，无能量限制）
+            var hand = player.GetCardsInZone(CardZone.Hand);
+            var snapshot = new List<BattleCard>(hand); // 防止遍历时列表变化
+
+            foreach (var battleCard in snapshot)
             {
-                playedAny = false;
-                for (int i = ai.Hand.Count - 1; i >= 0; i--)
-                {
-                    if (ai.Energy <= 0) break;
+                if (!player.HeroEntity.IsAlive || IsGameOver) break;
+                if (!_cardConfigMap.TryGetValue(battleCard.ConfigId, out var cfg)) continue;
 
-                    CardInstance card = ai.Hand[i];
-                    if (ai.Energy < card.EnergyCost) continue;
-
-                    string targetId = GetTargetForCard(card, AiPlayerId, HumanPlayerId);
-
-                    string result;
-                    if (card.TrackType == CardTrackType.Instant)
-                    {
-                        result = _roundManager.PlayCard(_ctx, AiPlayerId, i, targetId);
-                    }
-                    else
-                    {
-                        result = _roundManager.CommitPlanCard(_ctx, AiPlayerId, i, targetId);
-                    }
-
-                    OnLogMessage?.Invoke($"对手 → {result}");
-                    playedAny = true;
-
-                    if (_ctx.IsGameOver) return;
-                    break; // 索引变化，重新扫描
-                }
+                bool isInstant = cfg.TrackType == CardTrackType.Instant;
+                PlayCardInternal(AiPlayerId, 0, isInstant);
             }
         }
 
-        // ── 辅助方法 ──
+        // ══════════════════════════════════════════════════════════════════════
+        // 内部：卡组构建
+        // ══════════════════════════════════════════════════════════════════════
 
         /// <summary>
-        /// 根据卡牌目标类型决定目标玩家ID。
+        /// 力量战测试卡组（13张）：
+        ///   打击 ×4 + 防御 ×3 + 观察弱点 ×2 + 飞剑回旋镖 ×2 + 战斗专注 ×1 + 突破极限 ×1
         /// </summary>
-        private string GetTargetForCard(CardInstance card, string selfId, string opponentId)
+        private static readonly int[] DefaultWarriorDeckIds = new int[]
         {
-            switch (card.Config.TargetType)
+            2001, 2001, 2001, 2001,   // 打击 ×4        (1费，定策，造成6伤害)
+            2002, 2002, 2002,         // 防御 ×3        (1费，定策，获得5护盾)
+            2003, 2003,               // 观察弱点 ×2    (1费，定策，条件获得2力量)
+            2005, 2005,               // 飞剑回旋镖 ×2  (1费，定策，3伤×4次)
+            1001,                     // 战斗专注 ×1    (0费，瞬策，抽3张)
+            1002,                     // 突破极限 ×1    (1费，瞬策，力量翻倍·消耗)
+        };
+
+        private List<(string configId, int count)> BuildDeckConfig(int[] cardIds)
+        {
+            var countMap = new Dictionary<int, int>();
+            foreach (var id in cardIds)
             {
-                case CardTargetType.CurrentEnemy:
-                case CardTargetType.AnyEnemy:
-                case CardTargetType.AllEnemies:
-                    return opponentId;
-
-                case CardTargetType.Self:
-                case CardTargetType.AnyAlly:
-                case CardTargetType.AllAllies:
-                    return selfId;
-
-                default:
-                    return opponentId;
+                if (!countMap.ContainsKey(id)) countMap[id] = 0;
+                countMap[id]++;
             }
+
+            var deck = new List<(string, int)>();
+            foreach (var kv in countMap)
+            {
+                if (CardConfigManager.Instance.GetCard(kv.Key) != null)
+                    deck.Add((kv.Key.ToString(), kv.Value));
+                else
+                    OnLogMessage?.Invoke($"<color=#ffaa00>[警告] 卡牌配置不存在: {kv.Key}，已跳过</color>");
+            }
+            return deck;
         }
 
         /// <summary>
-        /// 将 BattleContext 中的日志通过事件发送给 UI，然后清空。
+        /// 构建 configId（字符串形式的 CardId）→ CardConfig 的映射表，
+        /// 供 PlayCardInternal 在拿到 BattleCard.ConfigId 后快速查找配置。
         /// </summary>
+        private void BuildCardConfigMap()
+        {
+            var all = CardConfigManager.Instance.AllCards;
+            if (all == null) return;
+            foreach (var kv in all)
+                _cardConfigMap[kv.Key.ToString()] = kv.Value;
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // 内部：辅助
+        // ══════════════════════════════════════════════════════════════════════
+
+        private void EnsureConfigLoaded()
+        {
+            if (!CardConfigManager.Instance.IsLoaded)
+                CardConfigManager.Instance.LoadAll();
+        }
+
         private void FlushLogs()
         {
             if (_ctx == null) return;
-            for (int i = 0; i < _ctx.RoundLog.Count; i++)
-            {
-                OnLogMessage?.Invoke(_ctx.RoundLog[i]);
-            }
+            foreach (var raw in _ctx.RoundLog)
+                OnLogMessage?.Invoke(ColorizeLog(raw));
             _ctx.RoundLog.Clear();
         }
 
-        /// <summary>
-        /// 获取人类玩家的状态。
-        /// </summary>
-        public PlayerBattleState GetHumanPlayer()
+        private void NotifyGameOver()
         {
-            return _ctx?.GetPlayer(HumanPlayerId);
+            string? winner = _roundManager?.WinnerId;
+            int code = winner == null       ? -1
+                     : winner == HumanPlayerId ? 1
+                     : 2;
+            OnGameOver?.Invoke(code);
         }
 
-        /// <summary>
-        /// 获取AI玩家的状态。
-        /// </summary>
-        public PlayerBattleState GetAiPlayer()
+        private static string ColorizeLog(string log)
         {
-            return _ctx?.GetPlayer(AiPlayerId);
+            if (log.Contains("<color=")) return log;
+            string lower = log.ToLower();
+
+            if (lower.Contains("伤害") || lower.Contains("击中") || lower.Contains("扣除"))
+                return $"<color=#ff8866>{log}</color>";
+            if (lower.Contains("护盾") || lower.Contains("shield"))
+                return $"<color=#66aaff>{log}</color>";
+            if (lower.Contains("治疗") || lower.Contains("回血") || lower.Contains("恢复"))
+                return $"<color=#66ee88>{log}</color>";
+            if (lower.Contains("力量") || lower.Contains("buff") || lower.Contains("护甲"))
+                return $"<color=#ffdd55>{log}</color>";
+            if (lower.Contains("回合") && (log.Contains("══") || log.Contains("──")))
+                return $"<color=#888888><size=85%>{log}</size></color>";
+
+            return log;
         }
 
-        // ══════════════════════════════════════════════════════════════
-        // 卡组创建（从配置加载）
-        // ══════════════════════════════════════════════════════════════
-
-        /// <summary>
-        /// 默认测试卡组的 CardId 列表（10张牌）—— 基础起始卡组。
-        /// 对应 StreamingAssets/Config/cards.json 中的卡牌定义。
-        /// 
-        /// 同一 CardId 可重复出现多次，每次 CloneCard 会生成独立副本。
-        /// 对应 StreamingAssets/Config/cards.json：
-        ///   2001 打击 | 2002 防御 | 2003 观察弱点 | 2004 死亡收割 | 2005 飞剑回旋镖 | 1001 战斗专注
-        /// </summary>
-        private static readonly int[] DefaultTestDeckIds = new int[]
+        private void AppendPlayerSnapshot(System.Text.StringBuilder sb, PlayerData? p, string label)
         {
-            // ═══ 定策牌 (12张) ═══
-            2001, 2001, 2001, 2001, 2001,   // 打击       x5（造成6点伤害）
-            2002, 2002, 2002, 2002, 2002,   // 防御       x5（获得5点护盾）
-            2003,                            // 观察弱点   x1（获得2点力量）
-            2004,                            // 死亡收割   x1（3伤害+吸血）
-            2005,                            // 飞剑回旋镖 x1（3×4多段伤害）
+            if (p == null) { sb.AppendLine($"  [{label}]: 数据不存在"); return; }
 
-            // ═══ 瞬策牌 (2张) ═══
-            1001, 1001,                      // 战斗专注   x2（抽3张牌）
-        };
+            var hero    = p.HeroEntity;
+            var hand    = p.GetCardsInZone(CardZone.Hand);
+            var deck    = p.GetCardsInZone(CardZone.Deck);
+            var discard = p.GetCardsInZone(CardZone.Discard);
 
-        /// <summary>
-        /// 从配置文件创建默认测试卡组。
-        /// </summary>
-        private List<CardConfig> CreateDeckFromConfig()
-        {
-            return CreateDeckFromCardIds(DefaultTestDeckIds);
+            string hpColor = hero.Hp <= hero.MaxHp / 3 ? "#ff4444"
+                           : hero.Hp <= hero.MaxHp * 2 / 3 ? "#ffaa33"
+                           : "#66ee88";
+
+            sb.AppendLine($"  <color=#ddddff>[{label}]</color>");
+            sb.AppendLine($"    HP    : <color={hpColor}>{hero.Hp}/{hero.MaxHp}</color>"
+                + (hero.Shield > 0 ? $"   护盾: <color=#66aaff>{hero.Shield}</color>" : "")
+                + (hero.Armor  > 0 ? $"   护甲: <color=#88ccff>{hero.Armor}</color>" : ""));
+            sb.AppendLine($"    能量  : <color=#ffdd55>{p.Energy}/{p.MaxEnergy}</color>");
+            sb.AppendLine($"    手牌  : {hand.Count} 张   牌库: {deck.Count}   弃牌: {discard.Count}");
         }
 
-        /// <summary>
-        /// 根据卡牌ID列表创建卡组。
-        /// </summary>
-        /// <param name="cardIds">卡牌ID数组</param>
-        /// <returns>卡牌配置列表（每个是独立副本）</returns>
-        private List<CardConfig> CreateDeckFromCardIds(int[] cardIds)
-        {
-            List<CardConfig> deck = new List<CardConfig>();
-            var configManager = CardConfigManager.Instance;
+        // ══════════════════════════════════════════════════════════════════════
+        // 内部：EventBus 适配器
+        // ══════════════════════════════════════════════════════════════════════
 
-            foreach (int cardId in cardIds)
+        /// <summary>
+        /// 将 V2 BattleCore 内部事件转发给 BattleGameManager 的 C# 事件 / UI 日志。
+        /// </summary>
+        private sealed class InternalEventBus : IEventBus
+        {
+            private readonly BattleGameManager _mgr;
+            public InternalEventBus(BattleGameManager mgr) => _mgr = mgr;
+
+            public void Subscribe<T>(Action<T> handler)   where T : BattleEventBase { }
+            public void Unsubscribe<T>(Action<T> handler) where T : BattleEventBase { }
+
+            public void Publish<T>(T evt) where T : BattleEventBase
             {
-                // 使用 CloneCard 获取副本，避免修改原始配置
-                CardConfig card = configManager.CloneCard(cardId);
-                if (card != null)
+                switch (evt)
                 {
-                    deck.Add(card);
+                    case DamageDealtEvent dmg:
+                        if (dmg.RealHpDamage > 0)
+                            _mgr.OnLogMessage?.Invoke(
+                                $"<color=#ff6666>[伤害] {dmg.SourceEntityId} -> {dmg.TargetEntityId}：" +
+                                $"{dmg.RealHpDamage} 点" +
+                                (dmg.ShieldAbsorbed > 0 ? $"（护盾吸收 {dmg.ShieldAbsorbed}）" : "") +
+                                "</color>");
+                        else if (dmg.ShieldAbsorbed > 0)
+                            _mgr.OnLogMessage?.Invoke(
+                                $"<color=#66aaff>[护盾] 吸收 {dmg.ShieldAbsorbed} 点伤害</color>");
+                        break;
+
+                    case HealEvent heal:
+                        _mgr.OnLogMessage?.Invoke(
+                            $"<color=#66ee88>[治疗] {heal.TargetEntityId} 恢复 {heal.RealHealAmount} 点生命</color>");
+                        break;
+
+                    case ShieldGainedEvent sg:
+                        _mgr.OnLogMessage?.Invoke(
+                            $"<color=#66aaff>[护盾] {sg.TargetEntityId} 获得 {sg.ShieldAmount} 点护盾</color>");
+                        break;
+
+                    case RoundStartEvent rs:
+                        _mgr.OnLogMessage?.Invoke(
+                            $"<color=#888888><size=85%>--- 第 {rs.Round} 回合开始 ---</size></color>");
+                        break;
+
+                    case RoundEndEvent re:
+                        _mgr.OnLogMessage?.Invoke(
+                            $"<color=#888888><size=85%>--- 第 {re.Round} 回合结束 ---</size></color>");
+                        break;
+
+                    case PlayerDeathEvent death:
+                        _mgr.OnLogMessage?.Invoke(
+                            $"<color=#ff4444>[倒下] {death.PlayerId}</color>");
+                        break;
+
+                    case BattleEndEvent end:
+                        _mgr.OnLogMessage?.Invoke(end.IsDraw
+                            ? "<color=#ffdd55>[结束] 平局！</color>"
+                            : $"<color=#ffdd55>[结束] 胜者：{end.WinnerId}</color>");
+                        break;
                 }
-                else
-                {
-                    // 配置中不存在该卡牌，输出警告但继续
-                    OnLogMessage?.Invoke($"[警告] 卡牌配置不存在: {cardId}，已跳过");
-                }
             }
-
-            // 如果配置加载失败导致卡组为空，使用后备硬编码卡组
-            if (deck.Count == 0)
-            {
-                OnLogMessage?.Invoke("[警告] 配置加载失败，使用后备硬编码卡组");
-                return CreateFallbackDeck();
-            }
-
-            return deck;
-        }
-
-        /// <summary>
-        /// 后备硬编码卡组（当配置加载失败时使用）。
-        /// </summary>
-        private List<CardConfig> CreateFallbackDeck()
-        {
-            List<CardConfig> deck = new List<CardConfig>();
-
-            // 最小可用卡组：5张火球术
-            for (int i = 0; i < 5; i++)
-            {
-                deck.Add(new CardConfig
-                {
-                    CardId = 9999,
-                    CardName = "后备火球",
-                    Description = "造成3点伤害（后备卡）",
-                    TrackType = CardTrackType.Instant,
-                    Tags = CardTag.Damage,
-                    TargetType = CardTargetType.CurrentEnemy,
-                    EnergyCost = 1,
-                    Rarity = 1,
-                    Effects = new List<CardEffect>
-                    {
-                        new CardEffect { EffectType = EffectType.Damage, Value = 3 }
-                    }
-                });
-            }
-
-            return deck;
         }
     }
 }

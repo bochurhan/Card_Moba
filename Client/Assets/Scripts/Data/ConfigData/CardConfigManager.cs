@@ -440,16 +440,25 @@ namespace CardMoba.Client.Data.ConfigData
             var effect = new CardEffect
             {
                 EffectType = (EffectType)data.effectType,
-                Value = data.value,
-                Duration = data.duration,
-                TriggerCondition = data.triggerCondition ?? string.Empty,
-                IsDelayed = data.isDelayed
+                Value      = data.value,
+                Duration   = data.duration,
+                IsDelayed  = data.isDelayed
             };
 
             // 处理目标覆盖
             if (!string.IsNullOrEmpty(data.targetOverride))
             {
                 effect.TargetOverride = ParseEnum(data.targetOverride, CardTargetType.Self);
+            }
+
+            // triggerCondition 字符串 → EffectCondition 对象（TriggerCondition 字段已废弃）
+            if (!string.IsNullOrEmpty(data.triggerCondition))
+            {
+                var condition = ParseTriggerCondition(data.triggerCondition);
+                if (condition != null)
+                    effect.EffectConditions.Add(condition);
+                else
+                    Debug.LogWarning($"[CardConfigManager] 未知的 triggerCondition: {data.triggerCondition}，已忽略");
             }
 
             // V3.0: 结算层级由 CardEffect.GetSettlementLayer() 根据 EffectType 自动推断。
@@ -556,6 +565,35 @@ namespace CardMoba.Client.Data.ConfigData
 
             Debug.LogWarning($"[CardConfigManager] 无法解析枚举 {typeof(T).Name}: {value}，使用默认值 {defaultValue}");
             return defaultValue;
+        }
+
+        /// <summary>
+        /// 将 triggerCondition 魔法字符串解析为 EffectCondition 对象。
+        /// 对应 EffectConditionType 枚举值，未知字符串返回 null 并由调用方记录警告。
+        /// </summary>
+        private static EffectCondition ParseTriggerCondition(string conditionStr)
+        {
+            switch (conditionStr)
+            {
+                case "EnemyUsedDamageCardThisRound":
+                case "EnemyPlayedDamageCard":
+                    return new EffectCondition { ConditionType = EffectConditionType.EnemyPlayedDamageCard };
+
+                case "EnemyPlayedDefenseCard":
+                    return new EffectCondition { ConditionType = EffectConditionType.EnemyPlayedDefenseCard };
+
+                case "EnemyPlayedCounterCard":
+                    return new EffectCondition { ConditionType = EffectConditionType.EnemyPlayedCounterCard };
+
+                case "MyDeckIsEmpty":
+                    return new EffectCondition { ConditionType = EffectConditionType.MyDeckIsEmpty };
+
+                case "EnemyIsStunned":
+                    return new EffectCondition { ConditionType = EffectConditionType.EnemyIsStunned };
+
+                default:
+                    return null;
+            }
         }
 
         /// <summary>
