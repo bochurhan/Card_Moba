@@ -1,19 +1,20 @@
 # Card_Moba 项目文档中心
 
-**最后更新**：2026年03月02日  
-**文档版本**：V2.2
+**最后更新**：2026年03月21日  
+**文档版本**：V2.3
 
 ---
 
 ## 🎮 项目简介
 
-**Card_Moba** 是一款 **3v3 同步回合制卡牌 MOBA** 游戏，核心特点：
+**Card_Moba** 是一款 **1v1 / 2v2 同步决策团队卡牌竞技**游戏，首版以 1v1 先行验证，系统层面预留 2v2 扩展接口。核心特点：
 
-- **双轨卡牌体系**：瞬策牌（即时生效）+ 定策牌（回合末统一结算）
+- **双轨卡牌体系**：瞬策牌（即时生效）+ 定策牌（出牌阶段后统一公开结算）
 - **同步博弈**：无先后手差异，所有操作预提交后同步结算
 - **策略为王**：策略权重 ≥80%，手速操作 ≤20%
-- **固定分路**：1 Solo 路 + 1 双人路，无自由移动
-- **控时设计**：单局 8-15 分钟，25 回合硬上限
+- **英雄即职业**：每个英雄对应独立职业风格与专属卡池（类炉石传说结构）
+- **阶段式对局**：5 阶段结构（对线×2 + 团队目标争夺×2 + 死斗）
+- **控时设计**：单局预计 10–18 分钟，死斗阶段设有回合上限
 
 ---
 
@@ -26,8 +27,8 @@
 | [Overview.md](GameDesign/Overview.md) | **核心玩法概述**（5分钟了解游戏） | ✅ 完成 |
 | [CardSystem.md](GameDesign/CardSystem.md) | 卡牌分类、标签体系、效果类型 | ✅ 完成 |
 | [SettlementRules.md](GameDesign/SettlementRules.md) | 四层结算模型详解 | ✅ 完成 |
-| [LaneSystem.md](GameDesign/LaneSystem.md) | 分路规则、换路、支援机制 | ✅ 完成 |
-| [CentralTower.md](GameDesign/CentralTower.md) | 中枢塔 PVE + BOSS 系统 | ✅ 完成 |
+| [LaneSystem.md](GameDesign/LaneSystem.md) | 分路规则、战场抽象、死斗合流 | ✅ 完成 |
+| [TeamObjective.md](GameDesign/TeamObjective.md) | 团队目标争夺系统（中盘事件与奖励） | ✅ 完成 |
 
 ### 🔧 TechGuide/ — 技术开发指南（开发向）
 
@@ -47,7 +48,7 @@
 |------|------|
 | [Enums.md](API/Enums.md) | **枚举定义汇总**（唯一权威来源） |
 | [Protocol.md](API/Protocol.md) | 前后端通信协议规范 |
-| Messages.md | 消息结构定义（待实现） |
+| Messages.md | 消息结构定义（待实现，暂无文件） |
 
 ### 📅 Planning/ — 开发规划
 
