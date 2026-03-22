@@ -29,6 +29,7 @@
 | [SettlementRules.md](GameDesign/SettlementRules.md) | 四层结算模型详解 | ✅ 完成 |
 | [LaneSystem.md](GameDesign/LaneSystem.md) | 分路规则、战场抽象、死斗合流 | ✅ 完成 |
 | [TeamObjective.md](GameDesign/TeamObjective.md) | 团队目标争夺系统（中盘事件与奖励） | ✅ 完成 |
+| [InGameDraft.md](GameDesign/InGameDraft.md) | 局内构筑系统（构筑窗口/四类操作/候选池） | ✅ 完成 |
 
 ### 🔧 TechGuide/ — 技术开发指南（开发向）
 
