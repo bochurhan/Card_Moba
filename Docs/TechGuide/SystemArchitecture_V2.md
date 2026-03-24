@@ -83,11 +83,20 @@
 职责：执行效果原子（EffectUnit），管理 PendingEffectQueue
 ├─ ResolveInstant(card)     → 瞬策牌即时结算
 ├─ ResolvePlanCards()       → 定策牌五层批量结算
+│    ├─ Layer 0: 反制层
+│    ├─ Layer 1: 防御/修正层
+│    ├─ Pre-Layer 2: TakeDefenseSnapshots()  ← 防御快照拍摄
+│    ├─ Layer 2: 伤害层（以快照值为基准计算防御）
+│    ├─ Post-Layer 2: ClearDefenseSnapshots()
+│    ├─ Layer 3: 资源/功能层
+│    └─ Layer 4: Buff/特殊层
 └─ DrainPendingQueue()      → 循环消化延迟效果队列
                                （每次主结算后调用，执行栈始终平坦）
 ```
 
 **关键约束**：`SettlementEngine` 是唯一可写 `BattleContext` 的入口（Handler 内部通过 `ctx` 写入，Handler 由 `SettlementEngine` 调用）。
+
+**防御快照语义**：Layer 2 开始前为每位玩家拍摄 `DefenseSnapshot`（Shield / Armor / IsInvincible）。伤害 Handler 读快照值计算防御吸收，并同步递减快照和实时值（防止同层多次命中重复消费护盾）。Layer 2 期间动态生成的护盾（如 `AfterTakeDamage` 触发）写入实时值但不更新快照，因此**不参与本回合防御，下回合才生效**。详见 [SettlementRules.md §Layer2 快照隔离约定](../GameDesign/SettlementRules.md)。
 
 #### PendingEffectQueue（延迟队列）—— 解耦核心
 

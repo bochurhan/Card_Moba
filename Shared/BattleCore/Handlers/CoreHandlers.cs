@@ -33,7 +33,8 @@ namespace CardMoba.BattleCore.Handlers
             EffectUnit effect,
             Entity source,
             List<Entity> targets,
-            List<EffectResult> priorResults)
+            List<EffectResult> priorResults,
+            TriggerContext? triggerContext)
         {
             var result = new EffectResult
             {
@@ -50,7 +51,7 @@ namespace CardMoba.BattleCore.Handlers
             // ── 施害方出伤修正（力量 Add / 虚弱 Mul）────────────────
             // 修复：传 source.OwnerPlayerId，与 BuffManager 注册修正器时使用的 ownerPlayerId 一致
             int modifiedDamage = ctx.ValueModifierManager.Apply(
-                effect.Type, source.OwnerPlayerId, baseDamage);
+                effect.Type, source.OwnerPlayerId, ModifierScope.OutgoingDamage, baseDamage);
 
             foreach (var target in targets)
             {
@@ -68,7 +69,7 @@ namespace CardMoba.BattleCore.Handlers
                 // 受击方入伤修正（护甲 Add 负值 / 易伤 Mul）
                 // 修复：单独以 target.OwnerPlayerId 查受击方修正，与施害方修正分开路由
                 int incomingDamage = ctx.ValueModifierManager.Apply(
-                    effect.Type, target.OwnerPlayerId, modifiedDamage);
+                    effect.Type, target.OwnerPlayerId, ModifierScope.IncomingDamage, modifiedDamage);
 
                 int remaining = incomingDamage;
                 int shieldAbsorbed = 0;
@@ -81,20 +82,34 @@ namespace CardMoba.BattleCore.Handlers
                 var targetPlayer = ctx.GetPlayer(target.OwnerPlayerId);
                 var snapshot     = targetPlayer?.CurrentDefenseSnapshot;
 
-                // 快照护盾（用于计算吸收量），实际扣除仍写到 target.Shield（实时）
-                int snapshotShield = snapshot?.Shield ?? target.Shield;
-                int snapshotArmor  = snapshot?.Armor  ?? target.Armor;
+                // 快照防御值：Layer 2 定策时读快照（代表本轮 Layer 2 开始前的状态），
+                // 无快照时（瞬策等场景）读实时值。
+                // ⚠️ 快照值必须随每次命中递减，否则多张伤害牌会重复消费同一份护盾。
+                //    快照和实时值同步扣减，保持语义一致。
+                //
+                // 设计约定（见 SettlementRules.md §Layer2 快照隔离）：
+                //   Layer 2 期间 AfterTakeDamage 等触发器动态生成的护盾会写入实时 target.Shield，
+                //   但快照不更新，因此这部分护盾本回合不生效，下回合才参与防御。
+                //   这是有意为之的设计：受伤后获得的护盾代表"战斗经验积累"，下回合才转化为防御力。
+                int snapshotShield = snapshot != null ? snapshot.Shield : target.Shield;
+                int snapshotArmor  = snapshot != null ? snapshot.Armor  : target.Armor;
+
+                // 护盾破裂标记：提前声明，供 Phase C 统一广播使用
+                bool shieldBroken = false;
 
                 // 护盾吸收（穿透伤害不跳过护盾，只跳过护甲）
                 if (snapshotShield > 0)
                 {
-                    // 按快照值计算本次吸收量，再写入实时护盾
                     shieldAbsorbed = remaining < snapshotShield ? remaining : snapshotShield;
+                    // 同步递减快照和实时值，防止后续命中重复消费
+                    if (snapshot != null) snapshot.Shield -= shieldAbsorbed;
                     target.Shield -= shieldAbsorbed;
                     if (target.Shield < 0) target.Shield = 0;
                     remaining -= shieldAbsorbed;
 
-                    bool shieldBroken = target.Shield == 0 && shieldAbsorbed > 0;
+                    // 护盾破裂判断：本次命中前快照有盾，且本次吸收量耗尽了全部快照盾值
+                    // snapshotShield 是递减前的值，shieldAbsorbed == snapshotShield 说明盾被打光
+                    shieldBroken = shieldAbsorbed > 0 && shieldAbsorbed == snapshotShield;
                     if (shieldBroken)
                     {
                         ctx.RoundLog.Add($"[DamageHandler] {target.EntityId} 的护盾被击破！");
@@ -104,20 +119,16 @@ namespace CardMoba.BattleCore.Handlers
                             TargetEntityId = target.EntityId,
                             Value          = shieldAbsorbed,
                         });
-                        ctx.EventBus.Publish(new DamageDealtEvent
-                        {
-                            SourceEntityId   = source.EntityId,
-                            TargetEntityId   = target.EntityId,
-                            ShieldBroken     = true,
-                        });
+                        // 注意：不在此处广播 DamageDealtEvent，统一在 Phase C 末尾合并广播（避免重复）
                     }
                 }
 
                 // 护甲减伤（穿透伤害跳过护甲）
-                // 使用快照护甲值做上限判断，实际扣除写实时 target.Armor
                 if (!isPierce && snapshotArmor > 0 && remaining > 0)
                 {
                     armorReduced = remaining < snapshotArmor ? remaining : snapshotArmor;
+                    // 同步递减快照和实时值
+                    if (snapshot != null) snapshot.Armor -= armorReduced;
                     target.Armor -= armorReduced;
                     if (target.Armor < 0) target.Armor = 0;
                     remaining -= armorReduced;
@@ -137,7 +148,7 @@ namespace CardMoba.BattleCore.Handlers
                     $"基础{baseDamage} 修正后{modifiedDamage} 护盾吸收{shieldAbsorbed} 护甲减{armorReduced} 实际HP伤害{realHpDamage}，" +
                     $"剩余HP={target.Hp}");
 
-                // EventBus 广播
+                // Phase C 统一广播（含 ShieldBroken 标记，避免护盾破裂时重复发两条事件）
                 ctx.EventBus.Publish(new DamageDealtEvent
                 {
                     SourceEntityId   = source.EntityId,
@@ -146,6 +157,7 @@ namespace CardMoba.BattleCore.Handlers
                     RealHpDamage     = realHpDamage,
                     ShieldAbsorbed   = shieldAbsorbed,
                     ArmorReduced     = armorReduced,
+                    ShieldBroken     = shieldBroken,
                 });
 
                 // ── Phase C：触发器 ──────────────────────────────────
@@ -195,7 +207,8 @@ namespace CardMoba.BattleCore.Handlers
             EffectUnit effect,
             Entity source,
             List<Entity> targets,
-            List<EffectResult> priorResults)
+            List<EffectResult> priorResults,
+            TriggerContext? triggerContext)
         {
             var result = new EffectResult
             {
@@ -255,7 +268,8 @@ namespace CardMoba.BattleCore.Handlers
             EffectUnit effect,
             Entity source,
             List<Entity> targets,
-            List<EffectResult> priorResults)
+            List<EffectResult> priorResults,
+            TriggerContext? triggerContext)
         {
             var result = new EffectResult
             {
@@ -310,7 +324,8 @@ namespace CardMoba.BattleCore.Handlers
             EffectUnit effect,
             Entity source,
             List<Entity> targets,
-            List<EffectResult> priorResults)
+            List<EffectResult> priorResults,
+            TriggerContext? triggerContext)
         {
             var result = new EffectResult { EffectId = effect.EffectId, Type = effect.Type, Success = true };
 
@@ -351,7 +366,8 @@ namespace CardMoba.BattleCore.Handlers
             EffectUnit effect,
             Entity source,
             List<Entity> targets,
-            List<EffectResult> priorResults)
+            List<EffectResult> priorResults,
+            TriggerContext? triggerContext)
         {
             var result = new EffectResult { EffectId = effect.EffectId, Type = effect.Type, Success = true };
 
@@ -385,7 +401,8 @@ namespace CardMoba.BattleCore.Handlers
             EffectUnit effect,
             Entity source,
             List<Entity> targets,
-            List<EffectResult> priorResults)
+            List<EffectResult> priorResults,
+            TriggerContext? triggerContext)
         {
             var result = new EffectResult { EffectId = effect.EffectId, Type = effect.Type, Success = true };
 
@@ -429,7 +446,8 @@ namespace CardMoba.BattleCore.Handlers
             EffectUnit effect,
             Entity source,
             List<Entity> targets,
-            List<EffectResult> priorResults)
+            List<EffectResult> priorResults,
+            TriggerContext? triggerContext)
         {
             var result = new EffectResult
             {
@@ -479,6 +497,14 @@ namespace CardMoba.BattleCore.Handlers
                 SourceEntityId = source.EntityId,
                 TargetEntityId = source.EntityId,
                 RealHealAmount = healAmount,
+            });
+
+            // 触发 OnHealed 时机（与 HealHandler 保持一致，使依赖此时机的 Buff 能响应吸血回血）
+            ctx.TriggerManager.Fire(ctx, TriggerTiming.OnHealed, new TriggerContext
+            {
+                SourceEntityId = source.EntityId,
+                TargetEntityId = source.EntityId,
+                Value          = healAmount,
             });
 
             return result;
