@@ -70,7 +70,7 @@ namespace CardMoba.BattleCore.Foundation
         /// <summary>
         /// 触发条件列表（全部满足才触发）。
         /// 每个字符串是条件表达式，由 ConditionChecker 解析，
-        /// 可访问触发上下文（如 "trigCtx.sourcePlayerId == self.playerId"）。
+        /// 可访问触发上下文中的数值字段（如 "trigCtx.value > 0"、"trigCtx.round >= 2"、"trigCtx.extra.damage > 3"）。
         /// </summary>
         public List<string> Conditions { get; set; } = new List<string>();
 

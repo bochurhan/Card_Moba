@@ -296,7 +296,8 @@ namespace CardMoba.BattleCore.Managers
                 ConfigId        = config.BuffId,
                 DisplayName     = config.BuffName,
                 OwnerEntityId   = targetEntityId,
-                OwnerPlayerId   = targetEntityId,   // 玩家单位 EntityId == PlayerId
+                // 修复：EntityId（"hero_player1"）≠ PlayerId（"player1"），必须反查真实 PlayerId
+                OwnerPlayerId   = ctx.GetPlayerByEntityId(targetEntityId)?.PlayerId ?? targetEntityId,
                 SourcePlayerId  = sourcePlayerId,
                 Value           = value,
                 StackRule       = config.StackRule,
@@ -519,62 +520,74 @@ namespace CardMoba.BattleCore.Managers
                 // Vulnerable/Weak = 百分比放大/缩小（Mul，百分比整数，如 150=+50%，75=-25%）
                 case BuffType.Strength:
                 {
-                    // 力量：施害方每次出伤 +Value（Add 加成）
-                    string mid = ctx.ValueModifierManager.AddModifier(new ValueModifier
+                    // 力量：施害方出伤 +Value，同时覆盖 Damage 和 Pierce
+                    foreach (var et in new[] { EffectType.Damage, EffectType.Pierce })
                     {
-                        Type             = ModifierType.Add,
-                        Value            = buff.Value,
-                        OwnerPlayerId    = ownerPlayerId,
-                        TargetEffectType = EffectType.Damage,
-                    });
-                    buff.RegisteredModifierIds.Add(mid);
-                    ctx.RoundLog.Add($"[BuffManager] 注册力量修正器 {mid}，+{buff.Value} 出伤。");
+                        string mid = ctx.ValueModifierManager.AddModifier(new ValueModifier
+                        {
+                            Type             = ModifierType.Add,
+                            Value            = buff.Value,
+                            OwnerPlayerId    = ownerPlayerId,
+                            TargetEffectType = et,
+                            Scope            = ModifierScope.OutgoingDamage,
+                        });
+                        buff.RegisteredModifierIds.Add(mid);
+                    }
+                    ctx.RoundLog.Add($"[BuffManager] 注册力量修正器（Damage+Pierce），+{buff.Value} 出伤。");
                     break;
                 }
 
                 case BuffType.Armor:
                 {
-                    // 护甲：持有方受到伤害 -Value（Add 负值减免）
-                    // ⚠️ 注意：Armor 修正的是受伤方，OwnerPlayerId 为受伤方
+                    // 护甲：受伤方入伤 -Value。Pierce 穿透护甲，仅注册在 Damage 上
                     string mid = ctx.ValueModifierManager.AddModifier(new ValueModifier
                     {
                         Type             = ModifierType.Add,
-                        Value            = -buff.Value,    // 负数 = 减少伤害
+                        Value            = -buff.Value,
                         OwnerPlayerId    = ownerPlayerId,
-                        TargetEffectType = EffectType.Damage,
+                        TargetEffectType = EffectType.Damage,  // Pierce 不受护甲，不注册
+                        Scope            = ModifierScope.IncomingDamage,
                     });
                     buff.RegisteredModifierIds.Add(mid);
-                    ctx.RoundLog.Add($"[BuffManager] 注册护甲修正器 {mid}，-{buff.Value} 入伤。");
+                    ctx.RoundLog.Add($"[BuffManager] 注册护甲修正器（仅 Damage），-{buff.Value} 入伤。");
                     break;
                 }
 
                 case BuffType.Vulnerable:
                 {
-                    // 易伤：受伤时伤害乘以 (100 + Value)/100，buff.Value = 额外%（如 50 = +50%）
-                    string mid = ctx.ValueModifierManager.AddModifier(new ValueModifier
+                    // 易伤：受伤时伤害 × (100+Value)/100，覆盖 Damage 和 Pierce
+                    foreach (var et in new[] { EffectType.Damage, EffectType.Pierce })
                     {
-                        Type             = ModifierType.Mul,
-                        Value            = 100 + buff.Value,  // 如 Value=50 → 150% 伤害
-                        OwnerPlayerId    = ownerPlayerId,
-                        TargetEffectType = EffectType.Damage,
-                    });
-                    buff.RegisteredModifierIds.Add(mid);
-                    ctx.RoundLog.Add($"[BuffManager] 注册易伤修正器 {mid}，+{buff.Value}% 入伤。");
+                        string mid = ctx.ValueModifierManager.AddModifier(new ValueModifier
+                        {
+                            Type             = ModifierType.Mul,
+                            Value            = 100 + buff.Value,
+                            OwnerPlayerId    = ownerPlayerId,
+                            TargetEffectType = et,
+                            Scope            = ModifierScope.IncomingDamage,
+                        });
+                        buff.RegisteredModifierIds.Add(mid);
+                    }
+                    ctx.RoundLog.Add($"[BuffManager] 注册易伤修正器（Damage+Pierce），+{buff.Value}% 入伤。");
                     break;
                 }
 
                 case BuffType.Weak:
                 {
-                    // 虚弱：出伤乘以 (100 - Value)/100，buff.Value = 减少%（如 25 = -25%）
-                    string mid = ctx.ValueModifierManager.AddModifier(new ValueModifier
+                    // 虚弱：出伤 × (100-Value)/100，覆盖 Damage 和 Pierce
+                    foreach (var et in new[] { EffectType.Damage, EffectType.Pierce })
                     {
-                        Type             = ModifierType.Mul,
-                        Value            = 100 - buff.Value,  // 如 Value=25 → 75% 出伤
-                        OwnerPlayerId    = ownerPlayerId,
-                        TargetEffectType = EffectType.Damage,
-                    });
-                    buff.RegisteredModifierIds.Add(mid);
-                    ctx.RoundLog.Add($"[BuffManager] 注册虚弱修正器 {mid}，-{buff.Value}% 出伤。");
+                        string mid = ctx.ValueModifierManager.AddModifier(new ValueModifier
+                        {
+                            Type             = ModifierType.Mul,
+                            Value            = 100 - buff.Value,
+                            OwnerPlayerId    = ownerPlayerId,
+                            TargetEffectType = et,
+                            Scope            = ModifierScope.OutgoingDamage,
+                        });
+                        buff.RegisteredModifierIds.Add(mid);
+                    }
+                    ctx.RoundLog.Add($"[BuffManager] 注册虚弱修正器（Damage+Pierce），-{buff.Value}% 出伤。");
                     break;
                 }
 

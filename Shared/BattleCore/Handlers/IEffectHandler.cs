@@ -31,6 +31,7 @@ namespace CardMoba.BattleCore.Handlers
             EffectUnit effect,
             Entity source,
             List<Entity> targets,
-            List<EffectResult> priorResults);
+            List<EffectResult> priorResults,
+            TriggerContext? triggerContext);
     }
 }

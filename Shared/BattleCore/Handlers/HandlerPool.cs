@@ -83,7 +83,8 @@ namespace CardMoba.BattleCore.Handlers
             EffectUnit effect,
             Entity source,
             List<Entity> targets,
-            List<EffectResult> priorResults)
+            List<EffectResult> priorResults,
+            TriggerContext? triggerContext = null)
         {
             if (!_handlers.TryGetValue(effect.Type, out var handler))
             {
@@ -94,7 +95,7 @@ namespace CardMoba.BattleCore.Handlers
             // ── 前置 1：效果级条件检查 ───────────────────────────
             if (effect.Conditions != null && effect.Conditions.Count > 0)
             {
-                bool passed = _conditionChecker.Check(effect.Conditions, ctx, source);
+                bool passed = _conditionChecker.Check(effect.Conditions, ctx, source, triggerContext);
                 effect.ConditionPassed = passed;
                 if (!passed)
                 {
@@ -104,9 +105,14 @@ namespace CardMoba.BattleCore.Handlers
             }
 
             // ── 前置 2：动态数值解析 ─────────────────────────────
-            effect.ResolvedValue = _dynParamResolver.Resolve(effect.ValueExpression, ctx, source, priorResults);
+            effect.ResolvedValue = _dynParamResolver.Resolve(
+                effect.ValueExpression,
+                ctx,
+                source,
+                priorResults,
+                triggerContext);
 
-            return handler.Execute(ctx, effect, source, targets, priorResults);
+            return handler.Execute(ctx, effect, source, targets, priorResults, triggerContext);
         }
     }
 }

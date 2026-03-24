@@ -27,7 +27,7 @@ namespace CardMoba.BattleCore.Context
         public string? SourceTriggerId { get; set; }
 
         /// <summary>触发上下文数据（来自触发时机的附带数据，供条件检查和参数解析使用）</summary>
-        public Dictionary<string, object> TriggerContext { get; set; } = new Dictionary<string, object>();
+        public TriggerContext? TriggerContext { get; set; }
     }
 
     /// <summary>

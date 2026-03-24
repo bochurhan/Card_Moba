@@ -49,6 +49,16 @@ namespace CardMoba.BattleCore.Context
             return player;
         }
 
+        public PlayerData? GetPlayerByEntityId(string entityId)
+        {
+            foreach (var player in _players.Values)
+            {
+                if (player.HeroEntity?.EntityId == entityId)
+                    return player;
+            }
+            return null;
+        }
+
         /// <summary>所有玩家数据（只读视图，遍历用）</summary>
         public IReadOnlyDictionary<string, PlayerData> AllPlayers => _players;
 

@@ -128,6 +128,12 @@ namespace CardMoba.BattleCore.Managers
         Set = 2,
     }
 
+    public enum ModifierScope
+    {
+        OutgoingDamage = 0,
+        IncomingDamage = 1,
+    }
+
     /// <summary>数值修正器</summary>
     public class ValueModifier
     {
@@ -141,6 +147,8 @@ namespace CardMoba.BattleCore.Managers
         public string OwnerPlayerId { get; set; } = string.Empty;
         /// <summary>作用的效果类型（如 EffectType.Damage）</summary>
         public EffectType TargetEffectType { get; set; }
+        /// <summary>淇鐢熸晥鐨勬柟鍚戯紙鍑轰激鎴栧叆浼わ級</summary>
+        public ModifierScope Scope { get; set; }
     }
 
     /// <summary>
@@ -163,6 +171,6 @@ namespace CardMoba.BattleCore.Managers
         /// <param name="ownerPlayerId">施法者玩家 ID（筛选归属玩家）</param>
         /// <param name="baseValue">基础数值</param>
         /// <returns>修正后的最终数值</returns>
-        int Apply(EffectType effectType, string ownerPlayerId, int baseValue);
+        int Apply(EffectType effectType, string ownerPlayerId, ModifierScope scope, int baseValue);
     }
 }

@@ -32,6 +32,10 @@ namespace CardMoba.BattleCore.Resolvers
             new Regex(@"^(self|opponent)\.([\w]+)\s*(==|!=|<=|>=|<|>)\s*(-?\d+)(%?)$",
                 RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+        private static readonly Regex _triggerContextPattern =
+            new Regex(@"^trigCtx\.(value|round|extra\.[\w]+)\s*(==|!=|<=|>=|<|>)\s*(-?\d+)$",
+                RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
         // ══════════════════════════════════════════════════════════
         // 主入口
         // ══════════════════════════════════════════════════════════
@@ -44,14 +48,14 @@ namespace CardMoba.BattleCore.Resolvers
         /// <param name="ctx">战斗上下文</param>
         /// <param name="source">施法者实体</param>
         /// <returns>全部条件满足时返回 true</returns>
-        public bool Check(List<string> conditions, BattleContext ctx, Entity source)
+        public bool Check(List<string> conditions, BattleContext ctx, Entity source, TriggerContext? triggerContext = null)
         {
             if (conditions == null || conditions.Count == 0)
                 return true;
 
             foreach (var condition in conditions)
             {
-                if (!CheckSingle(condition, ctx, source))
+                if (!CheckSingle(condition, ctx, source, triggerContext))
                 {
                     ctx.RoundLog.Add($"[ConditionChecker] 条件未满足：'{condition}'，效果跳过。");
                     return false;
@@ -64,7 +68,7 @@ namespace CardMoba.BattleCore.Resolvers
         // 单条件解析
         // ══════════════════════════════════════════════════════════
 
-        private bool CheckSingle(string condition, BattleContext ctx, Entity source)
+        private bool CheckSingle(string condition, BattleContext ctx, Entity source, TriggerContext? triggerContext)
         {
             if (string.IsNullOrWhiteSpace(condition)) return true;
 
@@ -97,6 +101,22 @@ namespace CardMoba.BattleCore.Resolvers
             }
 
             // ── 通用比较语法：entity.field op value ───────────────
+
+            var triggerMatch = _triggerContextPattern.Match(condition);
+            if (triggerMatch.Success)
+            {
+                string trigField = triggerMatch.Groups[1].Value;
+                string trigOp    = triggerMatch.Groups[2].Value;
+                int trigRhsVal   = int.Parse(triggerMatch.Groups[3].Value);
+
+                if (!TryGetTriggerContextValue(triggerContext, trigField, out int trigLhsVal))
+                {
+                    ctx.RoundLog.Add($"[ConditionChecker] 鈿狅笍 鏃犳硶璇诲彇 trigCtx.{trigField}锛屾潯浠惰涓轰笉婊¤冻銆?");
+                    return false;
+                }
+
+                return Compare(trigLhsVal, trigOp, trigRhsVal);
+            }
 
             var match = _comparePattern.Match(condition);
             if (!match.Success)
@@ -159,6 +179,47 @@ namespace CardMoba.BattleCore.Resolvers
         }
 
         /// <summary>执行比较运算</summary>
+        private bool TryGetTriggerContextValue(TriggerContext? triggerContext, string field, out int value)
+        {
+            value = 0;
+            if (triggerContext == null)
+                return false;
+
+            if (field.Equals("value", StringComparison.OrdinalIgnoreCase))
+            {
+                value = triggerContext.Value;
+                return true;
+            }
+
+            if (field.Equals("round", StringComparison.OrdinalIgnoreCase))
+            {
+                value = triggerContext.Round;
+                return true;
+            }
+
+            const string extraPrefix = "extra.";
+            if (field.StartsWith(extraPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                string extraKey = field.Substring(extraPrefix.Length);
+                if (triggerContext.Extra.TryGetValue(extraKey, out var rawValue))
+                {
+                    if (rawValue is int intValue)
+                    {
+                        value = intValue;
+                        return true;
+                    }
+
+                    if (int.TryParse(rawValue?.ToString(), out int parsed))
+                    {
+                        value = parsed;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
         private bool Compare(int lhs, string op, int rhs)
         {
             switch (op)

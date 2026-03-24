@@ -37,11 +37,14 @@ namespace CardMoba.BattleCore.Managers
         }
 
         /// <inheritdoc/>
-        public int Apply(EffectType effectType, string ownerPlayerId, int baseValue)
+        public int Apply(EffectType effectType, string ownerPlayerId, ModifierScope scope, int baseValue)
         {
             // 筛选适用的修正器
             var applicable = _modifiers
-                .Where(m => m.TargetEffectType == effectType && m.OwnerPlayerId == ownerPlayerId)
+                .Where(m =>
+                    m.TargetEffectType == effectType &&
+                    m.OwnerPlayerId == ownerPlayerId &&
+                    m.Scope == scope)
                 .ToList();
 
             int value = baseValue;

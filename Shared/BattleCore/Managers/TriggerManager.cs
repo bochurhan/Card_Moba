@@ -95,7 +95,7 @@ namespace CardMoba.BattleCore.Managers
                     if (ownerData == null) continue;
                     var ownerEntity = ownerData.HeroEntity;
 
-                    if (!_conditionChecker.Check(trigger.Conditions, ctx, ownerEntity))
+                    if (!_conditionChecker.Check(trigger.Conditions, ctx, ownerEntity, triggerCtx))
                         continue;
                 }
 
@@ -107,9 +107,11 @@ namespace CardMoba.BattleCore.Managers
                 else
                 {
                     // ── 分支 B：将 EffectUnit 推入 PendingQueue（常规卡牌触发器）──
+                    // 修复：携带 triggerCtx 至 PendingEffectEntry，供条件检查和参数解析使用
                     var ownerPlayer = ctx.GetPlayer(trigger.OwnerPlayerId);
                     string sourceEntityId = ownerPlayer?.HeroEntity.EntityId ?? trigger.OwnerPlayerId;
 
+                    // 将 TriggerContext 序列化为 Dictionary<string, object>
                     foreach (var effectUnit in trigger.Effects)
                     {
                         ctx.PendingQueue.Enqueue(new PendingEffectEntry
@@ -117,6 +119,7 @@ namespace CardMoba.BattleCore.Managers
                             Effect           = effectUnit,
                             SourceEntityId   = sourceEntityId,
                             SourceTriggerId  = trigger.TriggerId,
+                            TriggerContext   = CloneTriggerContext(triggerCtx),
                         });
                     }
                 }
@@ -154,6 +157,18 @@ namespace CardMoba.BattleCore.Managers
                     }
                 }
             }
+        }
+
+        private static TriggerContext CloneTriggerContext(TriggerContext triggerContext)
+        {
+            return new TriggerContext
+            {
+                SourceEntityId = triggerContext.SourceEntityId,
+                TargetEntityId = triggerContext.TargetEntityId,
+                Value          = triggerContext.Value,
+                Round          = triggerContext.Round,
+                Extra          = new Dictionary<string, object>(triggerContext.Extra),
+            };
         }
     }
 }

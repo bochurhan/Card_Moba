@@ -36,7 +36,7 @@ namespace CardMoba.BattleCore.Foundation
         /// <summary>归属玩家 ID（与 OwnerEntityId 通常一致，玩家单位时相同）</summary>
         public string OwnerPlayerId { get; set; } = string.Empty;
 
-        /// <summary>施加来源玩家 ID（造成此 Buff 的玩家，可能与 OwnerPlayerId 不同）</summary>
+        /// <summary>遗留命名。当前运行时存的是施加来源实体 ID，用于 DoT/反伤等归因。</summary>
         public string SourcePlayerId { get; set; } = string.Empty;
 
         // ══════════════════════════════════════════════════════════
