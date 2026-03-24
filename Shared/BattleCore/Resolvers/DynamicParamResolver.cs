@@ -1,4 +1,4 @@
-#pragma warning disable CS8632
+﻿#pragma warning disable CS8632
 
 using System;
 using System.Collections.Generic;
@@ -41,6 +41,9 @@ namespace CardMoba.BattleCore.Resolvers
         private static readonly Regex _entityFieldPattern =
             new Regex(@"(self|opponent)\.(\w+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+        private static readonly Regex _triggerContextFieldPattern =
+            new Regex(@"trigCtx\.(value|round|extra\.\w+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
         // ══════════════════════════════════════════════════════════
         // 主入口
         // ══════════════════════════════════════════════════════════
@@ -57,7 +60,8 @@ namespace CardMoba.BattleCore.Resolvers
             string expression,
             BattleContext ctx,
             Entity source,
-            List<EffectResult> priorResults)
+            List<EffectResult> priorResults,
+            TriggerContext? triggerContext = null)
         {
             if (string.IsNullOrWhiteSpace(expression))
                 return 0;
@@ -79,7 +83,7 @@ namespace CardMoba.BattleCore.Resolvers
             try
             {
                 // 先展开所有引用占位符，再对纯数字算术表达式求值
-                string expanded = ExpandReferences(innerExpr, ctx, source, priorResults);
+                string expanded = ExpandReferences(innerExpr, ctx, source, priorResults, triggerContext);
                 return EvaluateArithmetic(expanded, ctx);
             }
             catch (Exception ex)
@@ -100,7 +104,8 @@ namespace CardMoba.BattleCore.Resolvers
             string expr,
             BattleContext ctx,
             Entity source,
-            List<EffectResult> priorResults)
+            List<EffectResult> priorResults,
+            TriggerContext? triggerContext)
         {
             // 1. 展开 preEffect[effectId].field
             expr = _preEffectPattern.Replace(expr, m =>
@@ -136,6 +141,12 @@ namespace CardMoba.BattleCore.Resolvers
             });
 
             // 2. 展开 self.field 和 opponent.field
+            expr = _triggerContextFieldPattern.Replace(expr, m =>
+            {
+                string field = m.Groups[1].Value;
+                return GetTriggerContextValue(triggerContext, field, ctx);
+            });
+
             expr = _entityFieldPattern.Replace(expr, m =>
             {
                 string who   = m.Groups[1].Value.ToLowerInvariant();
@@ -347,6 +358,35 @@ namespace CardMoba.BattleCore.Resolvers
         // ══════════════════════════════════════════════════════════
 
         /// <summary>从 EffectResult.Extra 中读取自定义字段（返回整数）</summary>
+        private string GetTriggerContextValue(TriggerContext? triggerContext, string field, BattleContext ctx)
+        {
+            if (triggerContext == null)
+            {
+                ctx.RoundLog.Add($"[DynamicParamResolver] ⚠️ trigCtx '{field}' 不可用，替换为 0。");
+                return "0";
+            }
+
+            if (field.Equals("value", StringComparison.OrdinalIgnoreCase))
+                return triggerContext.Value.ToString();
+
+            if (field.Equals("round", StringComparison.OrdinalIgnoreCase))
+                return triggerContext.Round.ToString();
+
+            const string extraPrefix = "extra.";
+            if (field.StartsWith(extraPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                string extraKey = field.Substring(extraPrefix.Length);
+                if (triggerContext.Extra.TryGetValue(extraKey, out var extraValue))
+                {
+                    if (extraValue is int intValue) return intValue.ToString();
+                    if (int.TryParse(extraValue?.ToString(), out int parsed)) return parsed.ToString();
+                }
+            }
+
+            ctx.RoundLog.Add($"[DynamicParamResolver] ⚠️ trigCtx '{field}' 不可解析为数値，替换为 0。");
+            return "0";
+        }
+
         private string GetExtraValue(EffectResult result, string field, BattleContext ctx)
         {
             if (result.Extra.TryGetValue(field, out var obj))
