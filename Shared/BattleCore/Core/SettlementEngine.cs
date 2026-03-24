@@ -98,7 +98,7 @@ namespace CardMoba.BattleCore.Core
             foreach (var effect in effects)
             {
                 var targets = _targetResolver.Resolve(ctx, effect.TargetType, source);
-                var result  = _handlerPool.Execute(ctx, effect, source, targets, priorResults);
+                var result  = _handlerPool.Execute(ctx, effect, source, targets, priorResults, null);
                 priorResults.Add(result);
                 DrainPendingQueue(ctx);
             }
@@ -179,7 +179,7 @@ namespace CardMoba.BattleCore.Core
                 foreach (var effect in planCard.Effects.Where(e => e.Layer == SettleLayer.Counter))
                 {
                     var targets = _targetResolver.Resolve(ctx, effect.TargetType, source);
-                    _handlerPool.Execute(ctx, effect, source, targets, new List<EffectResult>());
+                    _handlerPool.Execute(ctx, effect, source, targets, new List<EffectResult>(), null);
                 }
             }
         }
@@ -202,10 +202,10 @@ namespace CardMoba.BattleCore.Core
                 var priorResults = new List<EffectResult>();
                 foreach (var effect in planCard.Effects.Where(e => e.Layer == SettleLayer.Damage))
                 {
-                    // 伤害效果的目标实时状态（己方已被前面的牌修改），
-                    // 但对方防御以 DefenseSnapshot 为基准（由 TargetResolver 内部处理）
+                    // 伤害效果的目标实时状态（己方已被前面的牌修改）。
+                    // 对方防御以 DefenseSnapshot 为基准，由 DamageHandler 内部读取快照值（见 CoreHandlers.cs）。
                     var targets = _targetResolver.Resolve(ctx, effect.TargetType, source);
-                    var result  = _handlerPool.Execute(ctx, effect, source, targets, priorResults);
+                    var result  = _handlerPool.Execute(ctx, effect, source, targets, priorResults, null);
                     priorResults.Add(result);
                 }
 
@@ -233,7 +233,7 @@ namespace CardMoba.BattleCore.Core
                 foreach (var effect in planCard.Effects.Where(e => e.Layer == layer))
                 {
                     var targets = _targetResolver.Resolve(ctx, effect.TargetType, source);
-                    var result  = _handlerPool.Execute(ctx, effect, source, targets, priorResults);
+                    var result  = _handlerPool.Execute(ctx, effect, source, targets, priorResults, null);
                     priorResults.Add(result);
                 }
             }
@@ -283,17 +283,8 @@ namespace CardMoba.BattleCore.Core
                 var entry = ctx.PendingQueue.Dequeue();
                 if (entry == null) break;
 
-                var playerData = ctx.GetPlayer(entry.SourceEntityId);
+                Entity? source = ctx.GetEntity(entry.SourceEntityId);
                 // 尝试直接按 EntityId 找 Entity（兼容非玩家实体）
-                Entity? source = null;
-                foreach (var kv in ctx.AllPlayers)
-                {
-                    if (kv.Value.HeroEntity.EntityId == entry.SourceEntityId)
-                    {
-                        source = kv.Value.HeroEntity;
-                        break;
-                    }
-                }
 
                 if (source == null)
                 {
@@ -311,7 +302,13 @@ namespace CardMoba.BattleCore.Core
                     targets = _targetResolver.Resolve(ctx, entry.Effect.TargetType, source);
                 }
 
-                _handlerPool.Execute(ctx, entry.Effect, source, targets, new List<EffectResult>());
+                _handlerPool.Execute(
+                    ctx,
+                    entry.Effect,
+                    source,
+                    targets,
+                    new List<EffectResult>(),
+                    entry.TriggerContext);
             }
 
             if (count >= safetyLimit)

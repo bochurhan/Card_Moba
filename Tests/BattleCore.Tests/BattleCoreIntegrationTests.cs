@@ -6,7 +6,9 @@ using System;
 using System.Collections.Generic;
 using Xunit;
 using FluentAssertions;
+using CardMoba.BattleCore.Buff;
 using CardMoba.BattleCore.Core;
+using CardMoba.BattleCore.EventBus;
 using CardMoba.BattleCore.Foundation;
 using CardMoba.Protocol.Enums;
 
@@ -32,9 +34,15 @@ namespace CardMoba.Tests
         // 辅助方法：创建标准 2v1 测试战斗（P1 vs P2，各 30 HP）
         // ──────────────────────────────────────────────────────────────────
 
-        private static BattleCreateResult CreateTestBattle(int seed = 42)
+        private static BattleCreateResult CreateTestBattle(
+            int seed = 42,
+            Func<string, BuffConfig?>? buffConfigProvider = null,
+            IEventBus? eventBus = null)
         {
-            var factory = new BattleFactory();
+            var factory = new BattleFactory
+            {
+                BuffConfigProvider = buffConfigProvider,
+            };
             // BuffConfigProvider 留 null（测试中不使用 Buff）
 
             var players = new List<PlayerSetupData>
@@ -57,7 +65,7 @@ namespace CardMoba.Tests
                 },
             };
 
-            return factory.CreateBattle("test-battle", seed, players);
+            return factory.CreateBattle("test-battle", seed, players, eventBus);
         }
 
         /// <summary>构造一张 "固定数值" 伤害效果（字面量）</summary>
@@ -68,6 +76,26 @@ namespace CardMoba.Tests
                 Type            = EffectType.Damage,
                 TargetType      = targetType,
                 ValueExpression = value.ToString(),
+                Layer           = SettleLayer.Damage,
+            };
+
+        private static EffectUnit MakePierceEffect(int value, string targetType = "Enemy")
+            => new EffectUnit
+            {
+                EffectId        = $"pierce_{value}",
+                Type            = EffectType.Pierce,
+                TargetType      = targetType,
+                ValueExpression = value.ToString(),
+                Layer           = SettleLayer.Damage,
+            };
+
+        private static EffectUnit MakeLifestealEffect(int percent)
+            => new EffectUnit
+            {
+                EffectId        = $"lifesteal_{percent}",
+                Type            = EffectType.Lifesteal,
+                TargetType      = "Self",
+                ValueExpression = percent.ToString(),
                 Layer           = SettleLayer.Damage,
             };
 
@@ -92,6 +120,49 @@ namespace CardMoba.Tests
                 ValueExpression = value.ToString(),
                 Layer           = SettleLayer.Defense,
             };
+
+        /// <summary>
+        /// 向指定玩家手牌区直接注入一张虚拟 BattleCard（用于测试定策牌提交时的合法性校验）。
+        /// 返回注入的 BattleCard，供 CommittedPlanCard.CardInstanceId 使用。
+        /// </summary>
+        private static BattleCard GiveHandCard(
+            CardMoba.BattleCore.Context.BattleContext ctx,
+            string playerId,
+            string instanceId,
+            string configId = "test_card")
+        {
+            var player = ctx.GetPlayer(playerId);
+            var card = new BattleCard
+            {
+                InstanceId = instanceId,
+                ConfigId   = configId,
+                OwnerId    = playerId,
+                Zone       = CardZone.Hand,
+            };
+            player.AllCards.Add(card);
+            return card;
+        }
+
+        private static BuffConfig MakeBuffConfig(string buffId, BuffType buffType, int defaultValue)
+            => new BuffConfig
+            {
+                BuffId          = buffId,
+                BuffName        = buffId,
+                BuffType        = buffType,
+                DefaultValue    = defaultValue,
+                DefaultDuration = 0,
+                StackRule       = BuffStackRule.RefreshDuration,
+                MaxStacks       = 99,
+            };
+
+        private static Func<string, BuffConfig?> MakeBuffProvider(params BuffConfig[] configs)
+        {
+            var map = new Dictionary<string, BuffConfig>(StringComparer.OrdinalIgnoreCase);
+            foreach (var config in configs)
+                map[config.BuffId] = config;
+
+            return buffId => map.TryGetValue(buffId, out var config) ? config : null;
+        }
 
         // ══════════════════════════════════════════════════════════════════
         // T-01：战斗工厂初始化
@@ -196,7 +267,9 @@ namespace CardMoba.Tests
             var (ctx, rm) = (result.Context, result.RoundManager);
             rm.BeginRound(ctx);
 
-            // Act：双方各提交一张 10 点伤害定策牌
+            // Act：双方各提交一张 10 点伤害定策牌（先注入手牌以通过合法性校验）
+            GiveHandCard(ctx, "P1", "plan_P1");
+            GiveHandCard(ctx, "P2", "plan_P2");
             rm.CommitPlanCard(ctx, new CommittedPlanCard
             {
                 PlayerId       = "P1",
@@ -293,7 +366,8 @@ namespace CardMoba.Tests
 
                 rm.BeginRound(ctx);
 
-                // P1 出伤害牌
+                // P1 出伤害牌（先注入手牌）
+                GiveHandCard(ctx, "P1", $"plan_r{round}");
                 rm.CommitPlanCard(ctx, new CommittedPlanCard
                 {
                     PlayerId       = "P1",
@@ -308,6 +382,292 @@ namespace CardMoba.Tests
             rm.IsBattleOver.Should().BeTrue("3 回合 × 11 伤害 > 30 HP，P2 应已死亡");
             rm.WinnerId.Should().Be("P1");
             ctx.AllPlayers["P2"].HeroEntity.IsAlive.Should().BeFalse();
+        }
+
+        [Fact]
+        public void T09_PlanDamageSnapshot_ConsumesShieldAcrossMultipleHits()
+        {
+            var result = CreateTestBattle();
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            rm.BeginRound(ctx);
+
+            ctx.AllPlayers["P2"].HeroEntity.Shield = 5;
+
+            GiveHandCard(ctx, "P1", "plan_double_hit");
+            rm.CommitPlanCard(ctx, new CommittedPlanCard
+            {
+                PlayerId       = "P1",
+                CardInstanceId = "plan_double_hit",
+                Effects        = new List<EffectUnit>
+                {
+                    MakeDamageEffect(3),
+                    MakeDamageEffect(4),
+                },
+            });
+
+            rm.EndRound(ctx);
+
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(28);
+        }
+
+        [Fact]
+        public void T10_AddBuff_OnHeroEntity_BindsOwnerPlayerIdToPlayer()
+        {
+            var provider = MakeBuffProvider(MakeBuffConfig("strength", BuffType.Strength, 0));
+            var result = CreateTestBattle(buffConfigProvider: provider);
+            var ctx = result.Context;
+
+            var targetEntityId = ctx.AllPlayers["P1"].HeroEntity.EntityId;
+            var sourceEntityId = ctx.AllPlayers["P2"].HeroEntity.EntityId;
+
+            var buff = ctx.BuffManager.AddBuff(ctx, targetEntityId, "strength", sourceEntityId, value: 3, duration: 1);
+
+            buff.Should().NotBeNull();
+            buff.OwnerPlayerId.Should().Be("P1");
+        }
+
+        [Fact]
+        public void T11_Strength_ModifiesOutgoingDamage_Only()
+        {
+            var provider = MakeBuffProvider(MakeBuffConfig("strength", BuffType.Strength, 0));
+            var result = CreateTestBattle(buffConfigProvider: provider);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            rm.BeginRound(ctx);
+
+            var heroP1 = ctx.AllPlayers["P1"].HeroEntity.EntityId;
+            var heroP2 = ctx.AllPlayers["P2"].HeroEntity.EntityId;
+
+            ctx.BuffManager.AddBuff(ctx, heroP1, "strength", heroP1, value: 2, duration: 1);
+            ctx.BuffManager.AddBuff(ctx, heroP2, "strength", heroP2, value: 7, duration: 1);
+
+            rm.PlayInstantCard(ctx, "P1", "card_strength_damage", new List<EffectUnit> { MakeDamageEffect(5) });
+
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(23);
+        }
+
+        [Fact]
+        public void T12_Armor_ReducesDamage_ButNotPierce()
+        {
+            var provider = MakeBuffProvider(MakeBuffConfig("armor", BuffType.Armor, 0));
+            var result = CreateTestBattle(buffConfigProvider: provider);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            rm.BeginRound(ctx);
+
+            var heroP1 = ctx.AllPlayers["P1"].HeroEntity.EntityId;
+            var heroP2 = ctx.AllPlayers["P2"].HeroEntity.EntityId;
+            ctx.BuffManager.AddBuff(ctx, heroP2, "armor", heroP1, value: 3, duration: 1);
+
+            rm.PlayInstantCard(ctx, "P1", "card_damage_armor", new List<EffectUnit> { MakeDamageEffect(5) });
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(28);
+
+            rm.PlayInstantCard(ctx, "P1", "card_pierce_armor", new List<EffectUnit> { MakePierceEffect(5) });
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(23);
+        }
+
+        [Fact]
+        public void T13_Vulnerable_AmplifiesDamage_AndPierce()
+        {
+            var provider = MakeBuffProvider(MakeBuffConfig("vulnerable", BuffType.Vulnerable, 0));
+            var result = CreateTestBattle(buffConfigProvider: provider);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            rm.BeginRound(ctx);
+
+            var heroP1 = ctx.AllPlayers["P1"].HeroEntity.EntityId;
+            var heroP2 = ctx.AllPlayers["P2"].HeroEntity.EntityId;
+            ctx.BuffManager.AddBuff(ctx, heroP2, "vulnerable", heroP1, value: 50, duration: 1);
+
+            rm.PlayInstantCard(ctx, "P1", "card_damage_vulnerable", new List<EffectUnit> { MakeDamageEffect(4) });
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(24);
+
+            rm.PlayInstantCard(ctx, "P1", "card_pierce_vulnerable", new List<EffectUnit> { MakePierceEffect(4) });
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(18);
+        }
+
+        [Fact]
+        public void T14_QueuedTriggerEffect_CanReadTrigCtxValue()
+        {
+            var result = CreateTestBattle();
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            rm.BeginRound(ctx);
+
+            ctx.TriggerManager.Register(new TriggerUnit
+            {
+                TriggerName   = "copy_damage_to_shield",
+                Timing        = TriggerTiming.AfterDealDamage,
+                OwnerPlayerId = "P1",
+                SourceId      = "test_copy_damage_to_shield",
+                Effects       = new List<EffectUnit>
+                {
+                    new EffectUnit
+                    {
+                        EffectId        = "queued_shield_from_damage",
+                        Type            = EffectType.Shield,
+                        TargetType      = "Self",
+                        ValueExpression = "{{trigCtx.value}}",
+                        Layer           = SettleLayer.BuffSpecial,
+                    },
+                },
+            });
+
+            rm.PlayInstantCard(ctx, "P1", "card_trigger_value", new List<EffectUnit> { MakeDamageEffect(4) });
+
+            ctx.AllPlayers["P1"].HeroEntity.Shield.Should().Be(4);
+        }
+
+        [Fact]
+        public void T15_QueuedTriggerEffect_Condition_CanReadTrigCtxValue()
+        {
+            var result = CreateTestBattle();
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            rm.BeginRound(ctx);
+
+            ctx.AllPlayers["P1"].HeroEntity.Hp = 20;
+
+            ctx.TriggerManager.Register(new TriggerUnit
+            {
+                TriggerName   = "heal_when_damage_positive",
+                Timing        = TriggerTiming.AfterDealDamage,
+                OwnerPlayerId = "P1",
+                SourceId      = "test_heal_when_damage_positive",
+                Effects       = new List<EffectUnit>
+                {
+                    new EffectUnit
+                    {
+                        EffectId        = "queued_heal_when_damage_positive",
+                        Type            = EffectType.Heal,
+                        TargetType      = "Self",
+                        ValueExpression = "3",
+                        Layer           = SettleLayer.BuffSpecial,
+                        Conditions      = new List<string> { "trigCtx.value > 0" },
+                    },
+                },
+            });
+
+            rm.PlayInstantCard(ctx, "P1", "card_trigger_condition", new List<EffectUnit> { MakeDamageEffect(5) });
+
+            ctx.AllPlayers["P1"].HeroEntity.Hp.Should().Be(23);
+        }
+
+        [Fact]
+        public void T16_QueuedTriggerEffect_CanReadTrigCtxExtraNumeric()
+        {
+            var result = CreateTestBattle();
+            var ctx = result.Context;
+            var settlement = new SettlementEngine();
+
+            ctx.TriggerManager.Register(new TriggerUnit
+            {
+                TriggerName   = "shield_from_trigger_extra",
+                Timing        = TriggerTiming.OnRoundStart,
+                OwnerPlayerId = "P1",
+                SourceId      = "test_trigger_extra",
+                Effects       = new List<EffectUnit>
+                {
+                    new EffectUnit
+                    {
+                        EffectId        = "queued_shield_from_extra",
+                        Type            = EffectType.Shield,
+                        TargetType      = "Self",
+                        ValueExpression = "{{trigCtx.extra.bonus}}",
+                        Layer           = SettleLayer.BuffSpecial,
+                    },
+                },
+            });
+
+            ctx.TriggerManager.Fire(ctx, TriggerTiming.OnRoundStart, new TriggerContext
+            {
+                Round = 1,
+                Extra = new Dictionary<string, object> { ["bonus"] = 6 },
+            });
+            settlement.DrainPendingQueue(ctx);
+
+            ctx.AllPlayers["P1"].HeroEntity.Shield.Should().Be(6);
+        }
+
+        [Fact]
+        public void T17_OnDeath_TriggerContext_UsesHeroEntityId()
+        {
+            var result = CreateTestBattle();
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            rm.BeginRound(ctx);
+
+            string seenSourceEntityId = string.Empty;
+            var expectedDeadEntityId = ctx.AllPlayers["P2"].HeroEntity.EntityId;
+
+            ctx.TriggerManager.Register(new TriggerUnit
+            {
+                TriggerName   = "capture_on_death_payload",
+                Timing        = TriggerTiming.OnDeath,
+                OwnerPlayerId = "P2",
+                SourceId      = "test_capture_on_death_payload",
+                InlineExecute = (_, trigCtx) => seenSourceEntityId = trigCtx.SourceEntityId,
+            });
+
+            rm.PlayInstantCard(ctx, "P1", "card_death_payload", new List<EffectUnit> { MakeDamageEffect(30) });
+
+            seenSourceEntityId.Should().Be(expectedDeadEntityId);
+        }
+
+        [Fact]
+        public void T18_ShieldBroken_DamageDealtEvent_IsPublishedOnce()
+        {
+            var bus = new BattleEventBus();
+            var damageEvents = new List<DamageDealtEvent>();
+            bus.Subscribe<DamageDealtEvent>(evt => damageEvents.Add(evt));
+
+            var result = CreateTestBattle(eventBus: bus);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            rm.BeginRound(ctx);
+
+            ctx.AllPlayers["P2"].HeroEntity.Shield = 5;
+
+            rm.PlayInstantCard(ctx, "P1", "card_break_shield", new List<EffectUnit> { MakeDamageEffect(8) });
+
+            damageEvents.Should().HaveCount(1, "破盾时 DamageDealtEvent 应只广播一次");
+            damageEvents[0].ShieldBroken.Should().BeTrue();
+            damageEvents[0].ShieldAbsorbed.Should().Be(5);
+            damageEvents[0].RealHpDamage.Should().Be(3);
+            damageEvents[0].SourceEntityId.Should().Be(ctx.AllPlayers["P1"].HeroEntity.EntityId);
+            damageEvents[0].TargetEntityId.Should().Be(ctx.AllPlayers["P2"].HeroEntity.EntityId);
+        }
+
+        [Fact]
+        public void T19_Lifesteal_FiresOnHealed_AndExecutesQueuedFollowUpEffect()
+        {
+            var result = CreateTestBattle();
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            rm.BeginRound(ctx);
+
+            ctx.AllPlayers["P1"].HeroEntity.Hp = 20;
+
+            ctx.TriggerManager.Register(new TriggerUnit
+            {
+                TriggerName   = "gain_shield_on_healed",
+                Timing        = TriggerTiming.OnHealed,
+                OwnerPlayerId = "P1",
+                SourceId      = "test_gain_shield_on_healed",
+                Effects       = new List<EffectUnit>
+                {
+                    new EffectUnit
+                    {
+                        EffectId        = "shield_from_lifesteal_heal",
+                        Type            = EffectType.Shield,
+                        TargetType      = "Self",
+                        ValueExpression = "2",
+                        Layer           = SettleLayer.BuffSpecial,
+                    },
+                },
+            });
+
+            rm.PlayInstantCard(ctx, "P1", "card_damage_lifesteal", new List<EffectUnit>
+            {
+                MakeDamageEffect(10),
+                MakeLifestealEffect(50),
+            });
+
+            ctx.AllPlayers["P1"].HeroEntity.Hp.Should().Be(25, "10 点伤害的 50% 吸血应回复 5 点生命");
+            ctx.AllPlayers["P1"].HeroEntity.Shield.Should().Be(2, "吸血触发的 OnHealed 应继续驱动后续 queued effect");
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(20);
         }
     }
 }

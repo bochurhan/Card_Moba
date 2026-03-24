@@ -75,6 +75,10 @@ namespace CardMoba.BattleCore.Core
             CurrentRound++;
             _pendingPlanCards.Clear();
 
+            // 同步到 BattleContext（供 ConditionChecker / DynamicParamResolver 等读取）
+            ctx.CurrentRound = CurrentRound;
+            ctx.CurrentPhase = BattleContext.BattlePhase.RoundStart;
+
             ctx.RoundLog.Add($"[RoundManager] ══ 第 {CurrentRound} 回合开始 ══");
 
             // 发布回合开始事件
@@ -127,15 +131,25 @@ namespace CardMoba.BattleCore.Core
 
         /// <summary>
         /// 玩家提交一张定策牌（不立即结算，等待 EndRound 统一结算）。
+        /// 内部先通过 CardManager 校验卡牌合法性（必须在手牌区），校验失败则拒绝。
         /// </summary>
-        public void CommitPlanCard(BattleContext ctx, CommittedPlanCard planCard)
+        public bool CommitPlanCard(BattleContext ctx, CommittedPlanCard planCard)
         {
-            if (IsBattleOver) return;
+            if (IsBattleOver) return false;
+
+            // ── 强约束：校验卡牌合法性（Hand → StrategyZone）────────
+            bool valid = ctx.CardManager.CommitPlanCard(ctx, planCard.CardInstanceId);
+            if (!valid)
+            {
+                ctx.RoundLog.Add($"[RoundManager] ⚠️ 玩家 {planCard.PlayerId} 定策牌 {planCard.CardInstanceId} 校验失败，拒绝提交。");
+                return false;
+            }
 
             planCard.SubmitOrder = _pendingPlanCards.Count;
             _pendingPlanCards.Add(planCard);
 
             ctx.RoundLog.Add($"[RoundManager] 玩家 {planCard.PlayerId} 提交定策牌 {planCard.CardInstanceId}（顺序={planCard.SubmitOrder}）。");
+            return true;
         }
 
         // ══════════════════════════════════════════════════════════
@@ -150,6 +164,7 @@ namespace CardMoba.BattleCore.Core
             if (IsBattleOver) return;
 
             ctx.RoundLog.Add($"[RoundManager] ══ 第 {CurrentRound} 回合结算开始 ══");
+            ctx.CurrentPhase = BattleContext.BattlePhase.Settlement;
 
             // ── 定策五层结算 ─────────────────────────────────────
             if (_pendingPlanCards.Count > 0)
@@ -189,10 +204,14 @@ namespace CardMoba.BattleCore.Core
                 }
             }
 
+            // ── TriggerManager 回合衰减（非 Buff 托管的触发器 RemainingRounds 递减）──
+            ctx.TriggerManager.TickDecay(ctx);
+
             // ── 弃手牌（Hand + StrategyZone → Discard） ───────────
             ctx.CardManager.OnRoundEnd(ctx, CurrentRound);
 
             // ── 回合结束事件 ──────────────────────────────────────
+            ctx.CurrentPhase = BattleContext.BattlePhase.RoundEnd;
             ctx.EventBus.Publish(new RoundEndEvent { Round = CurrentRound });
             ctx.RoundLog.Add($"[RoundManager] ══ 第 {CurrentRound} 回合结束 ══");
         }
@@ -233,7 +252,8 @@ namespace CardMoba.BattleCore.Core
                     // OnNearDeath 触发（可能有复活效果）
                     ctx.TriggerManager.Fire(ctx, TriggerTiming.OnNearDeath, new TriggerContext
                     {
-                        SourceEntityId = deadId,
+                        SourceEntityId = ctx.AllPlayers[deadId].HeroEntity.EntityId,
+                        Extra          = new Dictionary<string, object> { ["playerId"] = deadId },
                     });
                     _settlement.DrainPendingQueue(ctx);
 
@@ -247,10 +267,18 @@ namespace CardMoba.BattleCore.Core
 
                     ctx.TriggerManager.Fire(ctx, TriggerTiming.OnDeath, new TriggerContext
                     {
-                        SourceEntityId = deadId,
+                        SourceEntityId = ctx.AllPlayers[deadId].HeroEntity.EntityId,
+                        Extra          = new Dictionary<string, object> { ["playerId"] = deadId },
                     });
                     _settlement.DrainPendingQueue(ctx);
 
+                    // 发布 EntityDeathEvent（供动画/统计等外部消费）
+                    var deadEntity = ctx.AllPlayers[deadId].HeroEntity;
+                    ctx.EventBus.Publish(new EntityDeathEvent
+                    {
+                        EntityId       = deadEntity.EntityId,
+                        KillerEntityId = string.Empty,   // 当前架构不追踪击杀者，留空
+                    });
                     ctx.EventBus.Publish(new PlayerDeathEvent { PlayerId = deadId });
                 }
             }
