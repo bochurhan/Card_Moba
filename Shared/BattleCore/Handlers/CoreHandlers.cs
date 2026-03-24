@@ -45,9 +45,12 @@ namespace CardMoba.BattleCore.Handlers
             bool isPierce = effect.Type == EffectType.Pierce;
 
             // 基础伤害值由 HandlerPool 预解析填入 effect.ResolvedValue（支持动态表达式）
-            int baseDamage    = effect.ResolvedValue;
-            // 应用力量/虚弱修正（ValueModifierManager）
-            int modifiedDamage = ctx.ValueModifierManager.Apply(effect.Type, source.EntityId, baseDamage);
+            int baseDamage = effect.ResolvedValue;
+
+            // ── 施害方出伤修正（力量 Add / 虚弱 Mul）────────────────
+            // 修复：传 source.OwnerPlayerId，与 BuffManager 注册修正器时使用的 ownerPlayerId 一致
+            int modifiedDamage = ctx.ValueModifierManager.Apply(
+                effect.Type, source.OwnerPlayerId, baseDamage);
 
             foreach (var target in targets)
             {
@@ -62,15 +65,33 @@ namespace CardMoba.BattleCore.Handlers
                 }
 
                 // ── Phase B：写入 ────────────────────────────────────
-                int remaining = modifiedDamage;
+                // 受击方入伤修正（护甲 Add 负值 / 易伤 Mul）
+                // 修复：单独以 target.OwnerPlayerId 查受击方修正，与施害方修正分开路由
+                int incomingDamage = ctx.ValueModifierManager.Apply(
+                    effect.Type, target.OwnerPlayerId, modifiedDamage);
+
+                int remaining = incomingDamage;
                 int shieldAbsorbed = 0;
                 int armorReduced = 0;
 
+                // ── 防御快照隔离：Layer 2 定策结算时读快照，其他场景（瞬策等）读实时值 ──
+                // 快照在 Pre-Layer 2 拍摄，代表"本轮定策开始前"的防御状态，
+                // 使双方各自的受伤计算不受对方出牌顺序影响。
+                // 修复：此前直接读 target.Shield/Armor（实时值），导致快照机制形同虚设。
+                var targetPlayer = ctx.GetPlayer(target.OwnerPlayerId);
+                var snapshot     = targetPlayer?.CurrentDefenseSnapshot;
+
+                // 快照护盾（用于计算吸收量），实际扣除仍写到 target.Shield（实时）
+                int snapshotShield = snapshot?.Shield ?? target.Shield;
+                int snapshotArmor  = snapshot?.Armor  ?? target.Armor;
+
                 // 护盾吸收（穿透伤害不跳过护盾，只跳过护甲）
-                if (target.Shield > 0)
+                if (snapshotShield > 0)
                 {
-                    shieldAbsorbed = remaining < target.Shield ? remaining : target.Shield;
+                    // 按快照值计算本次吸收量，再写入实时护盾
+                    shieldAbsorbed = remaining < snapshotShield ? remaining : snapshotShield;
                     target.Shield -= shieldAbsorbed;
+                    if (target.Shield < 0) target.Shield = 0;
                     remaining -= shieldAbsorbed;
 
                     bool shieldBroken = target.Shield == 0 && shieldAbsorbed > 0;
@@ -93,10 +114,12 @@ namespace CardMoba.BattleCore.Handlers
                 }
 
                 // 护甲减伤（穿透伤害跳过护甲）
-                if (!isPierce && target.Armor > 0 && remaining > 0)
+                // 使用快照护甲值做上限判断，实际扣除写实时 target.Armor
+                if (!isPierce && snapshotArmor > 0 && remaining > 0)
                 {
-                    armorReduced = remaining < target.Armor ? remaining : target.Armor;
+                    armorReduced = remaining < snapshotArmor ? remaining : snapshotArmor;
                     target.Armor -= armorReduced;
+                    if (target.Armor < 0) target.Armor = 0;
                     remaining -= armorReduced;
                 }
 
@@ -143,28 +166,13 @@ namespace CardMoba.BattleCore.Handlers
                     Value          = realHpDamage,
                 });
 
-                // 濒死/死亡检查
-                if (!target.IsAlive)
+                // 濒死标记：HP ≤ 0 时仅标记，不在此处触发 OnNearDeath/OnDeath。
+                // 死亡链路统一由 RoundManager.CheckDeathAndBattleOver 处理，
+                // 避免同一次击杀重复触发濒死/复活/OnDeath 及战斗结束判定。
+                if (!target.IsAlive && !target.DeathEventFired)
                 {
-                    ctx.TriggerManager.Fire(ctx, TriggerTiming.OnNearDeath, new TriggerContext
-                    {
-                        SourceEntityId = target.EntityId,
-                        TargetEntityId = source.EntityId,
-                        Value          = realHpDamage,
-                    });
-                    if (!target.IsAlive) // 复活技可能在 OnNearDeath 时将 HP 恢复
-                    {
-                        ctx.TriggerManager.Fire(ctx, TriggerTiming.OnDeath, new TriggerContext
-                        {
-                            SourceEntityId = target.EntityId,
-                            TargetEntityId = source.EntityId,
-                        });
-                        ctx.EventBus.Publish(new EntityDeathEvent
-                        {
-                            EntityId       = target.EntityId,
-                            KillerEntityId = source.EntityId,
-                        });
-                    }
+                    ctx.RoundLog.Add(
+                        $"[DamageHandler] {target.EntityId} HP ≤ 0，等待 RoundManager 死亡结算。");
                 }
             }
 
@@ -394,6 +402,85 @@ namespace CardMoba.BattleCore.Handlers
             var card = ctx.CardManager.GenerateCard(ctx, source.OwnerPlayerId, configId, zone, tempCard: true);
             result.Extra["generatedInstanceId"] = card.InstanceId;
             ctx.RoundLog.Add($"[GenerateCardHandler] 为 {source.OwnerPlayerId} 生成临时卡牌 {configId}（{card.InstanceId}）→ {zone}");
+            return result;
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // LifestealHandler —— 处理 Lifesteal 效果
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// 吸血 Handler —— 处理 EffectType.Lifesteal。
+    ///
+    /// 读取同一张牌前置 Damage / Pierce 效果的实际 HP 伤害总量（priorResults），
+    /// 按配置百分比（effect.ResolvedValue）为施法者回复生命值。
+    ///
+    /// 设计约定：
+    ///   - Value=100 表示 100% 吸血（即"未被护盾格挡的伤害全部回复"）；
+    ///   - 回血量上限为施法者当前缺失生命，不会超过 MaxHp；
+    ///   - 仅累计前置效果中类型为 Damage / Pierce 的 TotalRealHpDamage，
+    ///     护盾吸收部分不计入（体现"未被护盾格挡"语义）。
+    /// </summary>
+    public class LifestealHandler : IEffectHandler
+    {
+        public EffectResult Execute(
+            BattleContext ctx,
+            EffectUnit effect,
+            Entity source,
+            List<Entity> targets,
+            List<EffectResult> priorResults)
+        {
+            var result = new EffectResult
+            {
+                EffectId = effect.EffectId,
+                Type     = effect.Type,
+                Success  = true,
+            };
+
+            // ── 累计前置 Damage / Pierce 效果造成的实际 HP 伤害 ──────
+            int totalHpDamage = 0;
+            foreach (var prior in priorResults)
+            {
+                if (prior.Success &&
+                    (prior.Type == EffectType.Damage || prior.Type == EffectType.Pierce))
+                {
+                    totalHpDamage += prior.TotalRealHpDamage;
+                }
+            }
+
+            if (totalHpDamage <= 0)
+            {
+                ctx.RoundLog.Add($"[LifestealHandler] 前置伤害为0，吸血跳过。");
+                result.Success = false;
+                return result;
+            }
+
+            // ── 按百分比计算回血量，不超过缺失生命 ─────────────────
+            int healAmount = totalHpDamage * effect.ResolvedValue / 100;
+            int missing    = source.MaxHp - source.Hp;
+            healAmount     = healAmount < missing ? healAmount : missing;
+
+            if (healAmount <= 0)
+            {
+                ctx.RoundLog.Add($"[LifestealHandler] {source.EntityId} 已满血，吸血无效。");
+                return result;
+            }
+
+            source.Hp           += healAmount;
+            result.TotalRealHeal = healAmount;
+
+            ctx.RoundLog.Add(
+                $"[LifestealHandler] {source.EntityId} 吸血 {healAmount} HP" +
+                $"（实际伤害={totalHpDamage}×{effect.ResolvedValue}%），当前HP={source.Hp}/{source.MaxHp}");
+
+            ctx.EventBus.Publish(new HealEvent
+            {
+                SourceEntityId = source.EntityId,
+                TargetEntityId = source.EntityId,
+                RealHealAmount = healAmount,
+            });
+
             return result;
         }
     }

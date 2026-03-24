@@ -64,6 +64,7 @@ namespace CardMoba.BattleCore.Handlers
             Register(EffectType.AddBuff,      new AddBuffHandler());
             Register(EffectType.Draw,         new DrawCardHandler());
             Register(EffectType.GenerateCard, new GenerateCardHandler());
+            Register(EffectType.Lifesteal,    new LifestealHandler());
         }
 
         // ══════════════════════════════════════════════════════════

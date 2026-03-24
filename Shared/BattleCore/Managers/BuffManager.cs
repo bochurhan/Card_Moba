@@ -589,7 +589,7 @@ namespace CardMoba.BattleCore.Managers
         private static void UnregisterBuffTriggers(BattleContext ctx, BuffUnit buff)
         {
             foreach (var tid in buff.RegisteredTriggerIds)
-                ctx.TriggerManager.UnregisterBySourceId(tid);
+                ctx.TriggerManager.Unregister(tid);   // 修复：用 TriggerId 精确注销，而非 SourceId
             buff.RegisteredTriggerIds.Clear();
 
             foreach (var mid in buff.RegisteredModifierIds)
