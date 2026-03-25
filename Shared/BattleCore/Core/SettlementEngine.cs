@@ -20,56 +20,6 @@ namespace CardMoba.BattleCore.Core
             _targetResolver = new Resolvers.TargetResolver();
         }
 
-        public List<EffectResult> ResolveInstant(
-            BattleContext ctx,
-            string playerId,
-            string cardInstanceId,
-            List<EffectUnit> effects)
-        {
-            var playerData = ctx.GetPlayer(playerId);
-            if (playerData == null)
-            {
-                ctx.RoundLog.Add($"[SettlementEngine] ⚠️ 找不到玩家 {playerId}，跳过瞬策结算。");
-                return new List<EffectResult>();
-            }
-
-            var source = playerData.HeroEntity;
-            var triggerContext = new TriggerContext
-            {
-                SourceEntityId = source.EntityId,
-            };
-
-            ctx.TriggerManager.Fire(ctx, TriggerTiming.BeforePlayCard, triggerContext);
-            DrainPendingQueue(ctx);
-
-            if (source.IsSilenced)
-            {
-                ctx.RoundLog.Add($"[SettlementEngine] {playerId} 处于沉默状态，无法打出此牌。");
-                return new List<EffectResult>();
-            }
-
-            var priorResults = new List<EffectResult>();
-            foreach (var effect in effects)
-            {
-                var targets = _targetResolver.Resolve(ctx, effect.TargetType, source);
-                var result = _handlerPool.Execute(ctx, effect, source, targets, priorResults, null);
-                priorResults.Add(result);
-                DrainPendingQueue(ctx);
-            }
-
-            ctx.TriggerManager.Fire(ctx, TriggerTiming.AfterPlayCard, triggerContext);
-            DrainPendingQueue(ctx);
-
-            ctx.EventBus.Publish(new CardPlayedEvent
-            {
-                PlayerId = playerId,
-                CardInstanceId = cardInstanceId,
-                CardConfigId = string.Empty,
-            });
-
-            return priorResults;
-        }
-
         public List<EffectResult> ResolveInstantFromCard(
             BattleContext ctx,
             string playerId,
@@ -79,7 +29,7 @@ namespace CardMoba.BattleCore.Core
             var playerData = ctx.GetPlayer(playerId);
             if (playerData == null)
             {
-                ctx.RoundLog.Add($"[SettlementEngine] ⚠️ 找不到玩家 {playerId}，跳过瞬策结算（卡牌 {card.InstanceId}）。");
+                ctx.RoundLog.Add($"[SettlementEngine] 找不到玩家 {playerId}，跳过瞬策结算（卡牌 {card.InstanceId}）。");
                 return new List<EffectResult>();
             }
 
@@ -129,33 +79,33 @@ namespace CardMoba.BattleCore.Core
             return priorResults;
         }
 
-        public void ResolvePlanCards(BattleContext ctx, List<CommittedPlanCard> planCards)
+        internal void ResolvePlanCards(BattleContext ctx, List<PendingPlanCard> planCards)
         {
-            ctx.RoundLog.Add("═══ Layer 0：反制结算 ═══");
+            ctx.RoundLog.Add("[SettlementEngine] Layer 0：反制结算。");
             ResolveLayer0_Counter(ctx, planCards);
             DrainPendingQueue(ctx);
 
-            ctx.RoundLog.Add("═══ Layer 1：防御/修正结算 ═══");
+            ctx.RoundLog.Add("[SettlementEngine] Layer 1：防御/修正结算。");
             ResolveLayer(ctx, planCards, SettleLayer.Defense);
             DrainPendingQueue(ctx);
 
-            ctx.RoundLog.Add("═══ Pre-Layer 2：防御快照 ═══");
+            ctx.RoundLog.Add("[SettlementEngine] Pre-Layer 2：拍防御快照。");
             TakeDefenseSnapshots(ctx);
 
-            ctx.RoundLog.Add("═══ Layer 2：伤害结算 ═══");
+            ctx.RoundLog.Add("[SettlementEngine] Layer 2：伤害结算。");
             ResolveLayer2_Damage(ctx, planCards);
             ClearDefenseSnapshots(ctx);
 
-            ctx.RoundLog.Add("═══ Layer 3：资源结算 ═══");
+            ctx.RoundLog.Add("[SettlementEngine] Layer 3：资源结算。");
             ResolveLayer(ctx, planCards, SettleLayer.Resource);
             DrainPendingQueue(ctx);
 
-            ctx.RoundLog.Add("═══ Layer 4：Buff/特殊结算 ═══");
+            ctx.RoundLog.Add("[SettlementEngine] Layer 4：Buff/特殊结算。");
             ResolveLayer(ctx, planCards, SettleLayer.BuffSpecial);
             DrainPendingQueue(ctx);
         }
 
-        private void ResolveLayer0_Counter(BattleContext ctx, List<CommittedPlanCard> planCards)
+        private void ResolveLayer0_Counter(BattleContext ctx, List<PendingPlanCard> planCards)
         {
             var counterCards = planCards
                 .Where(c => !c.IsCountered && c.Effects.Any(e => e.Layer == SettleLayer.Counter))
@@ -176,7 +126,7 @@ namespace CardMoba.BattleCore.Core
             }
         }
 
-        private void ResolveLayer2_Damage(BattleContext ctx, List<CommittedPlanCard> planCards)
+        private void ResolveLayer2_Damage(BattleContext ctx, List<PendingPlanCard> planCards)
         {
             var damageCards = planCards
                 .Where(c => !c.IsCountered && c.Effects.Any(e => e.Layer == SettleLayer.Damage))
@@ -202,7 +152,7 @@ namespace CardMoba.BattleCore.Core
             }
         }
 
-        private void ResolveLayer(BattleContext ctx, List<CommittedPlanCard> planCards, SettleLayer layer)
+        private void ResolveLayer(BattleContext ctx, List<PendingPlanCard> planCards, SettleLayer layer)
         {
             var layerCards = planCards
                 .Where(c => !c.IsCountered && c.Effects.Any(e => e.Layer == layer))
@@ -264,7 +214,7 @@ namespace CardMoba.BattleCore.Core
                 var source = ctx.GetEntity(entry.SourceEntityId);
                 if (source == null)
                 {
-                    ctx.RoundLog.Add($"[DrainPendingQueue] ⚠️ 找不到施法实体 {entry.SourceEntityId}，跳过队列效果。");
+                    ctx.RoundLog.Add($"[DrainPendingQueue] 找不到施法实体 {entry.SourceEntityId}，跳过队列效果。");
                     continue;
                 }
 
@@ -288,7 +238,7 @@ namespace CardMoba.BattleCore.Core
             }
 
             if (count >= safetyLimit)
-                ctx.RoundLog.Add("[DrainPendingQueue] ⚠️ 达到安全上限（1000次），可能存在无限触发循环！");
+                ctx.RoundLog.Add("[DrainPendingQueue] 达到安全上限（1000 次），可能存在无限触发循环。");
         }
 
         private List<Entity> ResolveEntityIds(BattleContext ctx, List<string> ids)

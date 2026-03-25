@@ -63,7 +63,7 @@ namespace CardMoba.BattleCore.Managers
                 if (trigger.RemainingTriggers == 0)
                     continue;
 
-                if (trigger.Conditions != null && trigger.Conditions.Count > 0)
+                if (trigger.Conditions.Count > 0)
                 {
                     var ownerData = ctx.GetPlayer(trigger.OwnerPlayerId);
                     if (ownerData == null)
@@ -73,27 +73,20 @@ namespace CardMoba.BattleCore.Managers
                         continue;
                 }
 
-                if (trigger.InlineExecute != null)
-                {
-                    trigger.InlineExecute(ctx, triggerCtx);
-                }
-                else
-                {
-                    var ownerPlayer = ctx.GetPlayer(trigger.OwnerPlayerId);
-                    var sourceEntityId = ownerPlayer?.HeroEntity.EntityId ?? trigger.OwnerPlayerId;
+                var ownerPlayer = ctx.GetPlayer(trigger.OwnerPlayerId);
+                var sourceEntityId = ownerPlayer?.HeroEntity.EntityId ?? trigger.OwnerPlayerId;
 
-                    foreach (var effectUnit in trigger.Effects)
+                foreach (var effectUnit in trigger.Effects)
+                {
+                    var clonedEffect = EffectUnitCloner.Clone(effectUnit);
+                    ctx.PendingQueue.Enqueue(new PendingEffectEntry
                     {
-                        var clonedEffect = EffectUnitCloner.Clone(effectUnit);
-                        ctx.PendingQueue.Enqueue(new PendingEffectEntry
-                        {
-                            Effect = clonedEffect,
-                            SourceEntityId = sourceEntityId,
-                            SourceTriggerId = trigger.TriggerId,
-                            TriggerContext = CloneTriggerContext(triggerCtx),
-                            PreResolvedTargetIds = BuildPreResolvedTargetIds(clonedEffect.TargetType, triggerCtx),
-                        });
-                    }
+                        Effect = clonedEffect,
+                        SourceEntityId = sourceEntityId,
+                        SourceTriggerId = trigger.TriggerId,
+                        TriggerContext = CloneTriggerContext(triggerCtx),
+                        PreResolvedTargetIds = BuildPreResolvedTargetIds(clonedEffect.TargetType, triggerCtx),
+                    });
                 }
 
                 if (trigger.RemainingTriggers > 0)

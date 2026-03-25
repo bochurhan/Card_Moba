@@ -1,4 +1,3 @@
-
 #pragma warning disable CS8632
 
 namespace CardMoba.BattleCore.Foundation
@@ -8,7 +7,7 @@ namespace CardMoba.BattleCore.Foundation
     /// </summary>
     public enum CardZone
     {
-        /// <summary>卡组（未抽取）</summary>
+        /// <summary>牌组（未抽取）</summary>
         Deck = 0,
 
         /// <summary>手牌（可操作）</summary>
@@ -22,9 +21,5 @@ namespace CardMoba.BattleCore.Foundation
 
         /// <summary>消耗区（消耗牌使用后永久记录于此）</summary>
         Consume = 4,
-
-        /// <summary>状态牌区（持有中的状态牌，绑定持续触发效果）</summary>
-        // 遗留兼容区域。当前主流程状态牌行为由 BattleCard.IsStatCard 标记驱动，不依赖此区域。
-        StatZone = 5,
     }
 }

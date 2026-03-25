@@ -89,6 +89,18 @@ namespace CardMoba.BattleCore.Context
         /// <summary>本局累计治疗总量（由 StatManager 更新）</summary>
         public int TotalHealDone { get; set; }
 
+        /// <summary>本回合已打出的卡牌总数。</summary>
+        public int PlayedCardCountThisRound { get; set; }
+
+        /// <summary>本回合已打出的伤害牌数量。</summary>
+        public int PlayedDamageCardCountThisRound { get; set; }
+
+        /// <summary>本回合已打出的防御牌数量。</summary>
+        public int PlayedDefenseCardCountThisRound { get; set; }
+
+        /// <summary>本回合已打出的反制牌数量。</summary>
+        public int PlayedCounterCardCountThisRound { get; set; }
+
         // ══════════════════════════════════════════════════════════
         // Layer 2 防御快照（由 SettlementEngine 在 Pre-Layer 2 阶段设置）
         // ══════════════════════════════════════════════════════════

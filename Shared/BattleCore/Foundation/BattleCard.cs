@@ -50,7 +50,7 @@ namespace CardMoba.BattleCore.Foundation
         /// </summary>
         /// <remarks>
         /// 状态牌仍然是常规卡牌实例，可在牌堆、手牌、弃牌堆之间流转。
-        /// 当前主流程不依赖 StatZone；若需要“持有时触发”，由 CardManager.ScanStatCards 扫描手牌中的状态牌。
+        /// 当前主流程不依赖额外专用区；若需要“持有时触发”，由 CardManager.ScanStatCards 扫描手牌中的状态牌。
         /// </remarks>
         public bool IsStatCard { get; set; }
 

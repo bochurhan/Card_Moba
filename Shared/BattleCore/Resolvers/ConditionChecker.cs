@@ -36,6 +36,10 @@ namespace CardMoba.BattleCore.Resolvers
             new Regex(@"^trigCtx\.(value|round|extra\.[\w]+)\s*(==|!=|<=|>=|<|>)\s*(-?\d+)$",
                 RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+        private static readonly Regex _roundPattern =
+            new Regex(@"^round\s*(==|!=|<=|>=|<|>)\s*(-?\d+)$",
+                RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
         // ══════════════════════════════════════════════════════════
         // 主入口
         // ══════════════════════════════════════════════════════════
@@ -118,6 +122,14 @@ namespace CardMoba.BattleCore.Resolvers
                 return Compare(trigLhsVal, trigOp, trigRhsVal);
             }
 
+            var roundMatch = _roundPattern.Match(condition);
+            if (roundMatch.Success)
+            {
+                string roundOp = roundMatch.Groups[1].Value;
+                int roundRhsVal = int.Parse(roundMatch.Groups[2].Value);
+                return Compare(ctx.CurrentRound, roundOp, roundRhsVal);
+            }
+
             var match = _comparePattern.Match(condition);
             if (!match.Success)
             {
@@ -162,6 +174,7 @@ namespace CardMoba.BattleCore.Resolvers
                 case "maxhp":     return entity.MaxHp;
                 case "shield":    return entity.Shield;
                 case "armor":     return entity.Armor;
+                case "isstunned": return entity.IsStunned ? 1 : 0;
                 case "handcount":
                 {
                     var player = ctx.GetPlayer(entity.OwnerPlayerId);
@@ -171,6 +184,26 @@ namespace CardMoba.BattleCore.Resolvers
                 {
                     var player = ctx.GetPlayer(entity.OwnerPlayerId);
                     return player?.GetCardsInZone(Foundation.CardZone.Deck).Count ?? 0;
+                }
+                case "playedcardcount":
+                {
+                    var player = ctx.GetPlayer(entity.OwnerPlayerId);
+                    return player?.PlayedCardCountThisRound ?? 0;
+                }
+                case "playeddamagecardcount":
+                {
+                    var player = ctx.GetPlayer(entity.OwnerPlayerId);
+                    return player?.PlayedDamageCardCountThisRound ?? 0;
+                }
+                case "playeddefensecardcount":
+                {
+                    var player = ctx.GetPlayer(entity.OwnerPlayerId);
+                    return player?.PlayedDefenseCardCountThisRound ?? 0;
+                }
+                case "playedcountercardcount":
+                {
+                    var player = ctx.GetPlayer(entity.OwnerPlayerId);
+                    return player?.PlayedCounterCardCountThisRound ?? 0;
                 }
                 default:
                     ctx.RoundLog.Add($"[ConditionChecker] ⚠️ 未知字段 '{field}'，返回 0。");

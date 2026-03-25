@@ -6,11 +6,17 @@ using CardMoba.BattleCore.Context;
 using CardMoba.BattleCore.EventBus;
 using CardMoba.BattleCore.Foundation;
 using CardMoba.BattleCore.Managers;
-// EffectUnitCloner 在 CardMoba.BattleCore.Foundation 命名空间，已通过上方 using 引入
+using CardMoba.Protocol.Enums;
 
 namespace CardMoba.BattleCore.Core
 {
     public class CommittedPlanCard
+    {
+        public string PlayerId { get; set; } = string.Empty;
+        public string CardInstanceId { get; set; } = string.Empty;
+    }
+
+    internal sealed class PendingPlanCard
     {
         public string PlayerId { get; set; } = string.Empty;
         public string CardInstanceId { get; set; } = string.Empty;
@@ -22,7 +28,7 @@ namespace CardMoba.BattleCore.Core
     public class RoundManager
     {
         private readonly SettlementEngine _settlement;
-        private readonly List<CommittedPlanCard> _pendingPlanCards = new List<CommittedPlanCard>();
+        private readonly List<PendingPlanCard> _pendingPlanCards = new List<PendingPlanCard>();
 
         public int CurrentRound { get; private set; }
         public bool IsBattleOver { get; private set; }
@@ -58,6 +64,14 @@ namespace CardMoba.BattleCore.Core
             ctx.CurrentRound = CurrentRound;
             ctx.CurrentPhase = BattleContext.BattlePhase.RoundStart;
 
+            foreach (var player in ctx.AllPlayers.Values)
+            {
+                player.PlayedCardCountThisRound = 0;
+                player.PlayedDamageCardCountThisRound = 0;
+                player.PlayedDefenseCardCountThisRound = 0;
+                player.PlayedCounterCardCountThisRound = 0;
+            }
+
             ctx.RoundLog.Add($"[RoundManager] 第 {CurrentRound} 回合开始。");
             ctx.EventBus.Publish(new RoundStartEvent { Round = CurrentRound });
 
@@ -71,7 +85,7 @@ namespace CardMoba.BattleCore.Core
             _settlement.DrainPendingQueue(ctx);
 
             ctx.CurrentPhase = BattleContext.BattlePhase.PlayerAction;
-            ctx.RoundLog.Add($"[RoundManager] 第 {CurrentRound} 回合开始处理完毕。");
+            ctx.RoundLog.Add($"[RoundManager] 第 {CurrentRound} 回合准备完成。");
         }
 
         public List<EffectResult> PlayInstantCard(
@@ -84,56 +98,28 @@ namespace CardMoba.BattleCore.Core
             var card = ctx.CardManager.GetCard(ctx, cardInstanceId);
             if (card == null)
             {
-                ctx.RoundLog.Add($"[RoundManager] ⚠️ 找不到瞬策牌实例 {cardInstanceId}.");
+                ctx.RoundLog.Add($"[RoundManager] 找不到瞬策牌实例 {cardInstanceId}。");
                 return new List<EffectResult>();
             }
 
             if (!card.OwnerId.Equals(playerId, StringComparison.Ordinal))
             {
-                ctx.RoundLog.Add($"[RoundManager] ⚠️ 瞬策牌 {cardInstanceId} 不属于玩家 {playerId}。");
+                ctx.RoundLog.Add($"[RoundManager] 瞬策牌 {cardInstanceId} 不属于玩家 {playerId}。");
                 return new List<EffectResult>();
             }
 
-            var effects = ResolveCardEffects(ctx, card.ConfigId, null);
+            var effects = ResolveCardEffects(ctx, card.ConfigId);
             if (effects == null)
             {
-                ctx.RoundLog.Add($"[RoundManager] ⚠️ 找不到瞬策牌 {cardInstanceId}（{card.ConfigId}）的卡牌定义。");
+                ctx.RoundLog.Add($"[RoundManager] 找不到瞬策牌 {cardInstanceId}（{card.ConfigId}）的卡牌定义。");
                 return new List<EffectResult>();
             }
 
             StampCardSourceMetadata(effects, card);
+            RecordPlayedCardStats(ctx, playerId, effects);
             ctx.RoundLog.Add($"[RoundManager] 玩家 {playerId} 打出瞬策牌 {cardInstanceId}。");
 
             var results = _settlement.ResolveInstantFromCard(ctx, playerId, card, effects);
-            CheckDeathAndBattleOver(ctx);
-            return results;
-        }
-
-        public List<EffectResult> PlayInstantCard(
-            BattleContext ctx,
-            string playerId,
-            string cardInstanceId,
-            List<EffectUnit> effects)
-        {
-            if (IsBattleOver) return new List<EffectResult>();
-
-            var card = ctx.CardManager.GetCard(ctx, cardInstanceId);
-            if (card != null)
-            {
-                if (!card.OwnerId.Equals(playerId, StringComparison.Ordinal))
-                {
-                    ctx.RoundLog.Add($"[RoundManager] ⚠️ 瞬策牌 {cardInstanceId} 不属于玩家 {playerId}。");
-                    return new List<EffectResult>();
-                }
-
-                return PlayInstantCard(ctx, playerId, cardInstanceId);
-            }
-
-            var clonedEffects = EffectUnitCloner.CloneMany(effects);
-            StampCardSourceMetadata(clonedEffects, cardInstanceId, string.Empty);
-            ctx.RoundLog.Add($"[RoundManager] 玩家 {playerId} 通过兼容路径打出瞬策牌 {cardInstanceId}。");
-
-            var results = _settlement.ResolveInstant(ctx, playerId, cardInstanceId, clonedEffects);
             CheckDeathAndBattleOver(ctx);
             return results;
         }
@@ -145,20 +131,20 @@ namespace CardMoba.BattleCore.Core
             var card = ctx.CardManager.GetCard(ctx, planCard.CardInstanceId);
             if (card == null)
             {
-                ctx.RoundLog.Add($"[RoundManager] ⚠️ 找不到定策牌实例 {planCard.CardInstanceId}.");
+                ctx.RoundLog.Add($"[RoundManager] 找不到定策牌实例 {planCard.CardInstanceId}。");
                 return false;
             }
 
             if (!card.OwnerId.Equals(planCard.PlayerId, StringComparison.Ordinal))
             {
-                ctx.RoundLog.Add($"[RoundManager] ⚠️ 定策牌 {planCard.CardInstanceId} 不属于玩家 {planCard.PlayerId}。");
+                ctx.RoundLog.Add($"[RoundManager] 定策牌 {planCard.CardInstanceId} 不属于玩家 {planCard.PlayerId}。");
                 return false;
             }
 
-            var resolvedEffects = ResolveCardEffects(ctx, card.ConfigId, planCard.Effects);
+            var resolvedEffects = ResolveCardEffects(ctx, card.ConfigId);
             if (resolvedEffects == null)
             {
-                ctx.RoundLog.Add($"[RoundManager] ⚠️ 找不到定策牌 {planCard.CardInstanceId}（{card.ConfigId}）的卡牌定义。");
+                ctx.RoundLog.Add($"[RoundManager] 找不到定策牌 {planCard.CardInstanceId}（{card.ConfigId}）的卡牌定义。");
                 return false;
             }
 
@@ -166,15 +152,21 @@ namespace CardMoba.BattleCore.Core
 
             if (!ctx.CardManager.CommitPlanCard(ctx, planCard.CardInstanceId))
             {
-                ctx.RoundLog.Add($"[RoundManager] ⚠️ 定策牌 {planCard.CardInstanceId} 校验失败，拒绝提交。");
+                ctx.RoundLog.Add($"[RoundManager] 定策牌 {planCard.CardInstanceId} 校验失败，拒绝提交。");
                 return false;
             }
 
-            planCard.Effects = resolvedEffects;
-            planCard.SubmitOrder = _pendingPlanCards.Count;
-            _pendingPlanCards.Add(planCard);
+            RecordPlayedCardStats(ctx, planCard.PlayerId, resolvedEffects);
+            var pendingCard = new PendingPlanCard
+            {
+                PlayerId = planCard.PlayerId,
+                CardInstanceId = planCard.CardInstanceId,
+                Effects = resolvedEffects,
+                SubmitOrder = _pendingPlanCards.Count,
+            };
+            _pendingPlanCards.Add(pendingCard);
 
-            ctx.RoundLog.Add($"[RoundManager] 玩家 {planCard.PlayerId} 提交定策牌 {planCard.CardInstanceId}（顺序={planCard.SubmitOrder}）。");
+            ctx.RoundLog.Add($"[RoundManager] 玩家 {planCard.PlayerId} 提交定策牌 {planCard.CardInstanceId}（顺序 {pendingCard.SubmitOrder}）。");
             return true;
         }
 
@@ -216,7 +208,7 @@ namespace CardMoba.BattleCore.Core
                 if (shield <= 0) continue;
 
                 kv.Value.HeroEntity.Shield = 0;
-                ctx.RoundLog.Add($"[RoundManager] {kv.Key} 回合结束护盾清零（{shield} → 0）。");
+                ctx.RoundLog.Add($"[RoundManager] {kv.Key} 回合结束护盾清零（{shield} -> 0）。");
             }
 
             ctx.TriggerManager.TickDecay(ctx);
@@ -245,7 +237,7 @@ namespace CardMoba.BattleCore.Core
                     continue;
 
                 deadPlayer.HeroEntity.DeathEventFired = true;
-                ctx.RoundLog.Add($"[RoundManager] 玩家 {deadId} 死亡！");
+                ctx.RoundLog.Add($"[RoundManager] 玩家 {deadId} 死亡。");
 
                 ctx.TriggerManager.Fire(ctx, TriggerTiming.OnNearDeath, new TriggerContext
                 {
@@ -257,7 +249,7 @@ namespace CardMoba.BattleCore.Core
                 if (deadPlayer.HeroEntity.IsAlive)
                 {
                     deadPlayer.HeroEntity.DeathEventFired = false;
-                    ctx.RoundLog.Add($"[RoundManager] 玩家 {deadId} 被复活！");
+                    ctx.RoundLog.Add($"[RoundManager] 玩家 {deadId} 被救活。");
                     continue;
                 }
 
@@ -288,7 +280,7 @@ namespace CardMoba.BattleCore.Core
                 IsBattleOver = true;
                 WinnerId = null;
                 ctx.CurrentPhase = BattleContext.BattlePhase.BattleEnd;
-                ctx.RoundLog.Add("[RoundManager] 战斗结束：平局！");
+                ctx.RoundLog.Add("[RoundManager] 战斗结束：平局。");
                 ctx.EventBus.Publish(new BattleEndEvent { WinnerId = null, IsDraw = true });
                 return true;
             }
@@ -298,7 +290,7 @@ namespace CardMoba.BattleCore.Core
                 IsBattleOver = true;
                 WinnerId = finalAlivePlayers[0];
                 ctx.CurrentPhase = BattleContext.BattlePhase.BattleEnd;
-                ctx.RoundLog.Add($"[RoundManager] 战斗结束：玩家 {WinnerId} 获胜！");
+                ctx.RoundLog.Add($"[RoundManager] 战斗结束：玩家 {WinnerId} 获胜。");
                 ctx.EventBus.Publish(new BattleEndEvent { WinnerId = WinnerId, IsDraw = false });
                 return true;
             }
@@ -308,17 +300,53 @@ namespace CardMoba.BattleCore.Core
 
         private static List<EffectUnit>? ResolveCardEffects(
             BattleContext ctx,
-            string configId,
-            List<EffectUnit>? legacyEffects)
+            string configId)
         {
-            var definitionEffects = ctx.BuildCardEffects(configId);
-            if (definitionEffects != null)
-                return definitionEffects;
+            return ctx.BuildCardEffects(configId);
+        }
 
-            if (legacyEffects == null)
-                return null;
+        private static void RecordPlayedCardStats(BattleContext ctx, string playerId, List<EffectUnit> effects)
+        {
+            var player = ctx.GetPlayer(playerId);
+            if (player == null)
+                return;
 
-            return EffectUnitCloner.CloneMany(legacyEffects);
+            player.PlayedCardCountThisRound++;
+
+            if (effects.Exists(IsDamageCard))
+                player.PlayedDamageCardCountThisRound++;
+
+            if (effects.Exists(IsDefenseCard))
+                player.PlayedDefenseCardCountThisRound++;
+
+            if (effects.Exists(IsCounterCard))
+                player.PlayedCounterCardCountThisRound++;
+        }
+
+        private static bool IsDamageCard(EffectUnit effect)
+        {
+            return effect.Type == EffectType.Damage
+                || effect.Type == EffectType.Pierce
+                || effect.Type == EffectType.Lifesteal
+                || effect.Type == EffectType.Thorns
+                || effect.Type == EffectType.ArmorOnHit
+                || effect.Type == EffectType.DOT;
+        }
+
+        private static bool IsDefenseCard(EffectUnit effect)
+        {
+            return effect.Type == EffectType.Shield
+                || effect.Type == EffectType.Armor
+                || effect.Type == EffectType.AttackBuff
+                || effect.Type == EffectType.AttackDebuff
+                || effect.Type == EffectType.Reflect
+                || effect.Type == EffectType.DamageReduction
+                || effect.Type == EffectType.Invincible;
+        }
+
+        private static bool IsCounterCard(EffectUnit effect)
+        {
+            return effect.Type == EffectType.Counter;
         }
 
         private static void StampCardSourceMetadata(List<EffectUnit> effects, BattleCard card)
