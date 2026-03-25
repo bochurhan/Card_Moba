@@ -1,86 +1,55 @@
-=== CardTrackType（双轨类型）===
-值,编号,说明
-Instant,1,瞬策牌：操作期即时生效
-Plan,2,定策牌：锁定期后统一结算
+Section,Name,Value,Description
+CardTrackType,Instant,1,瞬策牌 操作期立即结算
+CardTrackType,Plan,2,定策牌 锁定后进入回合末五层结算
 
-=== CardTargetType（目标类型）===
-值,编号,说明
-None,0,无目标：无需选择目标
-Self,1,自身：作用于自己
-CurrentEnemy,2,敌方当前对手：对线对手（自动选择）
-AnyEnemy,3,敌方任意：可选择敌方任意玩家
-AnyAlly,4,友方任意：可选择友方任意玩家
-AllEnemies,5,全体敌方：AOE敌方
-AllAllies,6,全体友方：AOE友方
+CardTargetType,None,0,无目标
+CardTargetType,Self,1,自身
+CardTargetType,CurrentEnemy,2,当前对手
+CardTargetType,AnyEnemy,3,任意敌方
+CardTargetType,AnyAlly,4,任意友方
+CardTargetType,AllEnemies,5,全体敌方
+CardTargetType,AllAllies,6,全体友方
+CardTargetType,All,7,全体
 
-=== CardTag（卡牌标签 - Flags枚举，可组合）===
-值,编号,说明
-None,0,默认无标签
+CardTag,None,0,无标签
+CardTag,Damage,1,伤害牌
+CardTag,Defense,2,防御牌
+CardTag,Counter,4,反制牌
+CardTag,Buff,8,增益牌
+CardTag,Debuff,16,减益牌
+CardTag,Support,32,辅助牌
+CardTag,Legendary,64,传说牌
+CardTag,Control,128,控制牌
+CardTag,Resource,256,资源牌
+CardTag,CrossLane,512,跨路生效
+CardTag,Recycle,1024,使用后回牌库
+CardTag,Exhaust,2048,使用后进入 Consume
+CardTag,Innate,4096,固有
+CardTag,Retain,8192,保留
+CardTag,Execute,16384,斩杀
+CardTag,Reflect,32768,反弹
 
---- 用途分类 ---
-Damage,1,伤害型：可被反制牌针对
-Defense,2,防御型：护甲/护盾相关
-Counter,4,反制型：本回合暗置下回合触发
-Buff,8,增益型：正面buff效果
-Debuff,16,减益型：负面debuff效果
-Support,32,支援型：跨路支援相关
-Legendary,64,传说型：传说卡专属（使用后消耗）
-Control,128,控制型：沉默/眩晕效果
-Resource,256,资源型：抽牌/回能/回血
+EffectType,Damage,10,当前主配置面支持
+EffectType,Pierce,14,当前主配置面支持
+EffectType,Heal,20,当前主配置面支持
+EffectType,Shield,2,当前主配置面支持
+EffectType,AddBuff,31,当前主配置面支持 需配 BuffConfigId
+EffectType,Draw,24,当前主配置面支持
+EffectType,GenerateCard,32,当前主配置面支持 需配 GenerateCardConfigId
+EffectType,Lifesteal,11,当前主配置面支持
 
---- 行为标签 ---
-CrossLane,512,跨路生效：可对其他路敌人生效
-Recycle,1024,卡组循环：使用后返回牌库底部
-Exhaust,2048,消耗：使用后移出游戏（不进弃牌堆）
-SilentPlay,4096,静默出牌：不触发出牌时效果
-Unblockable,8192,无法格挡：无视护盾直接扣血
+EffectConditionType,EnemyPlayedDamageCard,100,当前适配器支持
+EffectConditionType,EnemyPlayedDefenseCard,101,当前适配器支持
+EffectConditionType,EnemyPlayedCounterCard,102,当前适配器支持
+EffectConditionType,EnemyPlayedCardCountAtLeast,103,当前适配器支持
+EffectConditionType,MyDeckIsEmpty,200,当前适配器支持
+EffectConditionType,MyHandCardCountAtMost,201,当前适配器支持
+EffectConditionType,MyHandCardCountAtLeast,202,当前适配器支持
+EffectConditionType,MyPlayedCardCountAtLeast,203,当前适配器支持
+EffectConditionType,MyHpPercentAtMost,300,当前适配器支持
+EffectConditionType,MyHpPercentAtLeast,301,当前适配器支持
+EffectConditionType,EnemyHpPercentAtMost,400,当前适配器支持
+EffectConditionType,EnemyIsStunned,402,当前适配器支持
+EffectConditionType,RoundNumberAtLeast,500,当前适配器支持
 
-组合示例：
-- Damage|Defense = 1+2 = 3（铁斩波：既造成伤害又提供护甲）
-- Damage|Exhaust = 1+2048 = 2049（终极爆发：高伤害但使用后消耗）
-- Counter|CrossLane = 4+512 = 516（跨路反制：可反制其他路的伤害牌）
-
-=== EffectType（效果类型 - 决定结算顺序）===
-值,编号,结算层,说明
-
---- 堆叠0层：反制效果（最先执行）---
-CounterCard,1,堆叠0层,反制卡牌：使目标卡牌无效
-CounterFirstDamage,2,堆叠0层,反制首张伤害牌：无效化敌方首张伤害牌
-CounterAndReflect,3,堆叠0层,反制并反弹：使目标卡牌无效并反弹效果
-
---- 堆叠1层：防御/属性效果 ---
-GainArmor,101,堆叠1层,获得护甲：减少受到的伤害
-GainShield,102,堆叠1层,获得护盾：吸收伤害
-DamageReduction,103,堆叠1层,伤害减免：百分比减少受到的伤害
-Invincible,104,堆叠1层,无敌：完全免疫伤害
-GainStrength,111,堆叠1层,增加力量：增加造成的伤害
-ReduceStrength,112,堆叠1层,降低力量：减少造成的伤害
-BreakArmor,113,堆叠1层,破甲：降低目标护甲
-Penetrate,114,堆叠1层,穿透：无视目标护甲
-Vulnerable,115,堆叠1层,易伤：目标受到的伤害增加
-Weak,116,堆叠1层,虚弱：目标造成的伤害减少
-
---- 堆叠2层：伤害效果 ---
-DealDamage,201,堆叠2层-步骤1,造成伤害：直接扣减目标生命值
-RandomMultiDamage,202,堆叠2层-步骤1,随机多段伤害：Value=单次伤害值；额外字段HitCount=命中次数；每次从当前分路随机选一名敌人
-LifestealFromUnblocked,203,堆叠2层-步骤2,穿透吸血：仅对未被护盾格挡的伤害部分回复生命（Value=100表示100%回复）
-Thorns,211,堆叠2层-步骤2,反伤：受到伤害时反弹伤害
-Lifesteal,212,堆叠2层-步骤2,吸血：造成伤害时回复生命
-HealOnHit,213,堆叠2层-步骤2,受击回血：受到伤害时回复生命
-ArmorOnHit,214,堆叠2层-步骤2,受击获得护甲：受到伤害时获得护甲
-HealOnKill,215,堆叠2层-步骤2,击杀回血：击杀敌人时回复生命
-
---- 堆叠3层：功能效果 ---
-DrawCard,301,堆叠3层,抽牌：从牌库抽取卡牌
-DiscardCard,302,堆叠3层,弃牌：弃置手牌
-RestoreEnergy,303,堆叠3层,回复能量：回复能量
-Heal,304,堆叠3层,回复生命：回复生命
-Silence,311,堆叠3层,沉默：禁止使用技能牌（TriggerCondition=NoDraw表示禁止抽牌）
-Stun,312,堆叠3层,眩晕：跳过操作回合
-Slow,313,堆叠3层,减速：行动顺序降低
-
---- 堆叠1层：条件触发效果（新增）---
-ConditionalStrength,121,堆叠1层,条件获得力量：满足TriggerCondition时获得Value点力量；EnemyPlayedDamagePlanCard=目标本回合打出过伤害定策牌
-
---- 堆叠1层：力量操作（新增）---
-DoubleStrength,131,堆叠1层,力量翻倍：将当前力量值翻倍（Value字段无意义）
+Note,LegacyFields,,不再作为主配置面开放：effectIds ValueSource TriggerCondition IsDelayed ExecutionMode AppliesBuff BuffType BuffStackRule IsBuffDispellable

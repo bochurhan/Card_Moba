@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using CardMoba.BattleCore.Buff;
 using CardMoba.BattleCore.Context;
 using CardMoba.BattleCore.Core;
 using CardMoba.BattleCore.EventBus;
@@ -114,6 +115,7 @@ namespace CardMoba.Client.GameLogic
             // ── BattleFactory 创建战斗 ────────────────────────────
             var factory = new BattleFactory
             {
+                BuffConfigProvider = ResolveRuntimeBuffConfig,
                 CardDefinitionProvider = configId =>
                 {
                     if (!_cardConfigMap.TryGetValue(configId, out var cardConfig))
@@ -310,9 +312,6 @@ namespace CardMoba.Client.GameLogic
             // ── 消耗能量 ──────────────────────────────────────────────
             player.Energy -= cost;
 
-            // ── CardConfig → EffectUnit 转换 ──────────────────────────
-            string defaultTarget = CardConfigToEffectAdapter.CardTargetTypeToString(cardConfig.TargetType);
-            var effects = CardConfigToEffectAdapter.ConvertEffects(cardConfig, defaultTarget);
             string cardName = cardConfig.CardName;
 
             // ── 出牌 ─────────────────────────────────────────────────
@@ -330,7 +329,6 @@ namespace CardMoba.Client.GameLogic
                 {
                     PlayerId       = playerId,
                     CardInstanceId = battleCard.InstanceId,
-                    Effects        = effects,
                 });
                 FlushLogs();
                 OnLogMessage?.Invoke($"<color=#aaddff>{(playerId == HumanPlayerId ? "你" : "对手")} → 提交定策牌【{cardName}】（花费 {cost} 点能量）</color>");
@@ -400,8 +398,30 @@ namespace CardMoba.Client.GameLogic
             2003, 2003,               // 观察弱点 ×2    (1费，定策，条件获得2力量)
             2005, 2005,               // 飞剑回旋镖 ×2  (1费，定策，3伤×4次)
             1001,                     // 战斗专注 ×1    (0费，瞬策，抽3张)
-            1002,                     // 突破极限 ×1    (1费，瞬策，力量翻倍·消耗)
+            1002,                     // 突破极限 ×1    (1费，瞬策，获得4点力量·消耗)
         };
+
+        private static BuffConfig? ResolveRuntimeBuffConfig(string buffId)
+        {
+            return buffId switch
+            {
+                "strength" => new BuffConfig
+                {
+                    BuffId = "strength",
+                    BuffName = "力量",
+                    Description = "增加造成的伤害",
+                    BuffType = BuffType.Strength,
+                    IsBuff = true,
+                    StackRule = BuffStackRule.RefreshDuration,
+                    MaxStacks = 99,
+                    DefaultDuration = 0,
+                    DefaultValue = 0,
+                    IsDispellable = true,
+                    IsPurgeable = true,
+                },
+                _ => null,
+            };
+        }
 
         private List<(string configId, int count)> BuildDeckConfig(int[] cardIds)
         {

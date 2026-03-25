@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "2.0.0",
   "cards": [
     {
       "cardId": 2001,
@@ -8,12 +8,20 @@
       "trackType": "Plan",
       "targetType": "CurrentEnemy",
       "heroClass": "Universal",
+      "effectRange": "SingleEnemy",
+      "layer": "DamageTrigger",
       "tags": ["Damage"],
       "energyCost": 1,
       "rarity": 1,
-      "duration": 0,
-      "effectIds": ["E2001-1"],
-      "effects": []
+      "effects": [
+        {
+          "effectType": 10,
+          "value": 6,
+          "repeatCount": 1,
+          "duration": 0,
+          "targetOverride": ""
+        }
+      ]
     },
     {
       "cardId": 2002,
@@ -22,82 +30,147 @@
       "trackType": "Plan",
       "targetType": "Self",
       "heroClass": "Universal",
+      "effectRange": "Self",
+      "layer": "DefenseModifier",
       "tags": ["Defense"],
       "energyCost": 1,
       "rarity": 1,
-      "duration": 0,
-      "effectIds": ["E2002-1"],
-      "effects": []
+      "effects": [
+        {
+          "effectType": 2,
+          "value": 5,
+          "repeatCount": 1,
+          "duration": 0,
+          "targetOverride": "Self"
+        }
+      ]
     },
     {
       "cardId": 2003,
       "cardName": "观察弱点",
-      "description": "若目标本回合使用了伤害定策牌，自身获得2点力量",
+      "description": "若敌方本回合打出过伤害牌，自身获得2点力量",
       "trackType": "Plan",
-      "targetType": "CurrentEnemy",
+      "targetType": "Self",
       "heroClass": "Warrior",
+      "effectRange": "Self",
+      "layer": "BuffSpecial",
       "tags": ["Buff"],
       "energyCost": 1,
       "rarity": 2,
-      "duration": 0,
-      "effectIds": ["E2003-1"],
-      "effects": []
+      "effects": [
+        {
+          "effectType": 31,
+          "value": 2,
+          "repeatCount": 1,
+          "duration": 0,
+          "targetOverride": "Self",
+          "buffConfigId": "strength",
+          "effectConditions": [
+            {
+              "conditionType": "EnemyPlayedDamageCard",
+              "threshold": 0,
+              "negate": false,
+              "conditionBuffType": ""
+            }
+          ]
+        }
+      ]
     },
     {
       "cardId": 2004,
       "cardName": "死亡收割",
-      "description": "对当前分路全体敌方造成3点伤害，未被护盾格挡的伤害回复等量生命值",
+      "description": "对所有敌方造成3点伤害，未被护盾格挡的伤害回复等量生命值",
       "trackType": "Plan",
       "targetType": "AllEnemies",
       "heroClass": "Warrior",
+      "effectRange": "AllEnemies",
+      "layer": "DamageTrigger",
       "tags": ["Damage"],
       "energyCost": 2,
       "rarity": 3,
-      "duration": 0,
-      "effectIds": ["E2004-1", "E2004-2"],
-      "effects": []
+      "effects": [
+        {
+          "effectType": 10,
+          "value": 3,
+          "repeatCount": 1,
+          "duration": 0,
+          "targetOverride": "AllEnemies"
+        },
+        {
+          "effectType": 11,
+          "value": 100,
+          "repeatCount": 1,
+          "duration": 0,
+          "targetOverride": "Self"
+        }
+      ]
     },
     {
       "cardId": 2005,
       "cardName": "飞剑回旋镖",
-      "description": "随机造成3点伤害4次",
+      "description": "对当前敌人造成3点伤害4次",
       "trackType": "Plan",
       "targetType": "CurrentEnemy",
       "heroClass": "Warrior",
+      "effectRange": "SingleEnemy",
+      "layer": "DamageTrigger",
       "tags": ["Damage"],
       "energyCost": 1,
       "rarity": 2,
-      "duration": 0,
-      "effectIds": ["E2005-1", "E2005-2", "E2005-3", "E2005-4"],
-      "effects": []
+      "effects": [
+        {
+          "effectType": 10,
+          "value": 3,
+          "repeatCount": 4,
+          "duration": 0,
+          "targetOverride": ""
+        }
+      ]
     },
     {
       "cardId": 1001,
       "cardName": "战斗专注",
-      "description": "抽3张牌，本回合剩余时间不能抽牌",
+      "description": "抽3张牌",
       "trackType": "Instant",
       "targetType": "Self",
       "heroClass": "Warrior",
+      "effectRange": "Self",
+      "layer": "Utility",
       "tags": ["Draw"],
       "energyCost": 0,
       "rarity": 2,
-      "duration": 0,
-      "effectIds": ["E1001-1", "E1001-2"],
-      "effects": []
+      "effects": [
+        {
+          "effectType": 24,
+          "value": 3,
+          "repeatCount": 1,
+          "duration": 0,
+          "targetOverride": "Self"
+        }
+      ]
     },
     {
       "cardId": 1002,
       "cardName": "突破极限",
-      "description": "使你的力量翻倍（消耗）",
+      "description": "获得4点力量（消耗）",
       "trackType": "Instant",
       "targetType": "Self",
       "heroClass": "Warrior",
+      "effectRange": "Self",
+      "layer": "Utility",
       "tags": ["Buff", "Exhaust"],
       "energyCost": 1,
       "rarity": 3,
-      "duration": 0,
-      "effectIds": ["E1002-1"],
-      "effects": []
+      "effects": [
+        {
+          "effectType": 31,
+          "value": 4,
+          "repeatCount": 1,
+          "duration": 0,
+          "targetOverride": "Self",
+          "buffConfigId": "strength"
+        }
+      ]
     }
   ]
 }
