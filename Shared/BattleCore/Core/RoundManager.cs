@@ -6,6 +6,7 @@ using CardMoba.BattleCore.Context;
 using CardMoba.BattleCore.EventBus;
 using CardMoba.BattleCore.Foundation;
 using CardMoba.BattleCore.Managers;
+// EffectUnitCloner 在 CardMoba.BattleCore.Foundation 命名空间，已通过上方 using 引入
 
 namespace CardMoba.BattleCore.Core
 {
