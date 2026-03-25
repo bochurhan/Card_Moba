@@ -29,7 +29,7 @@ namespace CardMoba.BattleCore.Core
             var playerData = ctx.GetPlayer(playerId);
             if (playerData == null)
             {
-                ctx.RoundLog.Add($"[SettlementEngine] Missing player {playerId} for instant resolution.");
+                ctx.RoundLog.Add($"[SettlementEngine] ⚠️ 找不到玩家 {playerId}，跳过瞬策结算。");
                 return new List<EffectResult>();
             }
 
@@ -44,7 +44,7 @@ namespace CardMoba.BattleCore.Core
 
             if (source.IsSilenced)
             {
-                ctx.RoundLog.Add($"[SettlementEngine] {playerId} is silenced and cannot play the card.");
+                ctx.RoundLog.Add($"[SettlementEngine] {playerId} 处于沉默状态，无法打出此牌。");
                 return new List<EffectResult>();
             }
 
@@ -79,7 +79,7 @@ namespace CardMoba.BattleCore.Core
             var playerData = ctx.GetPlayer(playerId);
             if (playerData == null)
             {
-                ctx.RoundLog.Add($"[SettlementEngine] Missing player {playerId} for instant card {card.InstanceId}.");
+                ctx.RoundLog.Add($"[SettlementEngine] ⚠️ 找不到玩家 {playerId}，跳过瞬策结算（卡牌 {card.InstanceId}）。");
                 return new List<EffectResult>();
             }
 
@@ -99,7 +99,7 @@ namespace CardMoba.BattleCore.Core
 
             if (source.IsSilenced)
             {
-                ctx.RoundLog.Add($"[SettlementEngine] {playerId} is silenced and cannot play {card.InstanceId}.");
+                ctx.RoundLog.Add($"[SettlementEngine] {playerId} 处于沉默状态，无法打出 {card.InstanceId}。");
                 return new List<EffectResult>();
             }
 
@@ -131,26 +131,26 @@ namespace CardMoba.BattleCore.Core
 
         public void ResolvePlanCards(BattleContext ctx, List<CommittedPlanCard> planCards)
         {
-            ctx.RoundLog.Add("[SettlementEngine] Resolve Layer 0 Counter.");
+            ctx.RoundLog.Add("═══ Layer 0：反制结算 ═══");
             ResolveLayer0_Counter(ctx, planCards);
             DrainPendingQueue(ctx);
 
-            ctx.RoundLog.Add("[SettlementEngine] Resolve Layer 1 Defense.");
+            ctx.RoundLog.Add("═══ Layer 1：防御/修正结算 ═══");
             ResolveLayer(ctx, planCards, SettleLayer.Defense);
             DrainPendingQueue(ctx);
 
-            ctx.RoundLog.Add("[SettlementEngine] Capture defense snapshots before Layer 2.");
+            ctx.RoundLog.Add("═══ Pre-Layer 2：防御快照 ═══");
             TakeDefenseSnapshots(ctx);
 
-            ctx.RoundLog.Add("[SettlementEngine] Resolve Layer 2 Damage.");
+            ctx.RoundLog.Add("═══ Layer 2：伤害结算 ═══");
             ResolveLayer2_Damage(ctx, planCards);
             ClearDefenseSnapshots(ctx);
 
-            ctx.RoundLog.Add("[SettlementEngine] Resolve Layer 3 Resource.");
+            ctx.RoundLog.Add("═══ Layer 3：资源结算 ═══");
             ResolveLayer(ctx, planCards, SettleLayer.Resource);
             DrainPendingQueue(ctx);
 
-            ctx.RoundLog.Add("[SettlementEngine] Resolve Layer 4 BuffSpecial.");
+            ctx.RoundLog.Add("═══ Layer 4：Buff/特殊结算 ═══");
             ResolveLayer(ctx, planCards, SettleLayer.BuffSpecial);
             DrainPendingQueue(ctx);
         }
@@ -241,7 +241,7 @@ namespace CardMoba.BattleCore.Core
                 };
             }
 
-            ctx.RoundLog.Add("[SettlementEngine] Defense snapshots captured.");
+            ctx.RoundLog.Add("[SettlementEngine] 防御快照已拍摄。");
         }
 
         private void ClearDefenseSnapshots(BattleContext ctx)
@@ -264,7 +264,7 @@ namespace CardMoba.BattleCore.Core
                 var source = ctx.GetEntity(entry.SourceEntityId);
                 if (source == null)
                 {
-                    ctx.RoundLog.Add($"[DrainPendingQueue] Missing source entity {entry.SourceEntityId}, skip queued effect.");
+                    ctx.RoundLog.Add($"[DrainPendingQueue] ⚠️ 找不到施法实体 {entry.SourceEntityId}，跳过队列效果。");
                     continue;
                 }
 
@@ -288,7 +288,7 @@ namespace CardMoba.BattleCore.Core
             }
 
             if (count >= safetyLimit)
-                ctx.RoundLog.Add("[DrainPendingQueue] Safety limit reached while draining queued effects.");
+                ctx.RoundLog.Add("[DrainPendingQueue] ⚠️ 达到安全上限（1000次），可能存在无限触发循环！");
         }
 
         private List<Entity> ResolveEntityIds(BattleContext ctx, List<string> ids)
