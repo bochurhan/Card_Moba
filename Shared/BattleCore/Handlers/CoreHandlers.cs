@@ -42,8 +42,14 @@ namespace CardMoba.BattleCore.Handlers
                 Type     = effect.Type,
                 Success  = true,
             };
-
             bool isPierce = effect.Type == EffectType.Pierce;
+            effect.Params.TryGetValue("sourceCardInstanceId", out var sourceCardInstanceId);
+            bool isDot = effect.Params.TryGetValue("isDot", out var isDotValue)
+                && bool.TryParse(isDotValue, out var parsedIsDot)
+                && parsedIsDot;
+            bool isThorns = effect.Params.TryGetValue("isThorns", out var isThornsValue)
+                && bool.TryParse(isThornsValue, out var parsedIsThorns)
+                && parsedIsThorns;
 
             // 基础伤害值由 HandlerPool 预解析填入 effect.ResolvedValue（支持动态表达式）
             int baseDamage = effect.ResolvedValue;
@@ -158,6 +164,9 @@ namespace CardMoba.BattleCore.Handlers
                     ShieldAbsorbed   = shieldAbsorbed,
                     ArmorReduced     = armorReduced,
                     ShieldBroken     = shieldBroken,
+                    IsDot            = isDot,
+                    IsThorns         = isThorns,
+                    SourceCardInstanceId = sourceCardInstanceId,
                 });
 
                 // ── Phase C：触发器 ──────────────────────────────────
@@ -219,6 +228,7 @@ namespace CardMoba.BattleCore.Handlers
 
             // 治疗量由 HandlerPool 预解析填入 effect.ResolvedValue（支持动态表达式）
             int baseHeal = effect.ResolvedValue;
+            effect.Params.TryGetValue("sourceCardInstanceId", out var sourceCardInstanceId);
 
             foreach (var target in targets)
             {
@@ -239,6 +249,7 @@ namespace CardMoba.BattleCore.Handlers
                     SourceEntityId = source.EntityId,
                     TargetEntityId = target.EntityId,
                     RealHealAmount = realHeal,
+                    SourceCardInstanceId = sourceCardInstanceId,
                 });
 
                 ctx.TriggerManager.Fire(ctx, TriggerTiming.OnHealed, new TriggerContext
@@ -280,6 +291,7 @@ namespace CardMoba.BattleCore.Handlers
 
             // 护盾量由 HandlerPool 预解析填入 effect.ResolvedValue（支持动态表达式）
             int shieldAmount = effect.ResolvedValue;
+            effect.Params.TryGetValue("sourceCardInstanceId", out var sourceCardInstanceId);
 
             foreach (var target in targets)
             {
@@ -295,6 +307,7 @@ namespace CardMoba.BattleCore.Handlers
                 {
                     TargetEntityId = target.EntityId,
                     ShieldAmount   = shieldAmount,
+                    SourceCardInstanceId = sourceCardInstanceId,
                 });
 
                 ctx.TriggerManager.Fire(ctx, TriggerTiming.OnGainShield, new TriggerContext
@@ -457,6 +470,7 @@ namespace CardMoba.BattleCore.Handlers
             };
 
             // ── 累计前置 Damage / Pierce 效果造成的实际 HP 伤害 ──────
+            effect.Params.TryGetValue("sourceCardInstanceId", out var sourceCardInstanceId);
             int totalHpDamage = 0;
             foreach (var prior in priorResults)
             {
@@ -497,6 +511,7 @@ namespace CardMoba.BattleCore.Handlers
                 SourceEntityId = source.EntityId,
                 TargetEntityId = source.EntityId,
                 RealHealAmount = healAmount,
+                SourceCardInstanceId = sourceCardInstanceId,
             });
 
             // 触发 OnHealed 时机（与 HealHandler 保持一致，使依赖此时机的 Buff 能响应吸血回血）

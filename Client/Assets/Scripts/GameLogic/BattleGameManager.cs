@@ -112,7 +112,22 @@ namespace CardMoba.Client.GameLogic
             var eventBus = new InternalEventBus(this);
 
             // ── BattleFactory 创建战斗 ────────────────────────────
-            var factory = new BattleFactory();
+            var factory = new BattleFactory
+            {
+                CardDefinitionProvider = configId =>
+                {
+                    if (!_cardConfigMap.TryGetValue(configId, out var cardConfig))
+                        return null;
+
+                    string defaultTarget = CardConfigToEffectAdapter.CardTargetTypeToString(cardConfig.TargetType);
+                    return new BattleCardDefinition
+                    {
+                        ConfigId = configId,
+                        IsExhaust = cardConfig.Tags.HasFlag(CardTag.Exhaust),
+                        Effects = CardConfigToEffectAdapter.ConvertEffects(cardConfig, defaultTarget),
+                    };
+                },
+            };
             var result  = factory.CreateBattle(
                 battleId:   "local-battle",
                 randomSeed: 42,
@@ -304,15 +319,13 @@ namespace CardMoba.Client.GameLogic
             if (instant)
             {
                 // 瞬策牌：先移出手牌区，再结算，最后根据标签决定去向
-                MoveCardAfterPlay(battleCard, cardConfig);
-                _roundManager.PlayInstantCard(_ctx, playerId, battleCard.InstanceId, effects);
+                _roundManager.PlayInstantCard(_ctx, playerId, battleCard.InstanceId);
                 FlushLogs();
                 OnLogMessage?.Invoke($"<color=#aaffaa>{(playerId == HumanPlayerId ? "你" : "对手")} → 打出瞬策牌【{cardName}】（花费 {cost} 点能量）</color>");
             }
             else
             {
                 // 定策牌：移入策略区，等待 EndRound 统一结算
-                _ctx.CardManager.CommitPlanCard(_ctx, battleCard.InstanceId);
                 _roundManager.CommitPlanCard(_ctx, new CommittedPlanCard
                 {
                     PlayerId       = playerId,

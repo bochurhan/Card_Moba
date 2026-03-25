@@ -44,12 +44,15 @@ namespace CardMoba.BattleCore.Managers
             {
                 for (int i = 0; i < count; i++)
                 {
+                    var definition = ctx.GetCardDefinition(configId);
                     var card = new BattleCard
                     {
                         InstanceId = $"bc_{++_instanceCounter:D4}",
                         ConfigId   = configId,
                         OwnerId    = playerId,
                         Zone       = CardZone.Deck,
+                        IsExhaust  = definition?.IsExhaust ?? false,
+                        IsStatCard = definition?.IsStatCard ?? false,
                     };
                     player.AllCards.Add(card);
                 }
@@ -105,6 +108,16 @@ namespace CardMoba.BattleCore.Managers
                     CardInstanceId = card.InstanceId,
                     CardConfigId   = card.ConfigId,
                 });
+                ctx.TriggerManager.Fire(ctx, TriggerTiming.OnCardDrawn, new TriggerContext
+                {
+                    SourceEntityId = player.HeroEntity.EntityId,
+                    Extra = new Dictionary<string, object>
+                    {
+                        ["playerId"] = playerId,
+                        ["cardInstanceId"] = card.InstanceId,
+                        ["cardConfigId"] = card.ConfigId,
+                    },
+                });
 
                 ctx.RoundLog.Add($"[CardManager] {playerId} 抽取 [{card.ConfigId}]（InstanceId={card.InstanceId}）。");
 
@@ -135,6 +148,12 @@ namespace CardMoba.BattleCore.Managers
                 return false;
             }
 
+            if (card.IsStatCard)
+            {
+                ctx.RoundLog.Add($"[CardManager] 状态牌 {cardInstanceId} 不能作为定策牌提交。");
+                return false;
+            }
+
             MoveCard(ctx, card, CardZone.StrategyZone);
             ctx.RoundLog.Add($"[CardManager] {card.OwnerId} 提交定策牌 [{card.ConfigId}]（{cardInstanceId}）。");
             return true;
@@ -161,8 +180,9 @@ namespace CardMoba.BattleCore.Managers
         {
             foreach (var kv in ctx.AllPlayers)
             {
-                var player   = kv.Value;
-                var statCards = player.GetCardsInZone(CardZone.StatZone);
+                var player = kv.Value;
+                var handCards = player.GetCardsInZone(CardZone.Hand);
+                var statCards = handCards.Where(c => c.IsStatCard).ToList();
 
                 foreach (var card in statCards)
                 {
@@ -171,6 +191,7 @@ namespace CardMoba.BattleCore.Managers
                         SourceEntityId = player.HeroEntity.EntityId,
                     };
                     trigCtx.Extra["cardInstanceId"] = card.InstanceId;
+                    trigCtx.Extra["cardConfigId"] = card.ConfigId;
                     ctx.TriggerManager.Fire(ctx, TriggerTiming.OnStatCardHeld, trigCtx);
                 }
             }
@@ -273,6 +294,8 @@ namespace CardMoba.BattleCore.Managers
                 OwnerId    = ownerId,
                 Zone       = targetZone,
                 TempCard   = tempCard,
+                IsExhaust  = ctx.GetCardDefinition(configId)?.IsExhaust ?? false,
+                IsStatCard = ctx.GetCardDefinition(configId)?.IsStatCard ?? false,
             };
 
             player.AllCards.Add(card);
@@ -288,6 +311,39 @@ namespace CardMoba.BattleCore.Managers
         public BattleCard? GetCard(BattleContext ctx, string instanceId)
         {
             return FindCard(ctx, instanceId);
+        }
+
+        /// <inheritdoc/>
+        public BattleCard? PrepareInstantCard(BattleContext ctx, string playerId, string cardInstanceId)
+        {
+            var card = FindCard(ctx, cardInstanceId);
+            if (card == null)
+            {
+                ctx.RoundLog.Add($"[CardManager] ⚠️ 找不到瞬策牌实例 {cardInstanceId}。");
+                return null;
+            }
+
+            if (!card.OwnerId.Equals(playerId, StringComparison.Ordinal))
+            {
+                ctx.RoundLog.Add($"[CardManager] ⚠️ 瞬策牌 {cardInstanceId} 不属于玩家 {playerId}。");
+                return null;
+            }
+
+            if (card.Zone != CardZone.Hand)
+            {
+                ctx.RoundLog.Add($"[CardManager] ⚠️ 瞬策牌 {cardInstanceId} 不在手牌区（当前区域={card.Zone}）。");
+                return null;
+            }
+
+            if (card.IsStatCard)
+            {
+                ctx.RoundLog.Add($"[CardManager] 状态牌 {cardInstanceId} 不能直接打出。");
+                return null;
+            }
+
+            MoveCard(ctx, card, card.IsExhaust ? CardZone.Consume : CardZone.Discard);
+            ctx.RoundLog.Add($"[CardManager] {playerId} 打出瞬策牌 [{card.ConfigId}]（{cardInstanceId}）。");
+            return card;
         }
 
         // ══════════════════════════════════════════════════════════

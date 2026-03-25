@@ -48,6 +48,10 @@ namespace CardMoba.BattleCore.Foundation
         /// 状态牌标记（true = 不可主动打出，由 ScanStatCards 在回合结束时触发效果）。
         /// 示例：灼烧状态牌、中毒状态牌。
         /// </summary>
+        /// <remarks>
+        /// 状态牌仍然是常规卡牌实例，可在牌堆、手牌、弃牌堆之间流转。
+        /// 当前主流程不依赖 StatZone；若需要“持有时触发”，由 CardManager.ScanStatCards 扫描手牌中的状态牌。
+        /// </remarks>
         public bool IsStatCard { get; set; }
 
         /// <summary>

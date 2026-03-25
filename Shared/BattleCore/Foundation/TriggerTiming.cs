@@ -67,6 +67,7 @@ namespace CardMoba.BattleCore.Foundation
         OnCardDrawn = 503,
 
         /// <summary>状态牌被持有时（ScanStatCards 扫描触发）</summary>
+        // 由 CardManager 在回合末扫描手牌中的状态牌时触发。
         OnStatCardHeld = 504,
 
         /// <summary>受到治疗时</summary>

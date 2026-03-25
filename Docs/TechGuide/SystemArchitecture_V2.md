@@ -310,7 +310,26 @@ public class BattleCard
 }
 ```
 
-### 4.5 IEffectHandler 接口（V2 签名）
+### 4.5 BattleCardDefinition（卡牌运行时定义）
+
+```csharp
+/// <summary>
+/// BattleCore 运行时卡牌定义，通过 BattleFactory.CardDefinitionProvider 委托注入。
+/// BattleCore 只依赖可执行效果列表和少量生命周期标记，与上层完整配置模型解耦。
+/// </summary>
+public class BattleCardDefinition
+{
+    public string ConfigId { get; set; }           // 卡牌配置 ID（与 BattleCard.ConfigId 对应）
+    public bool IsExhaust { get; set; }            // 是否为消耗牌
+    public bool IsStatCard { get; set; }           // 是否为状态牌
+    public List<EffectUnit> Effects { get; set; }  // 可执行效果列表
+}
+```
+
+> **注意**：使用方通过 `BattleFactory.CardDefinitionProvider = configId => ...` 注入卡牌定义。
+> `BattleContext.BuildCardEffects(configId)` 会自动克隆效果列表，避免多次结算污染同一对象。
+
+### 4.6 IEffectHandler 接口（V2 签名）
 
 ```csharp
 public interface IEffectHandler
@@ -343,7 +362,8 @@ public interface IEffectHandler
 RoundManager.EndRound()
   │
   ├─ [Step 1] CardManager.ScanStatCards()
-  │     └─ 遍历所有玩家 StatZone，构建状态牌效果 → 推入 PendingQueue
+  │     └─ 遍历所有玩家 Hand 中 IsStatCard=true 的实例，触发 OnStatCardHeld → 推入 PendingQueue
+  │     ⚠️ 当前状态牌不依赖 StatZone，主流程扫描手牌中持有的状态牌实例
   │
   ├─ [Step 2] SettlementEngine.ResolvePlanCards()
   │     │
@@ -453,10 +473,10 @@ Foundation层       ✗ 任何 Manager（纯数据）
 | `OnShieldBroken` | `DamageHandler` Phase B 护盾归零时 | 破盾特效 |
 | `OnNearDeath` | `DamageHandler` Phase B HP ≤ 0 时 | 复活技能 |
 | `OnDeath` | `SettlementEngine` 死亡确认后 | 死亡触发器 |
-| `OnBuffAdded` | `BuffManager.AddBuff` | Buff 叠加时触发 |
-| `OnBuffRemoved` | `BuffManager.RemoveBuff` | Buff 移除时触发 |
-| `OnCardDrawn` | `CardManager.DrawCard` | 抽牌触发器 |
-| `OnStatCardHeld` | `CardManager.ScanStatCards` | 状态牌持有时触发 |
+| `OnBuffAdded` | `BuffManager.AddBuff` | Buff 叠加时触发 ✅ 已接线 |
+| `OnBuffRemoved` | `BuffManager.RemoveBuff` | Buff 移除时触发 ✅ 已接线 |
+| `OnCardDrawn` | `CardManager.DrawCards` | 抽牌触发器 ✅ 已接线 |
+| `OnStatCardHeld` | `CardManager.ScanStatCards`（扫描 Hand 中 IsStatCard=true 的牌） | 状态牌持有时触发 |
 
 ---
 
@@ -474,9 +494,12 @@ Deck ──抽牌──► Hand ──打出──► StrategyZone（定策）
 
 弃牌堆 ◄── 结算完成（普通牌归位）
 消耗区 ◄── 结算完成（消耗牌永久记录）
-StatZone ◄── 效果生成（状态牌，如灼烧）──► [ScanStatCards 触发后] ──► Discard
+StatZone ◄── ⚠️ 遗留兼容区域，当前主流程不依赖此区域
 
-临时牌：tempCard=true → 结算后 DestroyTempCards() 直接销毁（不进 Discard）
+状态牌（IsStatCard=true）：正常存在于 Deck / Hand / Discard，不可主动打出，
+  回合末由 ScanStatCards() 扫描 Hand 中的状态牌触发 OnStatCardHeld → 之后随普通手牌弃置
+
+临时牌：TempCard=true → 回合末 DestroyTempCards() 直接销毁（不进 Discard）
 ```
 
 ---
@@ -495,6 +518,9 @@ StatZone ◄── 效果生成（状态牌，如灼烧）──► [ScanStatCar
 | **结算层数** | 4层（0-3） | 5层（0-4，增加 Resource 层） |
 | **Handler 签名** | Execute(card, effect, source, target, ctx) | Execute(ctx, effect, source, targets, priorResults) |
 | **DOT 伤害** | 直接 Hp-=（绕过 DamageHelper） | 通过 PendingQueue，走完整 DamageHandler 流程 |
+| **卡牌定义注入** | 无，配置直接耦合 | `BattleCardDefinition` + `CardDefinitionProvider` 委托解耦 |
+| **触发目标预解析** | 无 | `TriggerSource`/`TriggerTarget` 在入队时锁定实体 ID，防止目标漂移 |
+| **效果来源追踪** | 无 | 效果参数自动写入 `sourceCardInstanceId`/`sourceCardConfigId` |
 
 ---
 

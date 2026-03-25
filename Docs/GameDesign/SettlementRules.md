@@ -1,432 +1,589 @@
-# 结算规则详解
+# BattleCore 结算规则
 
-**文档版本**：V4.0  
-**最后更新**：2026-02-28  
-**前置阅读**：[Overview.md](Overview.md)、[CardSystem.md](CardSystem.md)  
-**阅读时间**：10 分钟
+**文档版本**: 5.0  
+**最后更新**: 2026-03-25  
+**状态**: 当前契约  
+**适用范围**: `Shared/BattleCore` 当前运行时规则
 
----
-
-## 🎯 设计目标
-
-解决 **同步回合制** 中 4 名玩家同时出牌的核心问题：
-
-| 问题 | 解决方案 |
-|------|----------|
-| 先后手优势 | 分层同步结算，同层无顺序 |
-| 反制时机 | Layer 0 优先执行，无效化后续效果 |
-| 状态依赖 | 预结算 → 实际结算，一次性应用 |
-| 确定性 | 服务端权威结算，客户端预测+校正 |
+关联文档:
+- [SystemArchitecture_V2.md](../TechGuide/SystemArchitecture_V2.md)
+- [Cards_Template_Enums.csv](../../Config/Excel/Cards_Template_Enums.csv)
 
 ---
 
-## 📊 四层结算模型（V3.0）
+## 1. 文档目的
 
-### 层级定义
+本文档描述 BattleCore 当前已经落地的结算规则。
 
-```
-定策牌结算顺序（同层无先后手）
+这不是旧方案汇总，也不是未来规划。  
+如果本文档与运行时代码冲突，应认为文档需要修正。
 
-    Layer 0: 反制层（Counter=1）
-    ↓ （被反制的卡牌不进入后续层）
-    Layer 1: 防御/修正层（ID 2-8）
-    ↓
-    Layer 2: 伤害层（ID 10-14，含触发效果）
-    ↓
-    Layer 3: 功能层（ID 20-29）
-```
-
-### EffectType → 层级映射
-
-> 以下为实际枚举值，见 `Shared/Protocol/Enums/EffectType.cs`
-
-| EffectType | ID | 层级 | 名称 |
-|------------|----|------|------|
-| `Counter` | 1 | Layer 0 | 反制 |
-| `Shield` | 2 | Layer 1 | 护盾 |
-| `Armor` | 3 | Layer 1 | 护甲 |
-| `AttackBuff` | 4 | Layer 1 | 攻击力强化 |
-| `AttackDebuff` | 5 | Layer 1 | 攻击力削弱 |
-| `Reflect` | 6 | Layer 1 | 反伤 |
-| `DamageReduction` | 7 | Layer 1 | 减伤 |
-| `Invincible` | 8 | Layer 1 | 无敌 |
-| `Damage` | 10 | Layer 2 | 直接伤害 |
-| `Lifesteal` | 11 | Layer 2 | 吸血 |
-| `Thorns` | 12 | Layer 2 | 荆棘反伤 |
-| `ArmorOnHit` | 13 | Layer 2 | 受击获甲 |
-| `Pierce` | 14 | Layer 2 | 穿透伤害 |
-| `Heal` | 20 | Layer 3 | 治疗 |
-| `Stun` | 21 | Layer 3 | 眩晕 |
-| `Vulnerable` | 22 | Layer 3 | 易伤 |
-| `Weak` | 23 | Layer 3 | 虚弱 |
-| `Draw` | 24 | Layer 3 | 抽牌 |
-| `Discard` | 25 | Layer 3 | 弃牌 |
-| `GainEnergy` | 26 | Layer 3 | 获得能量 |
-| `Silence` | 27 | Layer 3 | 沉默 |
-| `Slow` | 28 | Layer 3 | 迟缓 |
-| `DoubleStrength` | 29 | Layer 3 | 力量翻倍 |
-
-> ⚠️ 不存在 100+/200+/300+/400+ 旧版编号，所有 ID 均为上表所列，跳跃 ID（如 9、15-19）为预留位。
-
-### 详细说明
-
-| 层级 | 内容 | 执行规则 |
-|------|------|----------|
-| **Layer 0** | 反制效果（`Counter=1`） | 判定成功的反制 → 标记目标卡牌为"已反制" → 执行惩罚效果（如有） |
-| **Layer 1** | 防御/修正（ID 2-8） | 同时应用所有护盾、护甲、攻击力修正 |
-| **Layer 2** | 伤害+触发（ID 10-14） | 1. 计算所有伤害值 2. 同时扣血 3. 处理触发效果（反伤、吸血） |
-| **Layer 3** | 功能效果（ID 20-29） | 控制、资源操作、力量倍增等 |
+当前版本重点统一以下口径:
+- 定策牌采用五层结算
+- 瞬策牌和定策牌共享同一套卡牌实例模型
+- 状态牌是特殊卡牌，不是独立结算子系统
+- Buff 子效果走统一结算链
+- Layer 2 使用防御快照
 
 ---
 
-## ⚔️ Layer 0: 反制机制
+## 2. 当前结算原则
 
-### 反制判定流程
+BattleCore 当前遵循这些核心原则:
 
-```
-1. 收集所有本回合打出的反制卡
-   - EffectType == Counter (ID=1)
-   
-2. 收集所有可被反制的目标卡
-
-3. 对于每张反制卡：
-   a. 检查是否存在匹配的目标
-   b. 如果匹配成功：
-      - 标记目标卡为 "IsCountered = true"
-      - 执行惩罚效果（如有）
-      
-4. 被反制的卡牌不进入 Layer 1-3 结算
-```
-
-### 反制匹配规则
-
-| 反制类型 | 匹配条件 |
-|----------|----------|
-| 反制伤害牌 | `(targetCard.Tags & CardTag.Damage) != 0` |
-| 反制控制牌 | `(targetCard.Tags & CardTag.Control) != 0` |
-| 反制定策牌 | `targetCard.TrackType == 定策牌` |
-| 反制指定卡 | `targetCard.CardId == specifiedId` |
-
-### 代码接口
-
-```csharp
-/// <summary>
-/// 执行 Layer 0 反制结算（见 SettlementEngine.cs）
-/// </summary>
-private void ResolveLayer0_Counter(BattleContext ctx)
-{
-    var counterCards = ctx.PendingCounterCards;
-    
-    foreach (var counterCard in counterCards)
-    {
-        foreach (var targetCard in ctx.PendingPlanCards)
-        {
-            if (ShouldCounter(counterCard, targetCard))
-            {
-                targetCard.IsCountered = true;
-                ctx.CounteredCards.Add(targetCard);
-                
-                // 通过 Handler 执行反制效果（EffectType.Counter = 1）
-                var handler = HandlerRegistry.GetHandler(EffectType.Counter);
-                handler?.Execute(ctx, counterCard, counterCard.Config.Effects[0], source);
-            }
-        }
-    }
-    
-    // 过滤未被反制的卡牌
-    ctx.ValidPlanCards = ctx.PendingPlanCards.Where(c => !c.IsCountered).ToList();
-}
-```
+- 所有卡牌都以 `BattleCard` 实例存在于战斗中。
+- 瞬策牌和定策牌的差异仅在结算时机，不在数据模型。
+- 状态牌也是正常卡牌实例，只是带 `IsStatCard=true`。
+- 状态牌默认不能主动打出。
+- Buff 运行时真源只有 `BuffManager`。
+- 触发器产生的子效果不直接递归执行，而是进入 `PendingEffectQueue`。
+- Layer 2 定策伤害使用快照护盾和快照护甲计算。
+- Layer 2 中动态获得的护盾不会进入当前快照。
 
 ---
 
-## 🛡️ Layer 1: 防御/修正
+## 3. 卡牌类型与生命周期
 
-### Layer 1 执行内容
+### 3.1 普通卡牌
 
-| EffectType | ID | 说明 |
-|------------|----|------|
-| `Shield` | 2 | 添加护盾值到玩家状态 |
-| `Armor` | 3 | 增加护甲（减伤） |
-| `AttackBuff` | 4 | 增加攻击力（加算） |
-| `AttackDebuff` | 5 | 降低攻击力 |
-| `Reflect` | 6 | 反伤效果 |
-| `DamageReduction` | 7 | 固定减伤 |
-| `Invincible` | 8 | 本回合免伤 |
+普通卡牌在当前版本中按以下路径流转:
 
-### 同步应用规则
+- `Deck -> Hand`
+- 瞬策打出: `Hand -> Discard` 或 `Consume`
+- 定策提交: `Hand -> StrategyZone`
+- 回合结束: `Hand` 和 `StrategyZone` 中剩余卡牌统一进入 `Discard`
 
-所有 Layer 1 效果**同时计算**，**同时应用**：
+### 3.2 消耗牌
 
-```csharp
-/// <summary>
-/// 执行 Layer 1 防御结算（Handler 模式）
-/// </summary>
-private void ResolveLayer1_Defense(BattleContext ctx)
-{
-    var layer1Effects = new List<EffectToResolve>();
-    
-    foreach (var card in ctx.ValidPlanCards)
-    {
-        foreach (var effect in card.Config.Effects)
-        {
-            // ID 2-8 属于 Layer 1
-            if (effect.GetSettlementLayer() == 1)
-            {
-                layer1Effects.Add(new EffectToResolve { Card = card, Effect = effect });
-            }
-        }
-    }
-    
-    // 同时应用所有效果
-    foreach (var item in layer1Effects)
-    {
-        var handler = HandlerRegistry.GetHandler(item.Effect.EffectType);
-        handler?.Execute(ctx, item.Card, item.Effect, ctx.GetPlayer(item.Card.SourcePlayerId));
-    }
-}
-```
+如果 `IsExhaust=true`:
+- 瞬策结算后进入 `Consume`
+- 不进入弃牌堆
 
----
+### 3.3 临时牌
 
-## 💥 Layer 2: 伤害+触发
+如果 `TempCard=true`:
+- 可以像普通牌一样存在于运行时区域
+- 回合结束由 `DestroyTempCards()` 直接销毁
+- 不进入弃牌堆循环
 
-### 伤害计算公式
+### 3.4 状态牌
 
-```
-实际伤害 = (基础伤害 + 攻击修正) × (1 - 护甲减伤) - 护盾
-```
+状态牌当前定义为:
 
-### 防御快照隔离机制
+- 普通 `BattleCard` 实例
+- `IsStatCard=true`
+- 可以存在于牌堆、手牌、弃牌堆
+- 不能主动作为瞬策牌打出
+- 不能主动作为定策牌提交
 
-Layer 2 开始**之前**，`SettlementEngine` 会为每位玩家拍摄一份**防御快照**（`DefenseSnapshot`），记录此刻的护盾值、护甲值和无敌状态。
+当前“持有时触发”语义:
 
-Layer 2 期间所有伤害计算均以**快照值**为基准，而非实时值：
+- 由 `CardManager.ScanStatCards()` 在回合结束时扫描
+- 扫描对象是 `Hand` 中的 `IsStatCard` 实例
+- 不是 `StatZone`
 
-```
-Pre-Layer 2：拍摄快照
-  snapshot.Shield = target.Shield（当前值）
-  snapshot.Armor  = target.Armor（当前值）
+因此，当前状态牌的产品语义应理解为:
 
-Layer 2 期间：
-  每次命中 → 读 snapshot.Shield/Armor 计算吸收量
-           → 同步递减快照值和实时值（防止后续命中重复消费）
-           → 实际 HP 扣减写入实时 Entity.Hp
+- 它本质是会卡手、卡费用、或带来负面效果的特殊牌
+- 如果卡面写的是“持有到回合结束时触发”，就依赖回合末手牌扫描
+- 回合结束后它和其他手牌一样会被弃置，除非未来单独设计额外规则
 
-Layer 2 结束：清除快照
-```
-
-**设计目的**：保证双方的受伤计算互不干扰——A 打 B 的伤害，不会因为"B 同时打 C 触发了什么效果"而改变结果。
+`StatZone` 仍然存在于枚举中，但当前不作为主流程依赖。
 
 ---
 
-#### ⚠️ 快照期间动态护盾的设计约定
+## 4. 回合总流程
 
-Layer 2 期间触发的效果（如 `AfterTakeDamage` 触发的"受伤获得护盾"Buff）会写入实时 `Entity.Shield`，但**不会更新已拍摄的快照**。
+### 4.1 战斗初始化
 
-因此：**Layer 2 期间动态生成的护盾，不参与本回合的防御计算，下回合才生效。**
+`RoundManager.InitBattle()`:
+- 重置回合数、胜负状态、待结算定策列表
+- 发布 `BattleStartEvent`
 
-| 场景 | 行为 | 原因 |
-|------|------|------|
-| Layer 1 护盾牌加盾 | ✅ 本回合正常防御 | 快照在 Layer 2 前拍摄，包含此护盾 |
-| `AfterTakeDamage` 触发获盾 | ⏳ 下回合才生效 | 快照已定格，本层内写入的护盾不计入快照 |
-| `OnRoundEnd` 触发获盾 | ✅ 下回合正常防御 | 在下回合 Pre-Layer 2 拍快照时已包含 |
+### 4.2 回合开始
 
-**Buff 设计规范**：若一个 Buff 意图"减少后续受到的伤害"，其触发时机应为 `OnRoundStart` 或在 Layer 1 通过护盾牌触发，而**不应使用 `AfterTakeDamage`** —— 后者的护盾只在下回合生效，符合"受伤后获得抵抗力"的直觉，但不能在本回合抵挡后续攻击。
+`RoundManager.BeginRound()` 当前顺序:
 
----
+1. 回合数 `+1`
+2. 写入 `BattleContext.CurrentRound`
+3. 阶段切到 `RoundStart`
+4. 发布 `RoundStartEvent`
+5. 触发 `OnRoundStart`
+6. 消化 `PendingEffectQueue`
+7. 执行 `CardManager.OnRoundStart()`
+8. 再次消化 `PendingEffectQueue`
+9. 阶段切到 `PlayerAction`
 
-### 执行步骤
+`CardManager.OnRoundStart()` 当前会:
+- 恢复能量
+- 每位玩家抽 5 张牌
 
-1. **Pre-Layer 2**：为所有玩家拍摄防御快照（Shield/Armor/IsInvincible）
-2. **收集伤害**：统计所有伤害效果及其目标
-3. **计算修正**：应用攻击力修正、入伤修正（易伤/护甲）
-4. **逐牌结算**：每张牌完整走 A（只读校验）→ B（写入护盾/HP）→ C（触发器）后再处理下一张
-5. **处理触发**：每张牌 Phase C 后消化 PendingQueue（吸血、荆棘等）
-6. **清除快照**：Layer 2 全部结算完毕后清空
+### 4.3 玩家操作阶段
 
-### 代码接口（V3.1）
+玩家操作阶段允许两类行为:
 
-```csharp
-/// <summary>
-/// 执行 Layer 2 伤害结算
-/// </summary>
-private void ResolveLayer2_Damage(BattleContext ctx)
-{
-    // Step1: 收集并同步应用所有伤害（ID 10-14）
-    foreach (var card in ctx.ValidPlanCards)
-    {
-        foreach (var effect in card.Config.Effects)
-        {
-            if (effect.GetSettlementLayer() == 2)
-            {
-                var handler = HandlerRegistry.GetHandler(effect.EffectType);
-                handler?.Execute(ctx, card, effect, ctx.GetPlayer(card.SourcePlayerId));
-            }
-        }
-    }
-    
-    // Step2: 处理触发效果（吸血、反伤）
-    ProcessTriggerEffects(ctx);
-}
-```
+- 打出瞬策牌
+- 提交定策牌
 
-### 触发效果处理
+瞬策牌立即结算。  
+定策牌进入 `StrategyZone`，等到回合结束统一处理。
 
-| 触发类型 | EffectType | ID | 触发条件 | 效果 |
-|----------|------------|----|----------|------|
-| 反伤 | `Reflect` | 6 | 受到伤害时 | 对来源造成固定伤害 |
-| 荆棘 | `Thorns` | 12 | 受到伤害时 | 额外伤害来源 |
-| 吸血 | `Lifesteal` | 11 | 造成伤害时 | 恢复等比生命值 |
-| 受击获甲 | `ArmorOnHit` | 13 | 受到伤害时 | 获得护甲 |
-| 濒死触发 | - | - | 生命值归零时 | 触发救生效果（如有） |
+### 4.4 回合结束
 
----
+`RoundManager.EndRound()` 当前顺序:
 
-## 🎲 Layer 3: 功能效果
+1. 阶段切到 `Settlement`
+2. 扫描手牌中的状态牌
+3. 消化状态牌扫描产生的 `PendingEffectQueue`
+4. 死亡检查，如果战斗结束则中断后续流程
+5. 结算全部定策牌
+6. 再做一次死亡检查
+7. 触发 `OnRoundEnd`
+8. 消化 `PendingEffectQueue`
+9. 执行 `BuffManager.OnRoundEnd()`，当前主要是 Buff 衰减
+10. 再做一次死亡检查
+11. 清空所有剩余护盾
+12. 执行 `TriggerManager.TickDecay()`
+13. 执行 `CardManager.OnRoundEnd()`，弃掉手牌并清空定策区
+14. 执行 `DestroyTempCards()`
+15. 阶段切到 `RoundEnd`
+16. 发布 `RoundEndEvent`
 
-### Layer 3 执行内容
+重要结论:
 
-| EffectType | ID | 说明 |
-|------------|----|------|
-| `Heal` | 20 | 恢复生命值 |
-| `Stun` | 21 | 眩晕（下回合无法操作） |
-| `Vulnerable` | 22 | 易伤（受伤增加） |
-| `Weak` | 23 | 虚弱（攻击力降低） |
-| `Draw` | 24 | 抽牌 |
-| `Discard` | 25 | 弃牌 |
-| `GainEnergy` | 26 | 能量回复 |
-| `Silence` | 27 | 沉默（下回合无法抽牌） |
-| `Slow` | 28 | 迟缓（能量上限降低） |
-| `DoubleStrength` | 29 | 力量翻倍（乘法增益） |
-
-### 执行规则
-
-- 同层功能效果**同时生效**
-- 控制效果**立即标记**，在下回合生效
-- 资源效果**立即应用**
+- 状态牌持有触发发生在定策牌结算之前
+- 如果状态牌在回合末先打死人，后续定策牌不会继续结算
+- 回合结束清盾发生在 Buff 衰减之后
 
 ---
 
-## ☠️ 濒死判定期
+## 5. 瞬策牌结算
 
-在 Layer 3 结束后，执行统一的死亡判定：
+### 5.1 统一模型
 
-```
-1. 检查所有玩家生命值
-2. HP ≤ 0 的玩家标记为"濒死"
-3. 检查是否有救生效果（护盾、回复等）
-4. 无救生的濒死玩家判定为"死亡"
-5. 清除死亡玩家尚未结算的效果
-6. 执行死亡后续（奖励、支援解锁等）
-```
+瞬策牌和定策牌都基于真实 `cardInstanceId`。
 
----
+瞬策牌当前主路径:
 
-## 🔄 完整结算流程图
+1. 根据 `cardInstanceId` 找到真实 `BattleCard`
+2. 校验归属
+3. 从 `CardDefinitionProvider` 获取可执行效果
+4. 为每个效果写入来源元数据:
+   - `sourceCardInstanceId`
+   - `sourceCardConfigId`
+5. 进入 `SettlementEngine.ResolveInstantFromCard()`
 
-```
-回合开始
-    │
-    ▼
-┌───────────────────────────┐
-│  操作窗口期（25秒）         │
-│  - 瞬策牌：立即生效         │
-│  - 定策牌：提交/修改/取消    │
-└───────────────────────────┘
-    │
-    ▼
-指令锁定
-    │
-    ▼
-┌───────────────────────────┐
-│  PreResolveTargets        │
-│  → 为所有卡牌解析目标        │
-└───────────────────────────┘
-    │
-    ▼
-┌───────────────────────────┐
-│  Layer 0: 反制结算          │
-│  → 标记被反制的卡牌          │
-│  → 输出 ValidPlanCards      │
-└───────────────────────────┘
-    │
-    ▼
-┌───────────────────────────┐
-│  Layer 1: 防御/修正结算      │
-│  → 同时应用护盾/护甲/修正    │
-│  → GetSettlementLayer()==1  │
-└───────────────────────────┘
-    │
-    ▼
-┌───────────────────────────┐
-│  Layer 2: 伤害结算          │
-│  → 同时扣血 → 触发效果      │
-│  → GetSettlementLayer()==2  │
-└───────────────────────────┘
-    │
-    ▼
-┌───────────────────────────┐
-│  Layer 3: 功能效果结算       │
-│  → 控制/资源/力量倍增        │
-│  → GetSettlementLayer()==3  │
-└───────────────────────────┘
-    │
-    ▼
-┌───────────────────────────┐
-│  濒死判定期                 │
-│  → 死亡判定 → 后续处理      │
-└───────────────────────────┘
-    │
-    ▼
-回合结束（弃牌、清能量）
-    │
-    ▼
-下一回合
-```
+### 5.2 瞬策牌执行顺序
+
+严格瞬策路径当前顺序:
+
+1. 触发 `BeforePlayCard`
+2. 消化触发器队列
+3. 检查沉默
+4. 通过 `CardManager.PrepareInstantCard()` 完成出牌校验和区域移动
+5. 按效果列表顺序逐个执行
+6. 每个效果后立即消化 `PendingEffectQueue`
+7. 触发 `AfterPlayCard`
+8. 再次消化 `PendingEffectQueue`
+9. 发布 `CardPlayedEvent`
+
+当前瞬策牌不使用 Layer 2 防御快照。  
+它的伤害结算读取实时护盾和实时护甲。
 
 ---
 
-## 🖥️ 客户端-服务端协作
+## 6. 定策牌五层结算
 
-### 预测与校正模型
+定策牌当前按以下层级结算:
 
-```
-客户端：
-1. 本地预计算结算结果（使用相同的 BattleCore）
-2. 显示预测动画
-3. 收到服务端权威结果
-4. 比对差异 → 如有差异则校正显示
+| 层级 | 枚举 | 含义 |
+|---|---|---|
+| Layer 0 | `Counter` | 反制 |
+| Layer 1 | `Defense` | 防御和前置修正 |
+| Pre-Layer 2 | snapshot | 拍防御快照 |
+| Layer 2 | `Damage` | 伤害与伤害相关触发 |
+| Post-Layer 2 | clear snapshot | 清理快照 |
+| Layer 3 | `Resource` | 抽牌、弃牌、能量等资源效果 |
+| Layer 4 | `BuffSpecial` | 治疗、Buff、控制等特殊效果 |
 
-服务端：
-1. 收集所有玩家的锁定指令
-2. 调用 BattleCore 执行权威结算
-3. 广播结算结果给所有客户端
-```
+所有定策牌都按提交顺序结算。  
+同一张牌内部，效果按配置顺序执行。
 
-### 确定性保证
+### 6.1 Layer 0: Counter
 
-- **相同输入 → 相同输出**：BattleCore 必须是确定性的
-- **使用 SeededRandom**：所有随机效果使用种子随机数
-- **禁止浮点运算**：伤害计算使用整数
+作用:
+- 处理反制
+- 标记被反制的定策牌
+
+结果:
+- 被反制的牌不会进入后续层级
+
+### 6.2 Layer 1: Defense
+
+作用:
+- 护盾
+- 护甲
+- Layer 2 之前的前置防御搭建
+
+这一层执行完之后，系统会拍 Layer 2 的防御快照。
+
+### 6.3 Layer 2: Damage
+
+作用:
+- `Damage`
+- `Pierce`
+- 与伤害强绑定的链式效果
+
+当前实现特点:
+
+- 以牌为单位逐张处理
+- 一张牌的 Layer 2 效果执行完后，才处理下一张牌
+- 每张牌执行完后都会消化触发器队列
+
+这意味着:
+
+- 同一方后出的牌，可以看到前一张牌已经造成的实时战场变化
+- 但双方互相计算受伤时，仍以各自 Layer 2 开始前的防御快照为基准
+
+### 6.4 Layer 3: Resource
+
+作用:
+- 抽牌
+- 弃牌
+- 能量变化
+- 其他资源型效果
+
+### 6.5 Layer 4: BuffSpecial
+
+作用:
+- `Heal`
+- `AddBuff`
+- 控制和特殊效果
+
+注意:
+- 当前治疗在 Layer 4
+- 因此治疗不会插入到 Layer 2 的同层伤害结算中
 
 ---
 
-## 📝 版本历史
+## 7. Layer 2 防御快照规则
 
-| 版本 | 日期 | 变更 |
-|------|------|------|
-| V4.0 | 2026-02-28 | 全面修正 EffectType ID（对齐枚举实际值）；删除不存在的旧版兼容编号；补全 Layer3；新增 DoubleStrength(29) |
-| V3.1 | 2025-02-25 | 同步 V3.0 EffectType 体系 |
-| V1.0 | 初始 | 基础结算规则文档 |
+### 7.1 为什么要拍快照
+
+Layer 2 快照用于隔离“双方互相结算伤害时的防御基线”。
+
+目标是:
+- 避免双方因为出牌先后顺序导致对方防御基线发生非预期漂移
+- 避免同一层多次命中反复消费同一份护盾或护甲
+
+### 7.2 当前快照规则
+
+在 `SettlementEngine.ResolvePlanCards()` 中:
+
+1. Layer 1 完成
+2. 为每个玩家拍一份 `DefenseSnapshot`
+3. Layer 2 伤害读取快照防御
+4. Layer 2 结束后清空快照
+
+### 7.3 当前结算语义
+
+当 Layer 2 伤害命中时:
+
+- 护盾吸收读取 `snapshot.Shield`
+- 护甲减伤读取 `snapshot.Armor`
+- 吸收/减伤发生后:
+  - 快照值递减
+  - 实时值也递减
+
+这样保证:
+
+- 同一轮 Layer 2 多次命中不会重复消费同一份护盾
+- 同时实时状态仍然和表现层一致
+
+### 7.4 Layer 2 中动态获得护盾
+
+当前契约非常重要:
+
+- Layer 2 中通过 `AfterTakeDamage` 等时机新获得的护盾，会写入实时 `Entity.Shield`
+- 但不会回写到当前快照
+
+结果就是:
+
+- 这部分护盾不会参与本回合当前 Layer 2 的后续防御
+- 会在下一回合拍快照时纳入防御基线
+
+这是当前有意保留的设计。
 
 ---
 
-## 📖 关联文档
+## 8. 当前伤害语义
 
-| 主题 | 文档 |
-|------|------|
-| 卡牌系统 | [CardSystem.md](CardSystem.md) |
-| 核心代码解读 | [../TechGuide/BattleCore.md](../TechGuide/BattleCore.md) |
-| 代码位置 | `Shared/BattleCore/Settlement/SettlementEngine.cs` |
-| Handler 注册 | `Shared/BattleCore/Settlement/Handlers/HandlerRegistry.cs` |
+### 8.1 Damage
+
+`Damage` 当前规则:
+
+- 先经过出伤修正
+- 再经过入伤修正
+- 先吃护盾
+- 再吃护甲
+- 剩余部分才扣生命
+
+### 8.2 Pierce
+
+`Pierce` 当前规则:
+
+- 先经过出伤修正
+- 再经过入伤修正
+- 会吃护盾
+- 不吃护甲
+- 剩余部分直接扣生命
+
+也就是说，当前实现里 `Pierce` 不是“完全无视一切防御”，而是“无视护甲，不无视护盾”。
+
+### 8.3 无敌
+
+当前 `DamageHandler` 会检查实时 `IsInvincible`。  
+如果目标无敌，本次伤害直接无效。
+
+### 8.4 伤害前时机
+
+`TriggerTiming` 中定义了:
+- `BeforeDealDamage`
+- `BeforeTakeDamage`
+
+但当前运行时没有真正触发这两个 timing。  
+因此现在不存在“通过伤害前窗口改写或取消本次伤害”的正式结算能力。
+
+这和当前产品口径一致: 暂时不做伤害改写。
+
+---
+
+## 9. 当前治疗与护盾语义
+
+### 9.1 Heal
+
+`Heal` 当前规则:
+
+- 只回复缺失生命
+- 不会超过 `MaxHp`
+- 会发布 `HealEvent`
+- 会触发 `OnHealed`
+
+### 9.2 Lifesteal
+
+当前存在两类吸血语义:
+
+#### 卡牌上的 `EffectType.Lifesteal`
+
+规则:
+- 读取同一张牌之前 `Damage` / `Pierce` 造成的实际生命伤害
+- 按百分比回血
+- 不计算被护盾吸收的部分
+- 会触发 `OnHealed`
+
+#### Buff 型 Lifesteal
+
+规则:
+- 在 `AfterDealDamage` 时机触发
+- 通过 `trigCtx.value` 读取本次实际生命伤害
+- 进入队列后走标准 `Heal` 结算
+
+### 9.3 Shield
+
+`Shield` 当前规则:
+
+- 立刻叠加到实时护盾
+- 会发布 `ShieldGainedEvent`
+- 会触发 `OnGainShield`
+- 回合结束统一清空
+
+---
+
+## 10. Buff 触发型效果语义
+
+Buff 当前不是直接改血或直接递归调用结算，而是注册触发器，之后走统一队列。
+
+### 10.1 DoT
+
+当前 DoT 类型:
+- Burn
+- Poison
+- Bleed
+
+当前规则:
+
+- 在 `OnRoundStart` 触发
+- 实际执行的是 `Pierce` 效果
+- 目标是自己
+- 带 `isDot=true` 标记
+
+因此，当前 DoT 语义是:
+
+- 吃护盾
+- 不吃护甲
+- 会发布正常伤害事件
+
+### 10.2 Regeneration
+
+当前规则:
+
+- 在 `OnRoundStart` 触发
+- 实际执行的是标准 `Heal`
+- 会触发 `OnHealed`
+
+### 10.3 Buff Lifesteal
+
+当前规则:
+
+- 在 `AfterDealDamage` 触发
+- 根据 `trigCtx.value` 回血
+- 实际执行的是标准 `Heal`
+
+### 10.4 Thorns
+
+当前产品口径已经固定:
+
+- `Thorns` / 荆棘按 `Damage` 语义处理
+- 不走 `Pierce`
+
+当前运行时规则:
+
+- 在 `AfterTakeDamage` 触发
+- 目标为攻击者
+- 伤害值由 `trigCtx.value * 百分比` 计算
+- 实际执行的是标准 `Damage`
+- 带 `isThorns=true` 标记
+
+因此当前荆棘结论是:
+
+- 会吃攻击者护盾
+- 会吃攻击者护甲
+- 会经过正常伤害事件和触发链
+
+---
+
+## 11. 数值修正语义
+
+当前数值修正拆成两段:
+
+- 出伤修正: `OutgoingDamage`
+- 入伤修正: `IncomingDamage`
+
+当前 Buff 到修正器的映射:
+
+| Buff | 方向 | 作用对象 |
+|---|---|---|
+| Strength | 出伤 | `Damage`、`Pierce` |
+| Weak | 出伤 | `Damage`、`Pierce` |
+| Armor | 入伤 | `Damage` |
+| Vulnerable | 入伤 | `Damage`、`Pierce` |
+
+这意味着:
+
+- `Armor` 不会减免 `Pierce`
+- `Vulnerable` 会放大 `Pierce`
+
+---
+
+## 12. 死亡判定规则
+
+当前死亡链路由 `RoundManager` 统一负责。
+
+`DamageHandler` 的职责只有:
+- 扣血
+- 标记“目标已经不活着”
+- 不直接触发 `OnNearDeath` / `OnDeath`
+
+真正的死亡流程在 `RoundManager.CheckDeathAndBattleOver()` 中:
+
+1. 找出当前死亡玩家
+2. 触发 `OnNearDeath`
+3. 消化队列
+4. 如果被救活，则取消死亡标记
+5. 如果仍死亡，则触发 `OnDeath`
+6. 消化队列
+7. 发布 `EntityDeathEvent`
+8. 发布 `PlayerDeathEvent`
+9. 根据剩余存活玩家判断是否战斗结束
+
+当前约束:
+
+- `OnNearDeath` 和 `OnDeath` 的 `TriggerContext.SourceEntityId` 表示死者
+- `Extra["playerId"]` 会额外给出死亡玩家 id
+- `EntityDeathEvent.KillerEntityId` 当前仍为空
+
+---
+
+## 13. 触发时机现状
+
+### 13.1 当前已接线的 timing
+
+| Timing | 当前来源 |
+|---|---|
+| `OnRoundStart` | 回合开始 |
+| `OnRoundEnd` | 主结算后 |
+| `BeforePlayCard` | 瞬策出牌前 |
+| `AfterPlayCard` | 瞬策出牌后 |
+| `AfterDealDamage` | 造成伤害后 |
+| `AfterTakeDamage` | 受到伤害后 |
+| `OnShieldBroken` | 护盾被本次命中打空时 |
+| `OnNearDeath` | 统一死亡检查 |
+| `OnDeath` | 统一死亡检查 |
+| `OnBuffAdded` | AddBuff |
+| `OnBuffRemoved` | RemoveBuff |
+| `OnCardDrawn` | 抽牌 |
+| `OnStatCardHeld` | 回合末扫描手牌状态牌 |
+| `OnHealed` | 治疗和吸血回血 |
+| `OnGainShield` | 获得护盾 |
+
+### 13.2 当前保留但未启用的 timing
+
+| Timing | 说明 |
+|---|---|
+| `BeforeDealDamage` | 已定义，未接线 |
+| `BeforeTakeDamage` | 已定义，未接线 |
+
+不要把这两个 timing 当作现成能力使用。
+
+---
+
+## 14. 当前结算中的来源追踪
+
+当前 BattleCore 会尽量保留卡牌来源:
+
+- 瞬策牌和定策牌执行前，会把 `sourceCardInstanceId` / `sourceCardConfigId` 写入效果参数
+- 伤害事件、治疗事件、护盾事件会在可用时带出 `SourceCardInstanceId`
+- `CardPlayedEvent` 会带:
+  - `PlayerId`
+  - `CardInstanceId`
+  - `CardConfigId`
+
+Buff 触发型效果不一定有卡牌来源。  
+例如 DoT 和 Buff 型 Lifesteal 的来源更偏向 Buff 自身，而不是某张当前打出的牌。
+
+---
+
+## 15. 当前不属于正式契约的能力
+
+以下能力当前不要当作 BattleCore 已经支持:
+
+- 通过伤害前窗口改写伤害值
+- 通过伤害前窗口取消本次伤害
+- 完整击杀者归因
+- 通用字符串条件表达式
+- 基于 `StatZone` 的状态牌主流程
+- 基于 `Entity.ActiveBuffs` 的 Buff 结算
+
+---
+
+## 16. 一句话总结
+
+当前 BattleCore 的结算口径可以概括为:
+
+- 瞬策和定策统一走卡牌实例
+- 状态牌是特殊卡牌，不是独立系统
+- Buff 是独立运行时状态，由 `BuffManager` 持有
+- 所有链式效果尽量回到统一结算链
+- 定策伤害层通过防御快照保证本层一致性
+
+如果未来产品逻辑变化，这份文档应跟代码一起改，而不是留补丁说明继续叠加。

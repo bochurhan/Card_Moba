@@ -112,6 +112,11 @@ namespace CardMoba.BattleCore.Context
         /// <summary>数值修正器管理器（力量/虚弱等动态修正）</summary>
         public Managers.IValueModifierManager ValueModifierManager { get; }
 
+        /// <summary>
+        /// 卡牌运行时定义提供器。BattleCore 只依赖效果列表和少量生命周期标记。
+        /// </summary>
+        public System.Func<string, BattleCardDefinition?>? CardDefinitionProvider { get; }
+
         // ══════════════════════════════════════════════════════════
         // 日志
         // ══════════════════════════════════════════════════════════
@@ -121,6 +126,20 @@ namespace CardMoba.BattleCore.Context
 
         /// <summary>历史回合日志快照（永不清空，按回合存档）</summary>
         public List<List<string>> HistoryLog { get; } = new List<List<string>>();
+
+        public BattleCardDefinition? GetCardDefinition(string configId)
+        {
+            return CardDefinitionProvider?.Invoke(configId);
+        }
+
+        public List<EffectUnit>? BuildCardEffects(string configId)
+        {
+            var definition = GetCardDefinition(configId);
+            if (definition == null)
+                return null;
+
+            return EffectUnitCloner.CloneMany(definition.Effects);
+        }
 
         /// <summary>归档当前回合日志到历史记录，并清空当前回合日志</summary>
         public void ArchiveRoundLog()
@@ -157,7 +176,8 @@ namespace CardMoba.BattleCore.Context
             Managers.ITriggerManager triggerManager,
             Managers.ICardManager cardManager,
             Managers.IBuffManager buffManager,
-            Managers.IValueModifierManager valueModifierManager)
+            Managers.IValueModifierManager valueModifierManager,
+            System.Func<string, BattleCardDefinition?>? cardDefinitionProvider = null)
         {
             BattleId              = battleId;
             Random                = new Random.SeededRandom(randomSeed);
@@ -166,6 +186,7 @@ namespace CardMoba.BattleCore.Context
             CardManager           = cardManager;
             BuffManager           = buffManager;
             ValueModifierManager  = valueModifierManager;
+            CardDefinitionProvider = cardDefinitionProvider;
         }
     }
 }

@@ -37,11 +37,13 @@ namespace CardMoba.Tests
         private static BattleCreateResult CreateTestBattle(
             int seed = 42,
             Func<string, BuffConfig?>? buffConfigProvider = null,
+            Func<string, BattleCardDefinition?>? cardDefinitionProvider = null,
             IEventBus? eventBus = null)
         {
             var factory = new BattleFactory
             {
                 BuffConfigProvider = buffConfigProvider,
+                CardDefinitionProvider = cardDefinitionProvider,
             };
             // BuffConfigProvider 留 null（测试中不使用 Buff）
 
@@ -162,6 +164,31 @@ namespace CardMoba.Tests
                 map[config.BuffId] = config;
 
             return buffId => map.TryGetValue(buffId, out var config) ? config : null;
+        }
+
+        private static BattleCardDefinition MakeCardDefinition(
+            string configId,
+            bool isExhaust = false,
+            bool isStatCard = false,
+            params EffectUnit[] effects)
+            => new BattleCardDefinition
+            {
+                ConfigId = configId,
+                IsExhaust = isExhaust,
+                IsStatCard = isStatCard,
+                Effects = new List<EffectUnit>(effects),
+            };
+
+        private static BattleCardDefinition MakeCardDefinition(string configId, params EffectUnit[] effects)
+            => MakeCardDefinition(configId, false, false, effects);
+
+        private static Func<string, BattleCardDefinition?> MakeCardDefinitionProvider(params BattleCardDefinition[] definitions)
+        {
+            var map = new Dictionary<string, BattleCardDefinition>(StringComparer.OrdinalIgnoreCase);
+            foreach (var definition in definitions)
+                map[definition.ConfigId] = definition;
+
+            return configId => map.TryGetValue(configId, out var definition) ? definition : null;
         }
 
         // ══════════════════════════════════════════════════════════════════
@@ -668,6 +695,271 @@ namespace CardMoba.Tests
             ctx.AllPlayers["P1"].HeroEntity.Hp.Should().Be(25, "10 点伤害的 50% 吸血应回复 5 点生命");
             ctx.AllPlayers["P1"].HeroEntity.Shield.Should().Be(2, "吸血触发的 OnHealed 应继续驱动后续 queued effect");
             ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(20);
+        }
+
+        [Fact]
+        public void T20_StrictInstantPath_UsesCardDefinitionProvider_AndPublishesCardConfigId()
+        {
+            var bus = new BattleEventBus();
+            var playedEvents = new List<CardPlayedEvent>();
+            bus.Subscribe<CardPlayedEvent>(evt => playedEvents.Add(evt));
+
+            var provider = MakeCardDefinitionProvider(
+                MakeCardDefinition("strike", MakeDamageEffect(6)));
+
+            var result = CreateTestBattle(cardDefinitionProvider: provider, eventBus: bus);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            rm.BeginRound(ctx);
+
+            var card = GiveHandCard(ctx, "P1", "strict_instant_strike", "strike");
+            rm.PlayInstantCard(ctx, "P1", card.InstanceId);
+
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(24);
+            card.Zone.Should().Be(CardZone.Discard);
+            playedEvents.Should().ContainSingle();
+            playedEvents[0].CardInstanceId.Should().Be(card.InstanceId);
+            playedEvents[0].CardConfigId.Should().Be("strike");
+        }
+
+        [Fact]
+        public void T21_StrictInstantPath_RejectsWrongOwner_AndNonHandCard()
+        {
+            var provider = MakeCardDefinitionProvider(
+                MakeCardDefinition("strike", MakeDamageEffect(6)));
+
+            var result = CreateTestBattle(cardDefinitionProvider: provider);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            rm.BeginRound(ctx);
+
+            var card = GiveHandCard(ctx, "P1", "strict_invalid_strike", "strike");
+            card.Zone = CardZone.Discard;
+
+            rm.PlayInstantCard(ctx, "P1", card.InstanceId);
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(30);
+
+            card.Zone = CardZone.Hand;
+            rm.PlayInstantCard(ctx, "P2", card.InstanceId);
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(30);
+            card.Zone.Should().Be(CardZone.Hand);
+        }
+
+        [Fact]
+        public void T22_PlanCard_UsesProviderEffects_InsteadOfCallerPayload()
+        {
+            var provider = MakeCardDefinitionProvider(
+                MakeCardDefinition("plan_strike", MakeDamageEffect(7)));
+
+            var result = CreateTestBattle(cardDefinitionProvider: provider);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            rm.BeginRound(ctx);
+
+            var card = GiveHandCard(ctx, "P1", "plan_provider_strike", "plan_strike");
+            rm.CommitPlanCard(ctx, new CommittedPlanCard
+            {
+                PlayerId = "P1",
+                CardInstanceId = card.InstanceId,
+                Effects = new List<EffectUnit> { MakeHealEffect(99) },
+            }).Should().BeTrue();
+
+            rm.EndRound(ctx);
+
+            ctx.AllPlayers["P1"].HeroEntity.Hp.Should().Be(30);
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(23);
+        }
+
+        [Fact]
+        public void T23_BuffThorns_UsesDamageSemantics_AndConsumesAttackerShield()
+        {
+            var buffProvider = MakeBuffProvider(MakeBuffConfig("thorns", BuffType.Thorns, 0));
+            var cardProvider = MakeCardDefinitionProvider(
+                MakeCardDefinition("strike", MakeDamageEffect(10)));
+
+            var result = CreateTestBattle(
+                buffConfigProvider: buffProvider,
+                cardDefinitionProvider: cardProvider);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            rm.BeginRound(ctx);
+
+            ctx.AllPlayers["P1"].HeroEntity.Shield = 4;
+            var heroP2 = ctx.AllPlayers["P2"].HeroEntity.EntityId;
+            ctx.BuffManager.AddBuff(ctx, heroP2, "thorns", heroP2, value: 50, duration: 1);
+
+            var card = GiveHandCard(ctx, "P1", "thorns_strike", "strike");
+            rm.PlayInstantCard(ctx, "P1", card.InstanceId);
+
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(20);
+            ctx.AllPlayers["P1"].HeroEntity.Shield.Should().Be(0);
+            ctx.AllPlayers["P1"].HeroEntity.Hp.Should().Be(29);
+        }
+
+        [Fact]
+        public void T24_BuffRegeneration_GoesThroughOnHealed_FollowUp()
+        {
+            var buffProvider = MakeBuffProvider(MakeBuffConfig("regen", BuffType.Regeneration, 0));
+            var result = CreateTestBattle(buffConfigProvider: buffProvider);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            ctx.AllPlayers["P1"].HeroEntity.Hp = 20;
+            ctx.TriggerManager.Register(new TriggerUnit
+            {
+                TriggerName = "gain_shield_when_healed_by_regen",
+                Timing = TriggerTiming.OnHealed,
+                OwnerPlayerId = "P1",
+                SourceId = "test_regen_on_healed",
+                Effects = new List<EffectUnit>
+                {
+                    new EffectUnit
+                    {
+                        EffectId = "shield_from_regen_heal",
+                        Type = EffectType.Shield,
+                        TargetType = "Self",
+                        ValueExpression = "2",
+                        Layer = SettleLayer.BuffSpecial,
+                    },
+                },
+            });
+
+            var heroP1 = ctx.AllPlayers["P1"].HeroEntity.EntityId;
+            ctx.BuffManager.AddBuff(ctx, heroP1, "regen", heroP1, value: 3, duration: 1);
+
+            rm.BeginRound(ctx);
+
+            ctx.AllPlayers["P1"].HeroEntity.Hp.Should().Be(23);
+            ctx.AllPlayers["P1"].HeroEntity.Shield.Should().Be(2);
+        }
+
+        [Fact]
+        public void T25_OnBuffAdded_OnBuffRemoved_AndOnCardDrawn_Timings_Fire()
+        {
+            var buffProvider = MakeBuffProvider(MakeBuffConfig("strength", BuffType.Strength, 0));
+            var result = CreateTestBattle(buffConfigProvider: buffProvider);
+            var ctx = result.Context;
+
+            int buffAdded = 0;
+            int buffRemoved = 0;
+            int cardDrawn = 0;
+
+            ctx.TriggerManager.Register(new TriggerUnit
+            {
+                TriggerName = "count_buff_added",
+                Timing = TriggerTiming.OnBuffAdded,
+                OwnerPlayerId = "P1",
+                SourceId = "test_count_buff_added",
+                InlineExecute = (_, _) => buffAdded++,
+            });
+            ctx.TriggerManager.Register(new TriggerUnit
+            {
+                TriggerName = "count_buff_removed",
+                Timing = TriggerTiming.OnBuffRemoved,
+                OwnerPlayerId = "P1",
+                SourceId = "test_count_buff_removed",
+                InlineExecute = (_, _) => buffRemoved++,
+            });
+            ctx.TriggerManager.Register(new TriggerUnit
+            {
+                TriggerName = "count_card_drawn",
+                Timing = TriggerTiming.OnCardDrawn,
+                OwnerPlayerId = "P1",
+                SourceId = "test_count_card_drawn",
+                InlineExecute = (_, _) => cardDrawn++,
+            });
+
+            var heroP1 = ctx.AllPlayers["P1"].HeroEntity.EntityId;
+            var buff = ctx.BuffManager.AddBuff(ctx, heroP1, "strength", heroP1, value: 2, duration: 1);
+            buff.Should().NotBeNull();
+            ctx.BuffManager.RemoveBuff(ctx, heroP1, buff.RuntimeId).Should().BeTrue();
+
+            ctx.CardManager.GenerateCard(ctx, "P1", "draw_test_card", CardZone.Deck, tempCard: false);
+            ctx.CardManager.DrawCards(ctx, "P1", 1).Should().HaveCount(1);
+
+            buffAdded.Should().Be(1);
+            buffRemoved.Should().Be(1);
+            cardDrawn.Should().Be(1);
+        }
+
+        [Fact]
+        public void T26_TempCards_AreDestroyed_AtRoundEnd()
+        {
+            var result = CreateTestBattle();
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            rm.BeginRound(ctx);
+
+            var generated = ctx.CardManager.GenerateCard(ctx, "P1", "temp_generated", CardZone.Hand, tempCard: true);
+            ctx.AllPlayers["P1"].AllCards.Should().Contain(generated);
+
+            rm.EndRound(ctx);
+
+            ctx.AllPlayers["P1"].AllCards.Should().NotContain(generated);
+        }
+
+        [Fact]
+        public void T27_HandStateCard_FiresOnStatCardHeld_DuringEndRound()
+        {
+            var result = CreateTestBattle();
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            rm.BeginRound(ctx);
+
+            ctx.TriggerManager.Register(new TriggerUnit
+            {
+                TriggerName = "state_card_self_ping",
+                Timing = TriggerTiming.OnStatCardHeld,
+                OwnerPlayerId = "P1",
+                SourceId = "test_state_card_self_ping",
+                Effects = new List<EffectUnit>
+                {
+                    MakeDamageEffect(2, "Self"),
+                },
+            });
+
+            var stateCard = GiveHandCard(ctx, "P1", "state_burn_01", "burn_state");
+            stateCard.IsStatCard = true;
+
+            rm.EndRound(ctx);
+
+            ctx.AllPlayers["P1"].HeroEntity.Hp.Should().Be(28);
+            stateCard.Zone.Should().Be(CardZone.Discard);
+        }
+
+        [Fact]
+        public void T28_StateCard_CannotBePlayedOrCommitted()
+        {
+            var provider = MakeCardDefinitionProvider(
+                MakeCardDefinition("burn_state", false, true, MakeDamageEffect(5)));
+
+            var result = CreateTestBattle(cardDefinitionProvider: provider);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            rm.BeginRound(ctx);
+
+            var instantStateCard = GiveHandCard(ctx, "P1", "state_instant_01", "burn_state");
+            instantStateCard.IsStatCard = true;
+
+            rm.PlayInstantCard(ctx, "P1", instantStateCard.InstanceId).Should().BeEmpty();
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(30);
+            instantStateCard.Zone.Should().Be(CardZone.Hand);
+
+            var planStateCard = GiveHandCard(ctx, "P1", "state_plan_01", "burn_state");
+            planStateCard.IsStatCard = true;
+
+            rm.CommitPlanCard(ctx, new CommittedPlanCard
+            {
+                PlayerId = "P1",
+                CardInstanceId = planStateCard.InstanceId,
+            }).Should().BeFalse();
+            planStateCard.Zone.Should().Be(CardZone.Hand);
+        }
+
+        [Fact]
+        public void T29_BuffManager_IsTheOnlyRuntimeSourceOfTruth()
+        {
+            var buffProvider = MakeBuffProvider(MakeBuffConfig("strength", BuffType.Strength, 0));
+            var result = CreateTestBattle(buffConfigProvider: buffProvider);
+            var ctx = result.Context;
+
+            var heroP1 = ctx.AllPlayers["P1"].HeroEntity;
+            ctx.BuffManager.AddBuff(ctx, heroP1.EntityId, "strength", heroP1.EntityId, value: 2, duration: 1);
+
+            ctx.BuffManager.GetBuffs(heroP1.EntityId).Should().ContainSingle();
+            heroP1.ActiveBuffs.Should().BeEmpty();
         }
     }
 }

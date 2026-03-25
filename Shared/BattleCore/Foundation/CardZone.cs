@@ -24,6 +24,7 @@ namespace CardMoba.BattleCore.Foundation
         Consume = 4,
 
         /// <summary>状态牌区（持有中的状态牌，绑定持续触发效果）</summary>
+        // 遗留兼容区域。当前主流程状态牌行为由 BattleCard.IsStatCard 标记驱动，不依赖此区域。
         StatZone = 5,
     }
 }

@@ -91,6 +91,12 @@ namespace CardMoba.BattleCore.Core
         /// </summary>
         public Func<string, BuffConfig?>? BuffConfigProvider { get; set; }
 
+        /// <summary>
+        /// 卡牌运行时定义查询委托。key = BattleCard.ConfigId。
+        /// BattleCore 在实例合法性校验通过后，通过此委托自行解析效果列表和生命周期标记（IsExhaust/IsStatCard）。
+        /// </summary>
+        public Func<string, BattleCardDefinition?>? CardDefinitionProvider { get; set; }
+
         // ══════════════════════════════════════════════════════════
         // 主入口：创建一局战斗
         // ══════════════════════════════════════════════════════════
@@ -128,7 +134,8 @@ namespace CardMoba.BattleCore.Core
                 triggerManager,
                 cardManager,
                 buffManager,
-                valueModifierManager);
+                valueModifierManager,
+                CardDefinitionProvider);
 
             // ── Step 3：注册玩家数据 ──────────────────────────────
             foreach (var setup in players)

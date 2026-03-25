@@ -63,6 +63,9 @@ namespace CardMoba.BattleCore.Managers
         /// <summary>
         /// 扫描所有玩家手牌中的状态牌，触发 OnStatCardHeld 效果，推入 PendingQueue
         /// </summary>
+        /// <remarks>
+        /// 状态牌是普通 BattleCard 实例上的特殊标记，默认按手牌持有语义扫描，而不是依赖独立的运行时区域。
+        /// </remarks>
         void ScanStatCards(BattleContext ctx);
 
         /// <summary>回合开始时处理抽牌等逻辑</summary>
@@ -79,6 +82,12 @@ namespace CardMoba.BattleCore.Managers
 
         /// <summary>通过实例 ID 获取 BattleCard</summary>
         BattleCard? GetCard(BattleContext ctx, string instanceId);
+
+        /// <summary>
+        /// 在出牌前校验完成后，将瞬策牌从 Hand 移出并落到最终区域。
+        /// 成功时返回该实例，失败时返回 null。
+        /// </summary>
+        BattleCard? PrepareInstantCard(BattleContext ctx, string playerId, string cardInstanceId);
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -105,6 +114,9 @@ namespace CardMoba.BattleCore.Managers
 
         /// <summary>查询指定实体是否拥有某类型 Buff</summary>
         bool HasBuff(BattleContext ctx, string entityId, string buffConfigId);
+
+        /// <summary>获取指定实体当前持有的 Buff 列表。BuffManager 是唯一真源。</summary>
+        IReadOnlyList<BuffUnit> GetBuffs(string entityId);
 
         /// <summary>回合结束：衰减所有 Buff 的 RemainingRounds，到期调用 RemoveBuff</summary>
         void TickDecay(BattleContext ctx);

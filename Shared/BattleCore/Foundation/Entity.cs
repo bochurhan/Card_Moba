@@ -81,7 +81,10 @@ namespace CardMoba.BattleCore.Foundation
         // 活跃 Buff 列表
         // ══════════════════════════════════════════════════════════
 
-        /// <summary>当前持有的所有 Buff 实例（key = RuntimeId）</summary>
+        /// <summary>
+        /// 遗留字段，非权威状态。
+        /// 当前 Buff 的唯一真源为 BuffManager，请不要将此字段作为结算依据。
+        /// </summary>
         public Dictionary<string, BuffUnit> ActiveBuffs { get; set; } = new Dictionary<string, BuffUnit>();
     }
 }
