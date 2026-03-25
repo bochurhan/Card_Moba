@@ -1,232 +1,381 @@
-# 卡牌系统详解
+# 閸楋紕澧濈化鑽ょ埠鐠囧瓨妲?
 
-**文档版本**：V2.0  
-**最后更新**：2026-02-28  
-**前置阅读**：[Overview.md](Overview.md)  
-**阅读时间**：8 分钟
-
----
-
-## 🏗️ 卡牌分类体系
-
-### 主分类：双轨体系
-
-| CardTrackType | 枚举值 | 核心定位 |
-|---------------|--------|----------|
-| **瞬策牌** | 1 | 立即生效，卡组循环为主 |
-| **定策牌** | 2 | 回合末结算，对抗效果为主 |
-
-### 标签系统：CardTag（Flags 枚举）
-
-使用 **位标志(Flags)** 设计，一张卡可以拥有多个标签：
-
-```csharp
-[Flags]
-public enum CardTag
-{
-    None       = 0,
-    Draw       = 1 << 0,   // 抽牌
-    Damage     = 1 << 1,   // 伤害
-    Defense    = 1 << 2,   // 防御
-    Control    = 1 << 3,   // 控制
-    Counter    = 1 << 4,   // 反制
-    Execute    = 1 << 5,   // 斩杀
-    CrossLane  = 1 << 6,   // 跨路生效
-    Cycle      = 1 << 7,   // 卡组循环（抽/弃/洗）
-    Buff       = 1 << 8,   // 增益
-    Debuff     = 1 << 9,   // 减益
-    Legendary  = 1 << 10,  // 传说
-}
-```
-
-**用途**：
-- UI 筛选 → `if ((card.Tags & CardTag.Damage) != 0)`
-- 反制判定 → "反制所有带 `Damage` 标签的卡牌"
-- 词条显示 → 组合多个标签生成卡牌描述
+**閺傚洦銆傞悧鍫熸拱**: 2026-03-25  
+**閻樿埖鈧?*: 瑜版挸澧犳總鎴犲  
+**闁倻鏁ら懠鍐ㄦ纯**: `Shared/BattleCore` 瑜版挸澧犻崡锛勫鏉╂劘顢戦弮璺虹杽閻?
+閸忓疇浠堥弬鍥ㄣ€傞敍?
+- [SettlementRules.md](SettlementRules.md)
+- [SystemArchitecture_V2.md](../TechGuide/SystemArchitecture_V2.md)
 
 ---
 
-## 🎯 效果类型与结算层级
+## 1. 閺傚洦銆傞惄顔界垼
 
-`EffectType` 决定效果在哪个结算层执行，完整定义见 `Shared/Protocol/Enums/EffectType.cs`：
+閺堫剚鏋冨锝呭涧閹诲繗鍫?BattleCore 瑜版挸澧犲鑼病閽€钘夋勾閻ㄥ嫬宕遍悧宀€閮寸紒鐔风杽閻滃府绱濇稉宥堫吙鐠佸搫宸婚崣鍙夋煙濡楀牞绱濇稊鐔剁瑝鐠併劏顔戦張顏呮降閸欘垵鍏橀幍鈺佺潔閻ㄥ嫬鐣弫鎾帳鐞涖劋缍嬬化姹団偓?
+闁插秶鍋ｉ崶鐐电摕 5 娑擃亪妫舵０姗堢窗
 
-| 层级 | 包含的 EffectType | 说明 |
-|------|-----------------|------|
-| Layer 0 | `Counter(1)` | 反制效果，最高优先级 |
-| Layer 1 | `Shield(2)` `Armor(3)` `AttackBuff(4)` `AttackDebuff(5)` `Reflect(6)` `DamageReduction(7)` `Invincible(8)` | 防御/数值修正 |
-| Layer 2 | `Damage(10)` `Lifesteal(11)` `Thorns(12)` `ArmorOnHit(13)` `Pierce(14)` | 伤害 + 触发效果 |
-| Layer 3 | `Heal(20)` `Stun(21)` `Vulnerable(22)` `Weak(23)` `Draw(24)` `Discard(25)` `GainEnergy(26)` `Silence(27)` `Slow(28)` `DoubleStrength(29)` | 功能效果 |
+1. 鏉╂劘顢戦弮鏈电瀵姷澧濋崚鏉跨俺閺勵垯绮堟稊?2. `BattleCard` 閸?`BattleCardDefinition` 閸掑棗鍩嗙拹鐔荤煑娴犫偓娑?3. 閻剛鐡ラ悧灞烩偓浣哥暰缁涙牜澧濋妴浣哄Ц閹胶澧濋妴浣峰閺冨墎澧濋悳鏉挎躬閹簼绠炲ù浣芥祮
+4. 閸戣櫣澧濇稉搴ｇ波缁犳缍嬮崜宥堣泲閸濐亝娼稉鏄忕熅瀵?5. 瑜版挸澧犻垾婊堟饯閹焦膩閺夊簱鈧繂鎷伴垾婊冨З閹胶绮ㄩ弸婧锯偓婵堟畱鏉堝湱鏅崷銊ユ憿闁?
+---
 
-> 完整 EffectType 说明及 Handler 映射见 [../TechGuide/BattleCore.md](../TechGuide/BattleCore.md)。
+## 2. 瑜版挸澧犻弽绋跨妇閸欙絽绶?
+
+BattleCore 瑜版挸澧犻惃鍕幢閻楀瞼閮寸紒鐔峰讲娴犮儲顩ч幏顒佸灇娑撯偓閸欍儴鐦介敍?
+> 閸忓牊婀?`BattleCard` 鐎圭偘绶ラ敍灞藉晙闁俺绻?`ConfigId` 鐟欙絾鐎?`BattleCardDefinition`閿涘本娓堕崥搴㈠Ω鐎规矮绠熸稉顓犳畱閺佸牊鐏夋禍銈囩舶缂佹挾鐣婚柧鐐⒔鐞涘被鈧?
+鏉╂瑦鍓伴崨宕囨絻閿?
+- BattleCore 娑撳秵甯撮崣妞烩偓婊嗭紭閺佸牊鐏夐惄瀛樺复瑜版挸鍤悧灞糕偓?- 閻剛鐡ラ悧灞芥嫲鐎规氨鐡ラ悧宀勫厴韫囧懘銆忛崺杞扮艾閻喎鐤勯崡锛勫鐎圭偘绶?
+- 閸楋紕澧濋惃鍕箥鐞涘本妞傞悩鑸碘偓浣告嫲閸楋紕澧濋惃鍕波缁犳膩閺夋寧妲搁崚鍡欘瀲閻?
+---
+
+## 3. 娑撱倕鐪板Ο鈥崇€?
+
+### 3.1 BattleCard閿涙碍鍨弬妞捐厬閻ㄥ嫬鍙挎担鎾茬瀵姷澧?
+
+`BattleCard` 鐞涖劎銇氶垾婊嗙箹鐏炩偓闁插瞼娈戞潻娆庣瀵姴鍙挎担鎾跺閳ユ縿鈧?
+鐎瑰啫鍙ц箛鍐畱閺勵垰鐤勬笟瀣Ц閹緤绱?
+
+- `InstanceId`
+- `ConfigId`
+- `OwnerId`
+- `Zone`
+- `TempCard`
+- `IsStatCard`
+- `IsExhaust`
+- `ExtraData`
+
+娴ｇ姴褰叉禒銉﹀Ω鐎瑰啰鎮婄憴锝嗗灇閿?
+- 娑撯偓瀵姷澧濊ぐ鎾冲閸︺劏鐨濋幍瀣櫡
+- 鐎瑰啰骞囬崷銊ユ躬閻楀苯鐖㈤妴浣瑰閻楀被鈧礁鐣剧粵鏍у隘鏉╂ɑ妲稿鍐閸?- 鐎瑰啯妲告稉宥嗘Ц娑撳瓨妞傞悽鐔稿灇閻?- 鐎瑰啯妲告稉宥嗘Ц閻樿埖鈧胶澧?
+- 鐎瑰啯妲告稉宥嗘Ц濞戝牐鈧澧?
+
+`BattleCard` 閺勵垵绻嶇悰灞炬鐎电钖勯敍灞肩瑝閺勵垶鍘ょ悰銊︽拱闊偁鈧?
+### 3.2 BattleCardDefinition閿涙俺绻嶇悰灞炬缂佹挾鐣诲Ο鈩冩緲
+
+`BattleCardDefinition` 鐞涖劎銇氶垾婊嗙箹缁崵澧濋崷?BattleCore 闁插矁顕氶幀搴濈疄缂佹挾鐣婚垾婵勨偓?
+鐎瑰啫缍嬮崜宥呭涧娣囨繄鏆€閺堚偓鐏忓繐绻€鐟曚椒淇婇幁顖ょ窗
+
+- `ConfigId`
+- `IsExhaust`
+- `IsStatCard`
+- `Effects`
+
+鐎瑰啰娈戞担婊呮暏娑撳秵妲搁幓蹇氬牚閳ユ粏绻栧▎鈥冲毉閻楀奔绔寸€规碍澧﹂崙鍝勵樋鐏忔垶娓剁紒鍫滄縺鐎规枼鈧繐绱濋懓灞炬Ц閹诲繗鍫敍?
+- 鏉╂瑥绱堕悧灞炬箒閸濐亙绨洪弫鍫熺亯
+- 鏉╂瑤绨洪弫鍫熺亯閻ㄥ嫰銆庢惔蹇旀Ц娴犫偓娑?- 鏉╂瑤绨洪弫鍫熺亯鐏炵偘绨崫顏冪鐏?- 鏉╂瑥绱堕悧灞炬Ц娑撳秵妲搁悩鑸碘偓浣哄
+- 鏉╂瑥绱堕悧灞炬Ц娑撳秵妲稿☉鍫ｂ偓妤冨
+
+閹碘偓娴犮儱鐣犻弴鏉戝櫙绾喚娈戠€规矮缍呴弰顖ょ窗
+
+- 鏉╂劘顢戦弮鑸的侀弶?- 娑撳秵妲搁張鈧紒鍫㈢波缁犳绮ㄩ弸?
+---
+
+## 4. 闂堟瑦鈧焦膩閺夊じ绗岄崝銊︹偓浣虹波閺?
+### 4.1 瑜版挸澧犳禒鈧稊鍫熸Ц閳ユ粓娼ら幀浣测偓?
+鏉╂瑩鍣烽惃鍕ㄢ偓婊堟饯閹讲鈧繀绗夐弰顖涘瘹缂佹挻鐏夐崶鍝勭暰閿涘矁鈧本妲搁幐鍥侀弶鍨祼鐎规哎鈧?
+`BattleCardDefinition` 瑜版挸澧犻棃娆愨偓浣烘畱闁劌鍨庢稉鏄忣洣閺勵垽绱?
+
+- 閺佸牊鐏夐崚妤勩€?`Effects`
+- 閺佸牊鐏夌猾璇茬€?
+- 缂佹挾鐣荤仦鍌滈獓
+- 閺佸牊鐏夋い鍝勭碍
+- `IsExhaust`
+- `IsStatCard`
+
+### 4.2 瑜版挸澧犳禒鈧稊鍫熸Ц閳ユ粌濮╅幀浣测偓?
+鐎圭偤妾幍鎾冲毉閸氬海娈戠紒鎾寸亯娴犲秶鍔ч弰顖氬З閹胶娈戦妴?
+瑜版挸澧犻崝銊︹偓渚€鍎撮崚鍡楀瘶閹奉剨绱?
+
+- 閻╊喗鐖ｉ弰顖濈殱
+- 閺佹澘鈧壈銆冩潏鎯х础鐟欙絾鐎介崥搴ｆ畱缂佹挻鐏?
+- 閺夆€叉閺勵垰鎯佸陇鍐?
+- 閸撳秴绨弫鍫熺亯缂佹挻鐏夐懕鏂垮З
+- Trigger 娑撳﹣绗呴弬鍥粓閸?- Buff 閸?modifier 鐎佃鏆熼崐鑲╂畱娣囶喗顒?
+- Layer 2 闂冩彃灏借箛顐ゅ弾鐎佃濮㈤惄?閹躲倗鏁抽惃鍕閸?
+閹碘偓娴犮儱缍嬮崜宥喣侀崹瀣安鐠囥儳鎮婄憴锝勮礋閿?
+- 濡剝婢橀崶鍝勭暰
+- 缂佹挻鐏夐崝銊︹偓?
+### 4.3 瑜版挸澧犳稉宥嗘暜閹镐胶娈戦弬鐟版倻
+
+BattleCore 瑜版挸澧犲▽鈩冩箒閹跺ň鈧粌鎮撴稉鈧?`ConfigId` 閸︺劍鍨弬妞捐厬閸斻劍鈧焦娲块幑銏℃殻婵傛鏅ラ弸婊勀侀弶搴撯偓婵呯稊娑撹桨瀵岄懗钘夊閵?
+娑旂喎姘ㄩ弰顖濐嚛閿涘苯缍嬮崜宥嗘纯閹垮懘鏆遍惃鍕Ц閿?
+- 閸ュ搫鐣鹃弫鍫熺亯妤犮劍鐏?
+- 閸斻劍鈧礁寮弫鏉挎嫲閸斻劍鈧胶绮ㄩ弸?
+閼板奔绗夐弰顖ょ窗
+
+- 閸氬奔绔村鐘靛閸︺劏绻嶇悰灞炬娴犵粯鍓伴崚鍥ㄥ床鐎瑰本鏆?effect graph
+
+婵″倹鐏夐張顏呮降閻喐婀佹潻娆戣闂団偓濮瑰偊绱濆楦款唴娴兼ê鍘涢懓鍐閿?
+- 閸掑洦宕?`ConfigId`
+- 閻㈢喐鍨氶崣锔跨瀵姳澶嶉弮鍓佸
+- 閹存牕宕熼悪顒佸⒖鐏炴洖鐣炬稊澶幮掗弸鎰湴
+
+娴ｅ棜绻栨稉宥呯潣娴滃骸缍嬮崜宥咁殩缁撅负鈧?
+---
+
+## 5. 閸楋紕澧濋崠杞扮秴
+
+瑜版挸澧犳潻鎰攽閺冭泛灏担宥呭瘶閹奉剨绱?
+
+- `Deck`
+- `Hand`
+- `StrategyZone`
+- `Discard`
+- `Consume`
+
+閸忔湹鑵戦惇鐔割劀閸欏倷绗屾稉缁樼ウ缁嬪娈戦弰顖氬 5 娑擃亗鈧?
+瑜版挸澧犳稉缁樼ウ鏉烆剙顩ф稉瀣剁窗
+
+- `Deck -> Hand`
+- 閻剛鐡ラ悧宀嬬窗`Hand -> Discard` 閹?`Consume`
+- 鐎规氨鐡ラ悧宀嬬窗`Hand -> StrategyZone`
+- 閸ョ偛鎮庣紒鎾存将閿涙瓪Hand` 閸?`StrategyZone` -> `Discard`
+- 娑撳瓨妞傞悧宀嬬窗閸ョ偛鎮庣紒鎾存将閻╁瓨甯撮柨鈧В渚婄礉娑撳秷绻樺顏嗗箚
 
 ---
 
-## 📋 卡牌配置结构
+## 6. CardManager 閻ㄥ嫯浜寸拹?
+`CardManager` 瑜版挸澧犻崣顏囩鐠愶絽宕遍悧宀€鏁撻崨钘夋噯閺堢喎鎷伴崠杞扮秴濞翠浇娴嗛敍灞肩瑝鐠愮喕鐭楅弫鍫熺亯缂佹挾鐣婚妴?
+鐎瑰啫缍嬮崜宥堢鐠愶綇绱?
 
-### 运行时卡牌数据来源
+- 閸掓繂顫愰崠鏍閸?- 閹剁晫澧?
+- 閸楋紕澧濋崠杞扮秴鏉╀胶些
+- 閹绘劒姘︾€规氨鐡ラ悧?- 閻剛鐡ラ悧灞芥値濞夋洘鈧勭墡妤犲奔绗岄崙铏瑰鏉╀胶些
+- 閻樿埖鈧胶澧濋幍顐ｅ伎
+- 娑撳瓨妞傞悧宀勬敘濮?- 閸斻劍鈧胶鏁撻幋鎰
 
-```
-Config/Excel/Cards.csv      ← 策划编辑
-Config/Excel/Effects.csv    ← 策划编辑
-       ↓ Tools/ExcelConverter/convert.bat
-Client/Assets/StreamingAssets/Config/cards.json   ← 游戏读取
-Client/Assets/StreamingAssets/Config/effects.json ← 游戏读取
-```
-
-> 详细配置流程见 [../TechGuide/ConfigSystem.md](../TechGuide/ConfigSystem.md)。
-
-### CardConfig（代码模型，位于 Shared/ConfigModels/）
-
-```csharp
-public class CardConfig
-{
-    public int CardId { get; set; }              // 数字 ID：1xxx=瞬策，2xxx=定策
-    public string CardName { get; set; }         // 显示名称
-    public CardTrackType TrackType { get; set; } // Instant / Plan
-    public List<string> Tags { get; set; }       // 标签列表（JSON 存字符串，运行时解析）
-    public int EnergyCost { get; set; }          // 能量消耗
-    public int Rarity { get; set; }              // 稀有度 1/2/3
-    public List<CardEffect> Effects { get; set; } // 效果列表（通过 effectIds 关联）
-}
-
-public class CardEffect
-{
-    public string EffectId { get; set; }         // 如 "E2001-1"
-    public EffectType EffectType { get; set; }   // 对应枚举整数值
-    public int Value { get; set; }               // 数值（伤害/护盾等）
-    public int Duration { get; set; }            // 持续回合（0=即时）
-    public string TargetOverride { get; set; }   // 覆盖目标（如 "Self"）
-    public string TriggerCondition { get; set; } // 触发条件（反制牌筛选）
-    public bool IsDelayed { get; set; }          // 是否延迟生效
-}
-```
+鐎瑰啩绗夌拹鐔荤煑閿?
+- 閻╁瓨甯存径鍕倞娴笺倕顔婇妴浣逛笉閻ゆぜ鈧竻uff
+- 閸愬啿鐣鹃弻鎰炊閻楀瞼娈戦弫鍫熺亯閸愬懎顔?
+- 缂佸瓨濮?Buff 閻喐绨?
 
 ---
 
-## 🃏 瞬策牌设计规范
+## 7. 閸掓繂顫愰崠鏍︾瑢閹剁晫澧?
 
-### 核心特性
+### 7.1 閸掓繂顫愰崠?
+瀵偓鐏炩偓閺冭绱漙CardManager.InitBattleDeck()` 娴兼碍濡搁悧宀€绮嶉柊宥囩枂鐏炴洖绱戦幋?`BattleCard` 鐎圭偘绶ラ妴?
+鐏炴洖绱戦弮鏈电窗閸氬本顒炴禒?`BattleCardDefinition` 鐢箑鍙嗛敍?
+- `IsExhaust`
+- `IsStatCard`
 
-| 特性 | 规则 |
-|------|------|
-| **生效时机** | 打出后立即生效，不进入结算栈 |
-| **作用范围** | 主要针对自身（手牌、牌库、能量），部分可造成直伤 |
-| **使用限制** | 仅在操作窗口期可打出 |
-| **信息可见性** | 敌方不可见（使用动画可见，效果不可见） |
+鏉╂瑦鍓伴崨宕囨絻娑撯偓瀵姷澧濋崷銊ㄧ箥鐞涘本妞傛禒搴濈瀵偓婵姘ㄩ弰顖氱暚閺佹潙鐤勬笟瀣剁礉閼板奔绗夐弰顖氬毉閻楀本妞傛稉瀛樻閹风厧鍤弶銉ｂ偓?
+### 7.2 閹剁晫澧?
 
-### 常用效果类型
+`CardManager.DrawCards()` 鐠愮喕鐭楅敍?
+- 娴犲海澧濋崼鍡涖€婇幎鐣屽
+- 閸栬桨缍呮潻浣盒╅崚鐗堝閻?- 閻楀苯鐖㈡稉铏光敄閺冭埖濡稿鍐閸棙绀傞崶鐐靛閸?- 閸欐垵绔?`CardDrawnEvent`
+- 鐟欙箑褰?`OnCardDrawn`
 
-| EffectType | ID | 说明 |
-|------------|-----|------|
-| `Draw` | 24 | 抽牌 |
-| `Discard` | 25 | 弃牌 |
-| `GainEnergy` | 26 | 能量回复 |
-| `Silence` | 27 | 沉默（针对自身：禁止抽牌等） |
-| `DoubleStrength` | 29 | 力量翻倍（消耗型增益） |
+瑜版挸澧?`BeginRound` 闂冭埖顔屾妯款吇濮ｅ繋缍呴悳鈺侇啀閹?5 瀵姰鈧?
+---
 
-### 示例卡牌（当前套牌）
+## 8. 閻剛鐡ラ悧?
+### 8.1 鏉╂劘顢戦弮鎯邦嚔娑?
+閻剛鐡ラ悧宀€娈戦悧鍦仯閸欘亝婀佹稉鈧稉顏庣窗
 
-```json
-// 战斗专注：抽3张牌，本回合不能再抽牌
-{
-  "cardId": 1001,
-  "cardName": "战斗专注",
-  "trackType": "Instant",
-  "targetType": "Self",
-  "energyCost": 0,
-  "effectIds": ["E1001-1", "E1001-2"]
-}
+- 閸戣櫣澧濋崥搴ｇ彌閸楀磭绮ㄧ粻?
+鐎瑰啩绗夐弰顖氬綗娑撯偓婵傛鏆熼幑顔侥侀崹瀣剁礉娑旂喍绗夐弰顖濓紭閺佸牊鐏夐妴?
+### 8.2 瑜版挸澧犳稉鏄忕熅瀵?
+瑜版挸澧犻惉顒傜摜閻楀苯绻€妞ゆ槒铔嬮敍?
+1. `RoundManager.PlayInstantCard(ctx, playerId, cardInstanceId)`
+2. 閺嶈宓佺€圭偘绶ラ幏鍨煂 `BattleCard`
+3. 閺嶏繝鐛欒ぐ鎺戠潣
+4. 閺嶈宓?`ConfigId` 鐟欙絾鐎?`BattleCardDefinition`
+5. 閸忓娈?`Effects`
+6. 閸愭瑥鍙嗛弶銉︾爱閸忓啯鏆熼幑?7. 鏉╂稑鍙?`SettlementEngine.ResolveInstantFromCard(...)`
 
-// 突破极限：力量翻倍（消耗型）
-{
-  "cardId": 1002,
-  "cardName": "突破极限",
-  "trackType": "Instant",
-  "targetType": "Self",
-  "energyCost": 1,
-  "effectIds": ["E1002-1"]
-}
-```
+### 8.3 閸氬牊纭堕幀褎鐗庢?
+閻剛鐡ラ悧灞藉毉閻楀苯澧犳潻妯圭窗缂佸繗绻?`CardManager.PrepareInstantCard()` 閺嶏繝鐛欓敍?
+- 閸椻€崇箑妞よ鐡ㄩ崷?- 韫囧懘銆忚ぐ鎺戠秼閸撳秶甯虹€硅埖澧嶉張?- 韫囧懘銆忛崷?`Hand`
+- 娑撳秷鍏橀弰顖滃Ц閹胶澧?
+
+闁俺绻冮崥搴窗
+
+- 閺咁噣鈧氨澧濇潻娑樺弳 `Discard`
+- 濞戝牐鈧澧濇潻娑樺弳 `Consume`
 
 ---
 
-## ⚔️ 定策牌设计规范
+## 9. 鐎规氨鐡ラ悧?
+### 9.1 鏉╂劘顢戦弮鎯邦嚔娑?
+鐎规氨鐡ラ悧宀€娈戦悧鍦仯娑旂喎褰ч張澶夌娑擃亷绱?
 
-### 核心特性
+- 閸︺劌娲栭崥鍫熸汞缂佺喍绔寸紒鎾剁暬
 
-| 特性 | 规则 |
-|------|------|
-| **生效时机** | 回合末统一结算 |
-| **作用范围** | 敌方/场面，可带跨路标签 |
-| **提交机制** | 操作窗口期内可提交/修改/取消 |
-| **信息可见性** | 提交动画可见，内容不可见，结算时公开 |
+鐎瑰啫鎷伴惉顒傜摜閻楀奔绔撮弽鍑ょ礉娑旂喐妲搁崺杞扮艾閻喎鐤?`BattleCard` 鐎圭偘绶ユ稉?`BattleCardDefinition`閵?
+### 9.2 瑜版挸澧犳稉鏄忕熅瀵?
+瑜版挸澧犵€规氨鐡ラ悧灞界箑妞ゆ槒铔嬮敍?
+1. `RoundManager.CommitPlanCard(...)`
+2. 闁俺绻?`CardInstanceId` 閹垫儳鍩岄惇鐔风杽鐎圭偘绶?
+3. 閺嶏繝鐛欒ぐ鎺戠潣
+4. 閺嶈宓?`ConfigId` 鐟欙絾鐎界€规矮绠?
+5. 閸忓娈?`Effects`
+6. 閸愭瑥鍙嗛弶銉︾爱閸忓啯鏆熼幑?7. `CardManager.CommitPlanCard()` 閹跺﹤宕辨禒?`Hand` 閺€鎹愮箻 `StrategyZone`
+8. 閸旂姴鍙嗛崶鐐叉値閺堫偄绶熺紒鎾剁暬闂冪喎鍨?
 
-### 允许的效果类型
+### 9.3 缂佹挾鐣婚弬鐟扮础
 
-所有 Layer 0-3 的效果类型均可用于定策牌。
+閸ョ偛鎮庨張顐ゆ暠 `SettlementEngine.ResolvePlanCards(...)` 閹稿绨茬仦鍌滅埠娑撯偓缂佹挾鐣婚敍?
+1. `Counter`
+2. `Defense`
+3. `Damage`
+4. `Resource`
+5. `BuffSpecial`
 
-### 跨路规则
+Layer 2 閸撳秴鎮楅張澶愭Щ瀵扳€虫彥閻撗勵劄妤犮們鈧?
+---
 
-仅带 `CrossLane` 标签的定策牌可以选择跨路目标：
+## 10. 閻樿埖鈧胶澧?
 
-```csharp
-// 校验跨路合法性
-bool CanTargetCrossLane(CardConfig card)
-{
-    return (card.Tags & CardTag.CrossLane) != 0 
-        && card.TrackType == CardTrackType.定策牌;
-}
-```
+### 10.1 瑜版挸澧犵€规矮绠?
 
-### 示例卡牌
+閻樿埖鈧胶澧濊ぐ鎾冲娑撳秵妲搁悪顒傜彌缁崵绮洪敍宀冣偓灞炬Ц閿?
+- 閺咁噣鈧?`BattleCard`
+- `IsStatCard = true`
 
-```json
-{
-  "CardId": "E2001",
-  "CardName": "火球术",
-  "TrackType": 2,
-  "Tags": 2,  // Damage
-  "EnergyCost": 3,
-  "Effects": [
-    {
-      "EffectType": 300,
-      "Value": 5,
-      "TargetType": 1,
-      "Description": "对单个敌人造成5点伤害"
-    }
-  ]
-}
-```
+### 10.2 瑜版挸澧犵憴鍕灟
+
+閻樿埖鈧胶澧濊ぐ鎾冲鐟欏嫬鍨弰顖ょ窗
+
+- 閸欘垯浜掔€涙ê婀禍搴ｅ閸棎鈧焦澧滈悧灞烩偓浣哥磾閻楀苯鐖?
+- 娑撳秷鍏樻稉璇插З閹垫挻鍨氶惉顒傜摜閻?- 娑撳秷鍏樻稉璇插З閹绘劒姘﹂幋鎰暰缁涙牜澧?
+- 閸ョ偛鎮庣紒鎾存将閺冭埖澹傞幓蹇斿閻楀奔鑵戦惃鍕Ц閹胶澧?
+- 閹殿偅寮块弮鎯靶曢崣?`OnStatCardHeld`
+- 閹殿偅寮跨€瑰苯鎮楅崪灞藉従娴犳牗澧滈悧灞肩鐠х柉绻橀崗銉ョ磾閻楀苯鐖?
+
+### 10.3 瑜版挸澧犳禍褍鎼х拠顓濈疅
+
+瑜版挸澧犻弴鎾偓鍌氭値閹跺﹦濮搁幀浣哄閻炲棜袙閹存劧绱?
+
+- 娴兼艾宕遍幍?- 娴兼艾鐢弶銉ㄧ闂堛垺鏅ラ弸?- 閹镐焦婀侀崚鏉挎礀閸氬牊婀弮鎯靶曢崣?- 娴ｅ棙婀扮拹銊ょ瑐娴犲秵妲搁弲顕€鈧艾鐪崘鍛幢閻楀苯鐤勬笟?
+娑撳秵妲搁敍?
+- 鐢悂鈹楁稉鈧稉顏冪瑩閻劌灏担?- 娓氭繆绂嗘０婵嗩樆娑撴挾鏁ら崠铏规晸閸涜棄鎳嗛張鐔尖攳閸?
+---
+
+## 11. 娑撳瓨妞傞悧灞肩瑢濞戝牐鈧澧?
+
+### 11.1 娑撳瓨妞傞悧?
+娑撳瓨妞傞悧宀€鏁?`CardManager.GenerateCard()` 閻㈢喐鍨氶妴?
+鐎瑰啩绮涢悞鑸垫Ц `BattleCard`閿涘苯褰ч弰顖ょ窗
+
+- `TempCard = true`
+
+瑜版挸澧犵憴鍕灟閿?
+- 閸欘垯浜掓潻娑樺弳濮濓絽鐖堕崠杞扮秴
+- 閸欘垯浜掔悮顐″▏閻?- 閸ョ偛鎮庣紒鎾存将閻?`DestroyTempCards()` 閻╁瓨甯撮柨鈧В?
+### 11.2 濞戝牐鈧澧?
+
+濞戝牐鈧澧濊ぐ鎾冲閻?`IsExhaust = true` 閺嶅洩顔囬妴?
+瑜版挸澧犵憴鍕灟閿?
+- 娴ｈ法鏁ら崥搴濈瑝鏉╂稑鍙嗗鍐閸?- 閼板本妲告潻娑樺弳 `Consume`
 
 ---
 
-## 🔢 资源系统
+## 12. CardDefinitionProvider 閻ㄥ嫭鍓版稊?
+BattleCore 瑜版挸澧犳稉宥囨纯閹恒儰绶风挧鏍︾瑐鐏炲倸鐣弫鎾帳鐞涖劎绮ㄩ弸鍕┾偓?
+閹碘偓娴犮儱鐣犻柅姘崇箖 `CardDefinitionProvider` 閹跺ň鈧粌顦婚柈銊ュ幢閻楀矂鍘ょ純顔光偓婵嬧偓鍌炲帳閹存劘绻嶇悰灞炬閺堚偓鐏忓繐鐣炬稊澶堚偓?
+鏉╂瑦鐗遍崑姘辨畱閹板繋绠熼弰顖ょ窗
 
-### 能量（Energy）
+1. BattleCore 閸欘亜鍙ц箛鍐殰瀹歌京婀″锝夋付鐟曚胶娈戠€涙顔?
+2. 娑撳﹤鐪伴柊宥囩枂缂佹挻鐎崣顖欎簰缂佈呯敾閸欐ê瀵?
+3. BattleCore 閸愬懘鍎存稉宥呯箑閻╁瓨甯存笟婵婄 Excel/JSON 閻ㄥ嫬鐣弫瀛樐侀崹?4. 濞村鐦柌灞肩瘍閸欘垯浜掑鍫濐啇閺勬挻鐎柅鐘虫付鐏忓繐鐣炬稊澶婁粵閸ョ偛缍婃宀冪槈
 
-| 规则 | 说明 |
-|------|------|
-| 初始能量 | 3 |
-| 回合回复 | 每回合开始时回满至上限 |
-| 能量上限 | 5（可通过卡牌临时增加） |
-| 消耗规则 | 打出卡牌时立即扣除 |
+閹碘偓娴?`BattleCardDefinition` 閺堫剝宸濇稉濠冩Ц閿?
+- BattleCore 娑撳簼绗傜仦鍌炲帳鐞涖劋绠ｉ梻瀵告畱鏉╂劘顢戦弮鍫曗偓鍌炲帳鐏?
+---
 
-### 抽牌规则
+## 13. 閸忕鐎烽弮璺虹碍缁€杞扮伐
 
-| 规则 | 说明 |
-|------|------|
-| 初始手牌 | 5 张 |
-| 回合抽牌 | 1 张 |
-| 手牌上限 | 10 张（超出则强制弃牌） |
-| 牌库循环 | 牌库耗尽时弃牌堆洗入牌库 |
+### 13.1 娑撯偓瀵姷鐏涚粵鏍︽縺鐎瑰磭澧濇俊鍌欑秿缂佹挾鐣?
+
+閸嬪洩顔曢悳鈺侇啀 P1 閹靛澧濋柌灞炬箒娑撯偓瀵姵娅橀柅姘辩仜缁涙牜澧?`strike_01`閿?
+- `BattleCard.InstanceId = bc_0101`
+- `BattleCard.ConfigId = strike_01`
+- `BattleCardDefinition.Effects` 娑擃厼褰ч張澶夌娑?`Damage` 閺佸牊鐏?
+
+瑜版挸澧犳稉鏄忕熅瀵板嫬顩ф稉瀣剁窗
+
+1. 閻溾晛顔嶇拠閿嬬湴閹垫挸鍤?`bc_0101`
+2. `RoundManager.PlayInstantCard()` 閹?`cardInstanceId` 閹垫儳鍩屾潻娆忕炊 `BattleCard`
+3. 閺嶏繝鐛欐潻娆忕炊閻楀苯鐫樻禍?P1閿涘奔绗栬ぐ鎾冲娴ｅ秳绨?`Hand`
+4. 闁俺绻?`ConfigId = strike_01` 娴?`CardDefinitionProvider` 閸欐牕鍩?`BattleCardDefinition`
+5. 閸忓娈曢崙鐑樻拱濞嗏剝澧界悰宀€鏁ら惃?`Effects`
+6. 閸愭瑥鍙?`sourceCardInstanceId` 閸?`sourceCardConfigId`
+7. 鏉╂稑鍙?`SettlementEngine.ResolveInstantFromCard()`
+8. 鐟欙箑褰?`BeforePlayCard`
+9. `CardManager.PrepareInstantCard()` 閹跺﹨绻栧鐘靛娴?`Hand` 缁夎鍩?`Discard` 閹?`Consume`
+10. 閹笛嗩攽 `DamageHandler`
+11. 婵″倹鐏夋禍褏鏁?trigger 鐎涙劖鏅ラ弸婊愮礉閸掓瑨绻橀崗?`PendingEffectQueue`
+12. `SettlementEngine` 缁斿鍩㈠☉鍫濆闂冪喎鍨?
+13. 鐟欙箑褰?`AfterPlayCard`
+14. 閸欐垵绔?`CardPlayedEvent`
+
+鏉╂瑤閲滄笟瀣摍闁插矁顩﹀▔銊﹀壈閿?
+- 閸戣櫣澧濋崥鍫熺《閹呮箙閻ㄥ嫭妲哥€圭偘绶ラ悩鑸碘偓渚婄礉娑撳秵妲告径鏍劥闂呭繋绌舵导鐘辩缂佸嫭鏅ラ弸?- 缂佹挻鐏夐崣顖欎簰閸斻劍鈧礁褰夐崠鏍电礉娴ｅ棜绻栧鐘靛閳ユ粍婀侀崫顏冪昂閺佸牊鐏夐垾婵呯矝閺夈儴鍤滅€规矮绠熷Ο鈩冩緲
+
+### 13.2 娑撯偓瀵姴鐣剧粵鏍︽縺鐎瑰磭澧濇俊鍌欑秿缂佹挾鐣?
+
+閸嬪洩顔曢悳鈺侇啀 P2 閹绘劒姘︽稉鈧鐘茬暰缁涙牜澧?`fireball_01`閿?
+- `BattleCard.InstanceId = bc_0201`
+- `BattleCard.ConfigId = fireball_01`
+- `BattleCardDefinition.Effects` 娑擃厽婀?`Damage -> AddBuff` 娑撱倓閲滈弫鍫熺亯
+
+瑜版挸澧犳稉鏄忕熅瀵板嫬顩ф稉瀣剁窗
+
+1. 閻溾晛顔嶇拠閿嬬湴閹绘劒姘?`bc_0201`
+2. `RoundManager.CommitPlanCard()` 閹垫儳鍩岀€圭偘绶ラ獮鑸电墡妤犲苯缍婄仦?3. 闁俺绻?`ConfigId = fireball_01` 鐟欙絾鐎?`BattleCardDefinition`
+4. 閸忓娈曢弫鍫熺亯閸掓銆冮敍灞借嫙閸愭瑥鍙嗛弶銉︾爱閸忓啯鏆熼幑?5. `CardManager.CommitPlanCard()` 閹跺﹦澧濇禒?`Hand` 閺€鎹愮箻 `StrategyZone`
+6. `CommittedPlanCard` 鐞氼偄濮為崗銉︽拱閸ョ偛鎮庡鍛波缁犳妲﹂崚?7. 閸ョ偛鎮庣紒鎾存将閺冭绱漙RoundManager.EndRound()` 鐠嬪啰鏁?`SettlementEngine.ResolvePlanCards()`
+8. 閸忓牐绻?`Counter`
+9. 閸愬秷绻?`Defense`
+10. Layer 2 閸撳秵濯?`DefenseSnapshot`
+11. 閸?`Damage` 鐏炲倹澧界悰灞兼縺鐎?12. 濞撳懐鎮婅箛顐ゅ弾
+13. 閸?`BuffSpecial` 鐏炲倹澧界悰灞芥倵缂?`AddBuff` 閹?`Heal`
+14. 閸ョ偛鎮庨張顐ょ埠娑撯偓鏉╂稑鍙?`Discard`
+
+鏉╂瑤閲滄笟瀣摍闁插矁顩﹀▔銊﹀壈閿?
+- 鐎规氨鐡ラ悧灞芥嫲閻剛鐡ラ悧灞藉彙閻劌鎮撴稉鈧總妤€鐤勬笟瀣╃瑢鐎规矮绠熷Ο鈥崇€?
+- 閸栧搫鍩嗛崣顏勬躬閳ユ粈绮堟稊鍫熸閸婃瑧绮ㄧ粻妞烩偓婵撶礉娑撳秵妲搁垾婊勨偓搴濈疄閹诲繗鍫懛顏勭箒閳?
+### 13.3 娑撯偓瀵姷濮搁幀浣哄婵″倷缍嶉悽鐔告櫏
+
+閸嬪洩顔曢悳鈺侇啀 P1 閹靛澧濋柌灞炬箒娑撯偓瀵姷濮搁幀浣哄 `burn_state_01`閿?
+- `BattleCard.InstanceId = bc_0301`
+- `BattleCard.ConfigId = burn_state_01`
+- `IsStatCard = true`
+
+鐎瑰啫缍嬮崜宥勭瑝閺勵垯瀵岄崝銊﹀ⅵ閸戠尨绱濋懓灞炬Ц閹稿浜掓稉瀣煙瀵繒鏁撻弫鍫窗
+
+1. 鏉╂瑥绱堕悧灞绢劀鐢鐡ㄩ崷銊ょ艾 P1 閹靛澧濇稉?2. 閻溾晛顔嶆稉宥堝厴閹跺﹤鐣犺ぐ鎾剁仜缁涙牜澧濋幍鎾冲毉
+3. 閻溾晛顔嶆稊鐔剁瑝閼宠姤濡哥€瑰啯褰佹禍銈勮礋鐎规氨鐡ラ悧?4. 閸?`RoundManager.EndRound()` 閺冭绱漙CardManager.ScanStatCards()` 閹殿偅寮块幍瀣
+5. 閹殿偄鍩?`bc_0301` 閸氬氦袝閸?`OnStatCardHeld`
+6. 婵″倹鐏夐張澶岀拨鐎规氨娈?trigger 閺佸牊鐏夐敍灞藉灟鏉╂稑鍙?`PendingEffectQueue`
+7. `SettlementEngine` 濞戝牆瀵叉潻娆庣昂閺佸牊鐏?
+8. 閸ョ偛鎮庨張顐ｅ閻楀本绔婚悶鍡樻閿涘矁绻栧鐘靛Ц閹胶澧濋崪灞藉従娴犳牗澧滈悧灞肩鐠х柉绻橀崗?`Discard`
+
+鏉╂瑤閲滄笟瀣摍闁插矁顩﹀▔銊﹀壈閿?
+- 閻樿埖鈧胶澧濊ぐ鎾冲娑撳秵妲哥敮鎼佲敆娑撴挾鏁ら崠?- 鐎瑰啰娈戞稉鏄忣嚔娑斿妲搁垾婊勫瘮閺堝鍩岄崶鐐叉値閺堫偉袝閸欐垟鈧?- 鐎瑰啩绮涢悞鑸垫Ц閺咁噣鈧?`BattleCard` 鐎圭偘绶ラ敍灞藉涧閺勵垰鐢?`IsStatCard` 閺嶅洩顔?
+
+## 14. 瑜版挸澧犳稉宥呭晙闁插洨鏁ら惃鍕＋閸欙絽绶?
+
+娴犮儰绗呴崘鍛啇娑撳秴鐫樻禍搴＄秼閸撳秴宕遍悧宀€閮寸紒鐔奉殩缁撅讣绱?
+
+- 閻剛鐡ラ悧宀€娲块幒銉ょ炊鐟?`EffectUnit` 閸掓銆冮崙铏瑰
+- 鐎规氨鐡ラ悧灞间簰婢舵牠鍎?payload 娴ｆ粈璐熼惇鐔风杽閺佸牊鐏夐弶銉︾爱
+- 閻樿埖鈧胶澧濇稉缁樼ウ缁嬪绶风挧鏍杺婢舵牔绗撻悽銊ュ隘
+- 閻劌鐤勬担鎾叉櫠 Buff 閸掓銆冩す鍗炲З閸楋紕澧濋惄绋垮彠閸掋倕鐣?
+
+婵″倹鐏夐崥搴ｇ敾闂団偓鐟曚焦鏁兼潻娆庣昂閸欙絽绶為敍灞界箑妞よ鎮撳銉ゆ叏閺€鐧哥窗
+
+- 鏉╂劘顢戦弮鏈靛敩閻?- 濞村鐦?
+- 閺堫剚鏋冨?- 閻╃鍙х紒鎾剁暬閺傚洦銆?
 
 ---
 
-## 📖 关联文档
+## 15. 娑撯偓閸欍儴鐦介幀鑽ょ波
 
-| 主题 | 文档 |
-|------|------|
-| 结算规则详解 | [SettlementRules.md](SettlementRules.md) |
-| 核心代码解读 | [../TechGuide/BattleCore.md](../TechGuide/BattleCore.md) |
-| 配置系统说明 | [../TechGuide/ConfigSystem.md](../TechGuide/ConfigSystem.md) |
-| 枚举定义 | `Shared/Protocol/Enums/` |
+瑜版挸澧?BattleCore 閻ㄥ嫬宕遍悧宀€閮寸紒鐕傜礉娑撳秵妲搁垾婊堝帳缂冾喚娲块幒銉﹀⒔鐞涘备鈧繐绱濇稊鐔剁瑝閺勵垪鈧粌鐤勬笟瀣涧鐎?ID閳ユ縿鈧?
+鐎瑰啯妲搁敍?
+- `BattleCard` 鐠愮喕鐭楃€圭偘绶ラ悩鑸碘偓?- `BattleCardDefinition` 鐠愮喕鐭楁潻鎰攽閺冭埖膩閺?- `CardManager` 鐠愮喕鐭楅悽鐔锋嚒閸涖劍婀℃稉搴″隘娴?- `RoundManager` 鐠愮喕鐭楅崙铏瑰閸忋儱褰涙稉搴㈢ウ缁嬪鐨熸惔?- `SettlementEngine` 鐠愮喕鐭楅張鈧紒鍫熷⒔鐞?
+閹碘偓娴犮儱缍嬮崜宥嗩劀绾喚娈戦悶鍡毿掗弬鐟扮础閺勵垽绱?
+
+> 閸楋紕澧濈€圭偘绶ラ弰顖濇祰娴ｆ搫绱濋崡锛勫鐎规矮绠熼弰顖浤侀弶鍖＄礉缂佹挾鐣荤紒鎾寸亯閻㈣鲸膩閺夊灝濮炴潻鎰攽閺冩湹绗傛稉瀣瀮閸忓崬鎮撻崘鍐茬暰閵?

@@ -10,4 +10,4 @@
 >
 > 预期内容：项目中所有枚举类型的权威定义汇总，包括 `EffectType`、`CardTag`、`TriggerTiming`、`BuffType` 等。
 >
-> 当前可参考：`Shared/Protocol/Enums/` 目录下的源码，以及 `TechGuide/BattleCore.md` 中的枚举速查表。
+> 当前可参考：`Shared/Protocol/Enums/` 目录下的源码，以及 `TechGuide/SystemArchitecture_V2.md`、`GameDesign/SettlementRules.md` 中的当前契约说明。

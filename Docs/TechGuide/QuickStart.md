@@ -120,6 +120,6 @@ BattleContext 状态更新
 | 目标 | 推荐文档 |
 |------|----------|
 | 理解游戏玩法 | [GameDesign/Overview.md](../GameDesign/Overview.md) |
-| 深入架构设计 | [SystemArchitecture.md](SystemArchitecture.md) |
-| 理解结算引擎 | [BattleCore.md](BattleCore.md) |
+| 深入架构设计 | [SystemArchitecture_V2.md](SystemArchitecture_V2.md) |
+| 理解当前结算契约 | [../GameDesign/SettlementRules.md](../GameDesign/SettlementRules.md) |
 | 开始开发任务 | [../Planning/Roadmap.md](../Planning/Roadmap.md) |

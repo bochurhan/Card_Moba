@@ -1,528 +1,367 @@
-# BattleCore V2 系统架构总览
+# BattleCore V2 閺嬭埖鐎拠瀛樻
 
-**文档版本**：V2.0  
-**创建日期**：2026-03-04  
-**适用对象**：参与 BattleCore V2 开发的所有开发者  
-**阅读时间**：15 分钟  
-**关联文档**：
-- 重构计划：[../Planning/BattleCoreRefactorPlan.md](../Planning/BattleCoreRefactorPlan.md)
-- 设计源文档：[../GameDesign/新框架.md](../GameDesign/新框架.md)
-- V1 归档：[../_Archive/v1_battlecore/SystemArchitecture_V1.md](../_Archive/v1_battlecore/SystemArchitecture_V1.md)
+**閺傚洦銆傞悧鍫熸拱**: 2026-03-25  
+**閻樿埖鈧?*: 瑜版挸澧犳總鎴犲  
+**闁倻鏁ら懠鍐ㄦ纯**: `Shared/BattleCore` 瑜版挸澧犳潻鎰攽閺冭泛鐤勯悳?
+---
+
+## 1. 閺傚洦銆傞惄顔界垼
+
+閺堫剚鏋冨锝呭涧閹诲繗鍫鑼病閽€钘夋勾閻?BattleCore V2 鏉╂劘顢戦弮鑸电仸閺嬪嫨鈧?
+- 鐎瑰啩绗夐弰顖氬坊閸欏弶鏌熷鍫熺湽閹?- 鐎瑰啩绗夐弰顖涙弓閺夈儴顫夐崚?- 婵″倹鐏夐弬鍥ㄣ€傛稉搴濆敩閻礁鍟跨粣渚婄礉鎼存柧绱崗鍫滄叏濮濓絾鏋冨锝嗗灗缂佈呯敾閺€璺哄經娴狅絿鐖滈敍灞肩瑝閸忎浇顔忛梹鎸庢埂閸欏矁寤?
+
+閺堫剛澧楅柌宥囧仯缂佺喍绔存禒銉ょ瑓閸欙絽绶為敍?
+- `BuffManager` 閺?Buff 閸烆垯绔存潻鎰攽閺冨墎婀″┃?- 閻樿埖鈧胶澧濋弰顖涙珮闁?`BattleCard` 鐎圭偘绶ラ敍灞肩瑝娓氭繆绂嗘０婵嗩樆娑撴挾鏁ら崠杞板瘜濞翠胶鈻?
+- 閻剛鐡ラ悧灞芥嫲鐎规氨鐡ラ悧宀勫厴閸╄桨绨?`cardInstanceId` 娑撳骸宕遍悧灞界暰娑斿澧界悰?- Buff 鐎涙劖鏅ラ弸婊堚偓姘崇箖 `TriggerManager -> PendingEffectQueue -> SettlementEngine -> Handler` 閹笛嗩攽
+- Layer 2 鐎规氨鐡ユ导銈咁唺娴ｈ法鏁ら梼鎻掑敖韫囶偆鍙?
 
 ---
 
-## 一句话定位
+## 2. 閹缍嬬紒鎾寸€?
 
-> `RoundManager`（导演）驱动 `SettlementEngine`（结算引擎）执行效果，  
-> 触发器通过 `PendingEffectQueue`（延迟队列）解耦，  
-> `EventBus` 向外广播，`TriggerManager` 向内响应，  
-> 所有状态统一存储在 `BattleContext`（唯一真相源）。
+BattleCore 瑜版挸澧犻崣顖欎簰閹峰棙鍨?4 鐏炲偊绱?
+
+1. 鐠嬪啫瀹崇仦?   - `RoundManager`
+   - `SettlementEngine`
+2. 娑撴艾濮熺粻锛勬倞鐏?   - `CardManager`
+   - `BuffManager`
+   - `TriggerManager`
+   - `ValueModifierManager`
+3. 閸欘亣顕扮憴锝嗙€界仦?   - `TargetResolver`
+   - `ConditionChecker`
+   - `DynamicParamResolver`
+4. 閺佺増宓佺仦?   - `BattleContext`
+   - `Entity`
+   - `BattleCard`
+   - `EffectUnit`
+   - `TriggerUnit`
+   - `BuffUnit`
+
+娓氭繆绂嗛弬鐟版倻娣囨繃瀵旈崡鏇炴倻閿?
+- `RoundManager` 鐠嬪啰鏁?`SettlementEngine` 閸滃苯鎮?Manager
+- `TriggerManager` 娑撳秶娲块幒銉ㄧ殶閻?`SettlementEngine`
+- `TriggerManager` 閸欘亣绀嬬拹锝嗗Ω閺佸牊鐏夐崗銉╂Е
+- `EventBus` 閸欘亜顕径鏍х畭閹绢叏绱濇稉宥呭棘娑撳孩鍨弬妤€鍨界€?
+---
+
+## 3. 閸烆垯绔撮惇鐔哥爱
+
+### 3.1 BattleContext
+
+`BattleContext` 閺勵垯绔寸仦鈧幋妯绘灍閻ㄥ嫬鏁稉鈧潻鎰攽閺冭泛顔愰崳顭掔礉閹镐焦婀侀敍?
+- `BattleId`
+- `CurrentRound`
+- `CurrentPhase`
+- 閹碘偓閺堝甯虹€硅泛鎷伴懟閬嶆碂鐎圭偘缍?
+- `PendingEffectQueue`
+- `RoundLog`
+- 鏉╂劘顢戦弮鏈电贩鐠ф牜娈戦崥?Manager
+- 閸楋紕澧濈€规矮绠熼幓鎰返閸?`CardDefinitionProvider`
+
+### 3.2 Buff 閻喐绨?
+
+Buff 瑜版挸澧犻惃鍕暜娑撯偓鏉╂劘顢戦弮鍓佹埂濠ф劖妲?`BuffManager` 閸愬懘鍎寸€涙ê鍋嶉妴?
+婢舵牠鍎撮懟銉洣鐠囪褰?Buff閿涘苯绻€妞ゆ槒铔嬮敍?
+- `IBuffManager.GetBuffs(entityId)`
+- `IBuffManager.HasBuff(...)`
+
+娴犮儰绗呴崑姘《闁垝绗夐崘宥嗘Ц瑜版挸澧犳總鎴犲閿?
+- 娴?`Entity.ActiveBuffs` 鐠囪褰?Buff
+- 娓氭繆绂嗛悳鈺侇啀閹存牕鐤勬担鎾叉櫠閻?Buff 闂€婊冨剼娴ｆ粈璐熺紒鎾剁暬娓氭繃宓?
+
+`Entity.ActiveBuffs` 瀹歌弓绮犳潻鎰攽閺冭埖膩閸ㄥ些闂勩們鈧?
+### 3.3 瀹告彃鍨归梽銈囨畱闁鏆€閻樿埖鈧?
+娴犮儰绗呴柆妤冩殌妞ょ懓鍑℃稉宥呭晙鐏炵偘绨ぐ鎾冲鐎圭偟骞囬敍?
+- `BattleContext.HistoryLog`
+- `BattleContext.ArchiveRoundLog()`
+- `TriggerUnit.InlineExecute`
+- `Entity.ActiveBuffs`
 
 ---
 
-## 二、分层架构总览
+## 4. 閸楋紕澧濆Ο鈥崇€?
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                         接入层                                    │
-│  玩家操作输入 │ 客户端 UI 表现 │ 战斗回放 │ 手动选目标交互           │
-└─────────────────────────────┬────────────────────────────────────┘
-                              │ 调用
-┌─────────────────────────────▼────────────────────────────────────┐
-│                        调度层                                     │
-│  RoundManager（回合状态机）                                        │
-│  SettlementEngine（效果结算引擎，含 PendingEffectQueue 调度）       │
-│  EventBus（战斗事件总线）                                          │
-└──────────┬──────────────────┬────────────────────────────────────┘
-           │ 调用              │ 订阅/发布
-┌──────────▼──────────┐  ┌────▼───────────────────────────────────┐
-│      业务层          │  │         外部消费层                       │
-│  CardManager        │  │  StatManager（统计）                    │
-│  BuffManager        │  │  LogManager（日志）                     │
-│  TriggerManager     │  │  Client UI（动画/表现）                  │
-│  ValueModifierMgr   │  └────────────────────────────────────────┘
-└──────────┬──────────┘
-           │ 读写
-┌──────────▼──────────────────────────────────────────────────────┐
-│                       基础能力层                                  │
-│  BattleContext（唯一状态容器）                                     │
-│  HandlerPool（效果 Handler 注册/分发）                             │
-│  TargetResolver（目标解析，只读）                                  │
-│  ConditionChecker（条件判断，只读）                                │
-│  DynamicParamResolver（动态参数解析，只读）                        │
-│  SeededRandom（确定性随机）                                       │
-└──────────┬──────────────────────────────────────────────────────┘
-           │ 引用
-┌──────────▼──────────────────────────────────────────────────────┐
-│                        数据层（Foundation）                       │
-│  Entity │ BattleCard │ EffectUnit │ TriggerUnit │ BuffUnit        │
-│  CardZone │ EffectType │ TriggerTiming（纯数据/枚举，无依赖）      │
-└─────────────────────────────────────────────────────────────────┘
-```
+### 4.1 BattleCard
 
-**依赖方向**：单向向下，禁止下层引用上层。
+閹碘偓閺堝澧濋崷銊﹀灛閺傛鍞撮柈鎴掍簰 `BattleCard` 鐎圭偘绶ョ€涙ê婀妴?
+閸忔娊鏁€涙顔岄敍?
+- `InstanceId`
+- `ConfigId`
+- `OwnerId`
+- `Zone`
+- `TempCard`
+- `IsExhaust`
+- `IsStatCard`
+
+### 4.2 閸楋紕澧濈€规矮绠?
+
+BattleCore 娑撳秶娲块幒銉ょ贩鐠ф牔绗傜仦鍌氱暚閺佹挳鍘ょ悰銊δ侀崹瀣ㄢ偓?
+鏉╂劘顢戦弮鍫曗偓姘崇箖 `BattleCardDefinition` 閸欐牗娓剁亸蹇撶箑鐟曚椒淇婇幁顖ょ窗
+
+- `ConfigId`
+- `IsExhaust`
+- `IsStatCard`
+- `Effects`
+
+鐠嬪啰鏁ら柧鎾呯窗
+
+- `RoundManager` 闁俺绻?`card.ConfigId`
+- 閸?`BattleContext.CardDefinitionProvider` 閺屻儴顕楃€规矮绠?
+- 閸愬秶鏁?`EffectUnitCloner` 閸忓娈曢崣顖涘⒔鐞涘本鏅ラ弸婊冨灙鐞?
+### 4.3 閸楋紕澧濋崠杞扮秴
+
+瑜版挸澧犻崠杞扮秴閺嬫矮濡囨穱婵堟殌閿?
+- `Deck`
+- `Hand`
+- `StrategyZone`
+- `Discard`
+- `Consume`
+
+娴ｅ棗缍嬮崜宥勫瘜濞翠胶鈻奸崣顏冪贩鐠ф牕澧?5 娑擃亗鈧?
+---
+
+## 5. 閻樿埖鈧胶澧濆Ο鈥崇€?
+
+閻樿埖鈧胶澧濊ぐ鎾冲鐎规矮绠熸稉鐚寸窗
+
+- 閺咁噣鈧?`BattleCard` 鐎圭偘绶?
+- `IsStatCard = true`
+- 閸欘垯浜掗崙铏瑰箛閸︺劎澧濋崼鍡愨偓浣瑰閻楀被鈧礁绱旈悧灞界垻
+
+瑜版挸澧犳潻鎰攽閺冩儼顫夐崚娆欑窗
+
+- 閻樿埖鈧胶澧濇稉宥堝厴娑撹濮╅幍鎾茶礋閻剛鐡ラ悧?- 閻樿埖鈧胶澧濇稉宥堝厴娑撹濮╅幓鎰唉娑撳搫鐣剧粵鏍
+- 閸ョ偛鎮庣紒鎾存将閺冨墎鏁?`CardManager.ScanStatCards()` 閹殿偅寮块幍瀣娑擃厾娈戦悩鑸碘偓浣哄
+- 閹殿偅寮块弮鎯靶曢崣?`OnStatCardHeld`
+- 閹殿偅寮跨紒鎾存将閸氬函绱濋悩鑸碘偓浣哄閸滃苯鍙炬禒鏍ㄥ閻楀奔绔寸挧宄版躬閸ョ偛鎮庨張顐ョ箻閸忋儱绱旈悧灞界垻
+
+閸ョ姵顒濋敍宀€濮搁幀浣哄瑜版挸澧犻惃鍕獓閸濅浇顕㈡稊澶嬫Ц閿?
+- 鐎瑰啯妲告稉鈧粔宥囧濞堝﹤宕遍悧宀€琚崹?- 鐎瑰啴鈧俺绻冮垾婊勫瘮閺堝鍩岄崶鐐叉値閺堫偀鈧繄鏁撻弫?- 鐎瑰啩绗夐弰顖滃缁斿灏担宥夆攳閸斻劎娈戠€涙劗閮寸紒?
+---
+
+## 6. 閸ョ偛鎮庢す鍗炲З
+
+### 6.1 InitBattle
+
+`RoundManager.InitBattle()` 鐠愮喕鐭楅敍?
+- 闁插秶鐤嗛崶鐐叉値閸?- 濞撳懐鈹栧鍛波缁犳鐣剧粵鏍Е閸?- 闁插秶鐤嗛懗婊嗙閻樿埖鈧?- 閸欐垵绔?`BattleStartEvent`
+
+### 6.2 BeginRound
+
+`RoundManager.BeginRound()` 瑜版挸澧犳い鍝勭碍閿?
+1. `CurrentRound += 1`
+2. 閸愭瑥鍙?`BattleContext.CurrentRound`
+3. `CurrentPhase = RoundStart`
+4. 閸欐垵绔?`RoundStartEvent`
+5. 鐟欙箑褰?`OnRoundStart`
+6. 濞戝牆瀵?`PendingEffectQueue`
+7. 閹笛嗩攽 `CardManager.OnRoundStart()`
+8. 閸愬秵顐煎☉鍫濆 `PendingEffectQueue`
+9. `CurrentPhase = PlayerAction`
+
+`CardManager.OnRoundStart()` 瑜版挸澧犵拹鐔荤煑閿?
+- 閸ョ偞寮ч懗浠嬪櫤
+- 濮ｅ繋缍呴悳鈺侇啀閹?5 瀵姷澧?
+
+### 6.3 PlayerAction
+
+閻溾晛顔嶇悰灞藉З闂冭埖顔岄崗浣筋啅閿?
+- 閹垫挸鍤惉顒傜摜閻?- 閹绘劒姘︾€规氨鐡ラ悧?
+娑撱倛鈧懘鍏樿箛鍛淬€忛崺杞扮艾閻喎鐤?`cardInstanceId`閵?
+### 6.4 EndRound
+
+`RoundManager.EndRound()` 瑜版挸澧犳い鍝勭碍閿?
+1. `CurrentPhase = Settlement`
+2. 閹殿偅寮块幍瀣娑擃厾娈戦悩鑸碘偓浣哄
+3. 濞戝牆瀵查悩鑸碘偓浣哄鐟欙箑褰傛禍褏鏁撻惃鍕Е閸?4. 濮濊楠稿Λ鈧弻?5. 缂佹挾鐣婚幍鈧張澶婄暰缁涙牜澧?
+6. 閸愬秵顐煎璁抽濡偓閺?7. 鐟欙箑褰?`OnRoundEnd`
+8. 濞戝牆瀵查梼鐔峰灙
+9. 閹笛嗩攽 `BuffManager.OnRoundEnd()`
+10. 閸愬秵顐煎璁抽濡偓閺?11. 濞撳懐鈹栭崜鈺€缍戦幎銈囨禈
+12. 閹笛嗩攽 `TriggerManager.TickDecay()`
+13. 閹笛嗩攽 `CardManager.OnRoundEnd()`
+14. 閹笛嗩攽 `CardManager.DestroyTempCards()`
+15. `CurrentPhase = RoundEnd`
+16. 閸欐垵绔?`RoundEndEvent`
 
 ---
 
-## 三、核心模块职责边界
+## 7. 閻剛鐡ラ悧宀冪熅瀵?
+閻剛鐡ラ悧灞界秼閸撳秳寮楅弽鑹拌泲鐎圭偘绶ョ捄顖氱窞閿?
+1. `RoundManager.PlayInstantCard(ctx, playerId, cardInstanceId)`
+2. 閺嶏繝鐛欓崡鈥崇摠閸?3. 閺嶏繝鐛欒ぐ鎺戠潣
+4. 闁俺绻?`card.ConfigId` 鐟欙絾鐎?`BattleCardDefinition`
+5. 缂佹瑦鏅ラ弸婊冨晸閸忋儲娼靛┃鎰帗閺佺増宓?
+6. 鏉╂稑鍙?`SettlementEngine.ResolveInstantFromCard(...)`
 
-### 3.1 调度层
+`SettlementEngine.ResolveInstantFromCard(...)` 瑜版挸澧犳い鍝勭碍閿?
+1. 鐟欙箑褰?`BeforePlayCard`
+2. 濞戝牆瀵查梼鐔峰灙
+3. 濡偓閺屻儲鐭囨?4. `CardManager.PrepareInstantCard()` 鐎瑰本鍨氶崥鍫熺《閹勭墡妤犲奔绗岄崠杞扮秴鏉╀胶些
+5. 闁劒閲滈幍褑顢戦弫鍫熺亯
+6. 濮ｅ繋閲滈弫鍫熺亯閸氬海鐝涢崡铏Х閸栨牠妲﹂崚?7. 鐟欙箑褰?`AfterPlayCard`
+8. 閸愬秵顐煎☉鍫濆闂冪喎鍨?
+9. 閸欐垵绔?`CardPlayedEvent`
 
-#### RoundManager（导演）
+瑜版挸澧犲鎻掑灩闂勩倗娈戦弮褑鐭惧鍕剁窗
 
-```
-职责：驱动回合生命周期，仅负责"何时"调用，不负责"如何"结算
-├─ BeginRound()  → 发牌、能量、回合开始触发
-├─ EndRound()    → 状态牌扫描、定策结算、Buff 衰减
-└─ 不持有任何结算逻辑，只调用 SettlementEngine 和 CardManager
-```
-
-#### SettlementEngine（结算引擎）
-
-```
-职责：执行效果原子（EffectUnit），管理 PendingEffectQueue
-├─ ResolveInstant(card)     → 瞬策牌即时结算
-├─ ResolvePlanCards()       → 定策牌五层批量结算
-│    ├─ Layer 0: 反制层
-│    ├─ Layer 1: 防御/修正层
-│    ├─ Pre-Layer 2: TakeDefenseSnapshots()  ← 防御快照拍摄
-│    ├─ Layer 2: 伤害层（以快照值为基准计算防御）
-│    ├─ Post-Layer 2: ClearDefenseSnapshots()
-│    ├─ Layer 3: 资源/功能层
-│    └─ Layer 4: Buff/特殊层
-└─ DrainPendingQueue()      → 循环消化延迟效果队列
-                               （每次主结算后调用，执行栈始终平坦）
-```
-
-**关键约束**：`SettlementEngine` 是唯一可写 `BattleContext` 的入口（Handler 内部通过 `ctx` 写入，Handler 由 `SettlementEngine` 调用）。
-
-**防御快照语义**：Layer 2 开始前为每位玩家拍摄 `DefenseSnapshot`（Shield / Armor / IsInvincible）。伤害 Handler 读快照值计算防御吸收，并同步递减快照和实时值（防止同层多次命中重复消费护盾）。Layer 2 期间动态生成的护盾（如 `AfterTakeDamage` 触发）写入实时值但不更新快照，因此**不参与本回合防御，下回合才生效**。详见 [SettlementRules.md §Layer2 快照隔离约定](../GameDesign/SettlementRules.md)。
-
-#### PendingEffectQueue（延迟队列）—— 解耦核心
-
-```
-问题：TriggerManager 响应伤害后，需要触发吸血/荆棘等子效果
-旧方案：TriggerManager 直接调用 SettlementEngine → 双向调用，栈深不可控
-新方案：TriggerManager 向 PendingQueue 推入 EffectUnit，SettlementEngine 主流程结束后统一消化
-
-数据流：
-SettlementEngine.ResolveDamage(A打B, 10)
-  ├─ 写入：B.Hp -= 10
-  ├─ 触发检查：TriggerManager.Fire(AfterTakeDamage)
-  │             └─ 荆棘响应 → PendingQueue.Enqueue(反弹3伤害)
-  │             └─ 吸血响应 → PendingQueue.Enqueue(回血5)
-  └─ [当前结算栈帧结束]
-
-DrainPendingQueue():
-  └─ Dequeue → SettlementEngine.Resolve(反弹3) → 全新栈帧
-  └─ Dequeue → SettlementEngine.Resolve(回血5)  → 全新栈帧
-```
+- 閻╁瓨甯撮幎濠咃紭 `List<EffectUnit>` 閸犲倻绮?`RoundManager.PlayInstantCard(...)`
+- 閻╁瓨甯撮幎濠咃紭 `List<EffectUnit>` 閸犲倻绮?`SettlementEngine.ResolveInstant(...)`
 
 ---
 
-### 3.2 业务层
+## 8. 鐎规氨鐡ラ悧宀冪熅瀵?
+鐎规氨鐡ラ悧灞界秼閸撳秳绡冭箛鍛淬€忛崺杞扮艾閻喎鐤?`cardInstanceId`閵?
+閹绘劒姘﹂弮璁圭窗
 
-#### CardManager（卡牌区域管理）
+1. `RoundManager.CommitPlanCard(...)`
+2. 閺嶏繝鐛欓崡鈥崇摠閸︺劋绗岃ぐ鎺戠潣
+3. 闁俺绻?`card.ConfigId` 鐟欙絾鐎介崡锛勫鐎规矮绠?
+4. 缂佹瑦鏅ラ弸婊冨晸閸忋儲娼靛┃鎰帗閺佺増宓?
+5. 鐠嬪啰鏁?`CardManager.CommitPlanCard(...)`
+6. 閸愭瑥鍙嗗鍛波缁犳妲﹂崚?
+缂佹挾鐣婚弮璁圭窗
 
-```
-职责：管理所有 BattleCard 实例的生命周期和区域流转
-├─ InitBattleDeck()     → 战斗开始，卡组配置 × count → BattleCard 实例
-├─ DrawCard()           → Deck → Hand
-├─ DiscardCard()        → 任意区域 → Discard
-├─ CommitPlanCard()     → Hand → StrategyZone
-├─ ScanStatCards()      → 回合结束扫描 StatZone，触发状态牌效果
-├─ DestroyTempCards()   → 结算后清理 tempCard=true 的牌
-└─ MoveCard(card, zone) → 通用区域移动（不含逻辑，只移动）
-```
+- `SettlementEngine.ResolvePlanCards(...)`
+- 缂佺喍绔撮幐澶夌安鐏炲倻绮ㄧ粻?
+### 娴滄柨鐪扮紒鎾剁暬
 
-**不含**：任何结算逻辑，卡牌区域移动触发的效果通过 `EventBus` 广播。
+1. `Counter`
+2. `Defense`
+3. `Damage`
+4. `Resource`
+5. `BuffSpecial`
 
-#### BuffManager（薄中介）
+閸忔湹鑵?Layer 2 閸撳秴鎮楅張澶夎⒈娑擃亪娈ｅ蹇旑劄妤犮倧绱?
 
-```
-职责：BuffUnit 的 CRUD 操作 + 向 TriggerManager 注册/注销触发器
-├─ AddBuff(config, owner, value, duration)
-│    └─ 创建 BuffUnit → 存入 PlayerData.ActiveBuffs
-│    └─ 向 TriggerManager 注册对应触发器
-├─ RemoveBuff(buffId)
-│    └─ 从 PlayerData.ActiveBuffs 移除
-│    └─ 从 TriggerManager 注销触发器（生命周期同步）
-└─ TickDecay()          → 回合结束，衰减 RemainingRounds，到期调用 RemoveBuff
-```
-
-**不含**：触发逻辑（吸血、荆棘等效果通过 TriggerManager → PendingQueue 执行）。
-
-#### TriggerManager（内部逻辑总线）
-
-```
-职责：触发器注册、分组存储、事件响应、优先级排序
-├─ Register(TriggerUnit)   → 按 Timing 分组存储
-├─ Unregister(triggerId)   → 注销触发器
-├─ Fire(timing, ctx)
-│    ├─ 找到对应 Timing 的所有触发器
-│    ├─ 按 Priority 排序（0-999，小数字优先）
-│    ├─ ConditionChecker 逐一校验条件
-│    └─ 满足条件的触发器 → 构建 EffectUnit → PendingQueue.Enqueue()
-└─ 不持有 SettlementEngine 引用（单向依赖）
-```
-
-**优先级约定**：
-| 优先级区间 | 用途 |
-|-----------|------|
-| 0 – 99 | 系统级（无敌、反制判定） |
-| 100 – 199 | 增益响应（吸血、治疗） |
-| 200 – 299 | 防御响应（护甲获取） |
-| 300 – 399 | 削弱响应（易伤应用） |
-| 400 – 499 | 伤害响应（荆棘、反伤） |
-| 500 – 899 | 普通卡牌触发器 |
-| 900 – 999 | 传说特效 |
-
-#### ValueModifierManager（数值修正器）
-
-```
-职责：管理运行时数值修正器，在 SettlementEngine 计算效果值时动态应用
-├─ AddModifier(modifier)   → 注册修正器（如：力量 Buff 增加 DirectDamage+5）
-├─ RemoveModifier(id)      → 注销修正器
-└─ Apply(effectType, baseValue, context) → 返回修正后的最终值
-
-修正器类型：
-├─ Add    : finalValue = baseValue + delta   （力量加成）
-├─ Mul    : finalValue = baseValue × factor  （百分比增伤）
-└─ Set    : finalValue = fixedValue          （强制覆盖，极少使用）
-
-应用顺序（固定）：Add → Mul → Set
-```
+- `TakeDefenseSnapshots()`
+- `ClearDefenseSnapshots()`
 
 ---
 
-### 3.3 解析器层（只读，无副作用）
+## 9. Layer 2 闂冩彃灏借箛顐ゅ弾
 
-| 解析器 | 职责 |
-|--------|------|
-| `TargetResolver` | 根据 `EffectUnit.TargetType` 和当前战场状态，解析出实际目标 `Entity` 列表 |
-| `ConditionChecker` | 评估 `TriggerUnit.Conditions` / 打出条件，返回 `bool` |
-| `DynamicParamResolver` | 解析 `{{表达式}}` 占位符，支持 `preEffect.xxx`、`context.xxx` 路径读取和四则运算 |
+Layer 2 韫囶偆鍙庨惃鍕窗閺嶅洦妲搁梾鏃傤瀲閳ユ粍婀版潪顔肩暰缁涙牔婵€鐎瑰啿鐔€缁惧潡妲诲鈾€鈧縿鈧?
+瑜版挸澧犵憴鍕灟閿?
+- 閸?Layer 2 瀵偓婵澧犻敍灞艰礋濮ｅ繋缍呴悳鈺侇啀閹峰秳绗?`Shield / Armor / IsInvincible`
+- `DamageHandler` 閸︺劌鐣剧粵?Layer 2 娑擃叀顕伴崣鏍ф彥閻撗囨Щ瀵扳€斥偓?- 濮ｅ繑顐奸崨鎴掕厬閸氬本妞傞柅鎺戝櫤韫囶偆鍙庨崐鐓庢嫲鐎圭偞妞傞崐?- 闂冨弶顒涢崥灞界湴婢舵碍顐奸崨鎴掕厬闁插秴顦插☉鍫ｅ瀭閸氬奔绔存禒鑺ュБ閻╃偓鍨ㄩ幎銈囨暢
 
----
-
-### 3.4 EventBus（外部广播，单向）
-
-```
-职责：战斗内关键事件的统一广播，供外部系统订阅
-├─ Publish(BattleEvent)    → 向所有订阅者广播
-├─ Subscribe<T>(handler)   → 注册事件订阅
-└─ 不参与战斗结算（完全被动）
-
-订阅者（外部，只读 BattleContext）：
-├─ StatManager   → 统计伤害/治疗/死亡数据
-├─ LogManager    → 结构化战斗日志
-└─ Client UI     → 驱动卡牌动画、伤害数字、死亡特效
-```
-
-**关键约束**：EventBus 订阅者**不可写** `BattleContext`，只读。
+瑜版挸澧犻弰搴ｂ€樼痪锕€鐣鹃敍?
+- Layer 2 閺堢喖妫块弬鎷屽箯瀵版娈戦幎銈囨禈閿涘苯褰ч崘娆忕杽閺冭泛鈧?- 娑撳秳绱伴崶鐐插晸閸掓澘缍嬮崜宥呮彥閻?- 閸ョ姵顒濇稉宥呭棘娑撳孩婀版潪?Layer 2 閸氬海鐢婚梼鎻掑敖
+- 娴兼艾婀稉瀣╃鏉烆喖绱戞慨瀣娴ｆ粈璐熼弬鎵畱鐎圭偞妞傞梼鎻掑敖閸欏倷绗岀紒鎾剁暬
 
 ---
 
-## 四、关键数据结构（V2 版）
+## 10. Buff 娑撳氦袝閸欐垶澧界悰宀勬懠
 
-### 4.1 BattleContext（唯一状态容器）
+### 10.1 BuffManager 閼卞矁鐭?
 
-```csharp
-public class BattleContext
-{
-    // 基础信息
-    public string BattleId { get; }
-    public int CurrentRound { get; set; }
-    public BattlePhase CurrentPhase { get; set; }
+`BuffManager` 鐠愮喕鐭楅敍?
+- Buff 閻ㄥ嫬顤冮崚鐘虫暭閺?- Buff 鐟欙箑褰傞崳銊︽暈閸愬奔绗屽▔銊╂敘
+- Buff 閺佹澘鈧棿鎱ㄥ锝呮珤濞夈劌鍞芥稉搴㈡暈闁库偓
+- Buff 閸ョ偛鎮庣悰鏉垮櫤
 
-    // 实体数据（O(1) 查找）
-    public Dictionary<string, PlayerData> Players { get; }
-    public PlayerData GetPlayer(string id);   // 首选，O(1)
+鐎瑰啩绗夐惄瀛樺复閸嬫岸鈧帒缍婄紒鎾剁暬閵?
+### 10.2 TriggerManager 閼卞矁鐭?
 
-    // 全局管理器
-    public IEventBus EventBus { get; }
-    public ITriggerManager TriggerManager { get; }
-    public ICardManager CardManager { get; }
-    public IBuffManager BuffManager { get; }
-    public IValueModifierManager ValueModifierManager { get; }
+`TriggerManager` 鐠愮喕鐭楅敍?
+- 缂佸瓨濮?`TriggerUnit`
+- 娓氭繃宓?`TriggerTiming` 閹垫儳鍩岄崣顖澬曢崣鎴︺€?
+- 閸嬫碍娼禒璺哄灲閺?- 閸忓娈?`EffectUnit`
+- 閹跺﹥鏅ラ弸婊冾敚鏉?`PendingEffectQueue`
 
-    // 解析器（只读工具）
-    public ITargetResolver TargetResolver { get; }
-    public IConditionChecker ConditionChecker { get; }
-    public IDynamicParamResolver DynamicParamResolver { get; }
+鐎瑰啩绗夐崘宥嗘暜閹?`InlineExecute`閵?
+### 10.3 缂佺喍绔撮幍褑顢戦柧?
+瑜版挸澧犻幍鈧張?Buff 鐎涙劖鏅ラ弸婊堝厴鎼存棁铔嬬紒鐔剁闁炬崘鐭鹃敍?
+`TriggerManager.Fire()`  
+-> `PendingEffectQueue.Enqueue()`  
+-> `SettlementEngine.DrainPendingQueue()`  
+-> `HandlerPool.Execute()`  
+-> 鐎电懓绨?Handler 閺€鐟板晸鏉╂劘顢戦弮鍓佸Ц閹?
+鏉╂瑩鈧倻鏁ゆ禍搴窗
 
-    // 结算调度
-    public PendingEffectQueue PendingQueue { get; }
-    public SeededRandom Random { get; }
-
-    // 日志
-    public List<string> RoundLog { get; }
-    public List<List<string>> HistoryLog { get; }  // 按回合存档
-}
-```
-
-### 4.2 EffectUnit（效果原子）
-
-```csharp
-public class EffectUnit
-{
-    public string EffectId { get; set; }          // 效果唯一 ID（供动态参数引用）
-    public EffectType Type { get; set; }           // 效果类型（决定调用哪个 Handler）
-    public string TargetType { get; set; }         // 目标类型（Self/Enemy/AllEnemy/...）
-    public string ValueExpression { get; set; }    // 数值表达式（支持 {{动态参数}}）
-    public SettleLayer Layer { get; set; }         // 结算层（0-4）
-    public List<string> Conditions { get; set; }  // 打出条件列表
-    public Dictionary<string, string> Params { get; set; }  // 扩展参数
-}
-```
-
-### 4.3 TriggerUnit（触发器）
-
-```csharp
-public class TriggerUnit
-{
-    public string TriggerId { get; set; }          // 运行时唯一 ID
-    public string TriggerName { get; set; }        // 描述性名称（调试用）
-    public TriggerTiming Timing { get; set; }      // 触发时机
-    public string OwnerPlayerId { get; set; }      // 归属玩家
-    public string SourceId { get; set; }           // 来源（BuffUnit ID / 卡牌 InstanceId）
-    public int Priority { get; set; }              // 优先级（越小越先触发）
-    public int RemainingTriggers { get; set; }     // 剩余触发次数（-1=无限）
-    public int RemainingRounds { get; set; }       // 剩余回合数（-1=永久）
-    public List<string> Conditions { get; set; }   // 触发条件
-    public List<EffectUnit> Effects { get; set; }  // 触发后推入 PendingQueue 的效果列表
-}
-```
-
-### 4.4 BattleCard（战斗时卡牌实例）
-
-```csharp
-public class BattleCard
-{
-    public string InstanceId { get; set; }         // 战斗唯一 ID（"bc_001"）
-    public string ConfigId { get; set; }           // 关联配置 ID（"strike"）
-    public string OwnerId { get; set; }            // 持有者 Player ID
-    public CardZone Zone { get; set; }             // 当前所在区域
-    public bool TempCard { get; set; }             // 临时牌（结算后销毁）
-    public bool IsStatCard { get; set; }           // 状态牌（不可主动打出）
-    public bool IsExhaust { get; set; }            // 消耗牌（使用后进 Consume 区）
-    public Dictionary<string, object> ExtraData { get; set; }
-}
-```
-
-### 4.5 BattleCardDefinition（卡牌运行时定义）
-
-```csharp
-/// <summary>
-/// BattleCore 运行时卡牌定义，通过 BattleFactory.CardDefinitionProvider 委托注入。
-/// BattleCore 只依赖可执行效果列表和少量生命周期标记，与上层完整配置模型解耦。
-/// </summary>
-public class BattleCardDefinition
-{
-    public string ConfigId { get; set; }           // 卡牌配置 ID（与 BattleCard.ConfigId 对应）
-    public bool IsExhaust { get; set; }            // 是否为消耗牌
-    public bool IsStatCard { get; set; }           // 是否为状态牌
-    public List<EffectUnit> Effects { get; set; }  // 可执行效果列表
-}
-```
-
-> **注意**：使用方通过 `BattleFactory.CardDefinitionProvider = configId => ...` 注入卡牌定义。
-> `BattleContext.BuildCardEffects(configId)` 会自动克隆效果列表，避免多次结算污染同一对象。
-
-### 4.6 IEffectHandler 接口（V2 签名）
-
-```csharp
-public interface IEffectHandler
-{
-    /// <summary>
-    /// 执行效果原子
-    /// </summary>
-    /// <param name="ctx">战斗上下文（唯一写入入口）</param>
-    /// <param name="effect">效果原子数据</param>
-    /// <param name="source">施法源实体</param>
-    /// <param name="targets">已解析的目标实体列表</param>
-    /// <param name="priorResults">同一卡牌前置效果的执行结果（供动态参数引用）</param>
-    /// <returns>本次效果的执行结果（供后续效果引用）</returns>
-    EffectResult Execute(
-        BattleContext ctx,
-        EffectUnit effect,
-        Entity source,
-        List<Entity> targets,
-        List<EffectResult> priorResults);
-}
-```
+- DoT
+- Regeneration
+- Buff Lifesteal
+- Thorns
+- 娴犮儱寮烽崗鏈电铂閻?Trigger 濞插墽鏁撻惃鍕摍閺佸牊鐏?
 
 ---
 
-## 五、完整结算时序图
+## 11. 閺佹澘鈧棿鎱ㄥ?
+鏉╂劘顢戦弮鑸垫殶閸婇棿鎱ㄥ锝夆偓姘崇箖 `ValueModifierManager` 鐎瑰本鍨氶妴?
+瑜版挸澧犻弨顖涘瘮娑撱倓閲滈弬鐟版倻閿?
+- `OutgoingDamage`
+- `IncomingDamage`
 
-### 5.1 定策牌结算（一回合完整流程）
+瑜版挸澧犻弰鐘茬殸鐟欏嫬鍨敍?
+- `Strength` / `Weak` -> 閸戣桨婵€娣囶喗顒?
+- `Armor` / `Vulnerable` -> 閸忋儰婵€娣囶喗顒?
+- `Armor` 閸欘亜濂栭崫?`Damage`
+- `Vulnerable` 閸氬本妞傝ぐ鍗炴惙 `Damage` 娑?`Pierce`
 
-```
-RoundManager.EndRound()
-  │
-  ├─ [Step 1] CardManager.ScanStatCards()
-  │     └─ 遍历所有玩家 Hand 中 IsStatCard=true 的实例，触发 OnStatCardHeld → 推入 PendingQueue
-  │     ⚠️ 当前状态牌不依赖 StatZone，主流程扫描手牌中持有的状态牌实例
-  │
-  ├─ [Step 2] SettlementEngine.ResolvePlanCards()
-  │     │
-  │     ├─ Layer 0: Counter 结算
-  │     │     └─ 标记被反制牌（IsCountered = true）
-  │     │     └─ 带 Reflect 标签 → 反弹效果推入 PendingQueue
-  │     │
-  │     ├─ Layer 1: Defense/Modification 结算
-  │     │     └─ 护盾、护甲 Handler 执行
-  │     │     └─ ValueModifierManager.Apply() 应用力量/虚弱修正
-  │     │
-  │     ├─ Layer 2: Damage 结算（己方顺序依赖 + 双方快照隔离）
-  │     │     │
-  │     │  ⚠️ 关键语义约定：
-  │     │  ┌──────────────────────────────────────────────────────────────────┐
-  │     │  │ 【己方内部】按出牌顺序逐张结算，后打出的牌看到前面牌造成的实时状态变化  │
-  │     │  │   示例：打击（破甲5→0）→ 死亡收割（护甲已清零，实际伤害完整，吸血成功）│
-  │     │  │                                                                  │
-  │     │  │ 【双方隔离】双方计算对方伤害时，以"Layer 2 开始前的己方防御快照"为    │
-  │     │  │   基准（HP/护盾/护甲），不受对方出牌顺序的实时影响                   │
-  │     │  │   示例：对方无论先出什么牌，我方受伤计算始终基于 Layer 2 开始时的状态  │
-  │     │  └──────────────────────────────────────────────────────────────────┘
-  │     │
-  │     ├─ Pre-Layer 2：为每位玩家创建防御快照（DefenseSnapshot）
-  │     │     └─ 记录各玩家当前 HP / Shield / Armor（供对方伤害计算时使用）
-  │     │
-  │     ├─ 按出牌顺序逐张执行（每张牌完整走 A→B→C 后才执行下一张）：
-  │     │     ├─ Phase A（只读）：计算本张牌修正后伤害（引用对方当前实时状态）
-  │     │     ├─ Phase B（写入）：扣除对方护盾/HP，记录本张牌实际伤害量（EffectResult）
-  │     │     └─ Phase C（触发）：Fire(AfterDealDamage) → 吸血等触发推入 PendingQueue
-  │     │           ↑ 下一张牌执行 Phase A 时，对方状态已是被上张牌修改后的实时值
-  │     │
-  │     └─ 对方伤害计算基准：始终读取"己方 DefenseSnapshot"（而非己方实时 HP）
-  │
-  ├─ [Step 3] SettlementEngine.DrainPendingQueue()
-  │     └─ while (queue.Count > 0)
-  │           └─ SettlementEngine.Resolve(Dequeue())
-  │                 └─ 可能再次推入 PendingQueue（递归消化，执行栈始终平坦）
-  │
-  ├─ [Step 4] TriggerManager.Fire(OnRoundEnd)
-  │     └─ DOT 伤害（毒/灼烧）触发 → 推入 PendingQueue
-  │     └─ DrainPendingQueue() 再次消化
-  │
-  └─ [Step 5] BuffManager.TickDecay()
-        └─ RemainingRounds-- → 到期调用 RemoveBuff（同步注销触发器）
-```
-
-### 5.2 瞬策牌结算（即时）
-
-```
-SettlementEngine.ResolveInstant(battleCard)
-  │
-  ├─ ConditionChecker.Evaluate(card.PlayConditions) → false: 拦截，返回失败
-  ├─ TriggerManager.Fire(BeforePlayCard) → 沉默/行为拦截检查
-  ├─ TargetResolver.Resolve(card.EffectUnits[0].TargetType) → targetEntities
-  │
-  ├─ priorResults = []
-  ├─ for each effectUnit in card.EffectUnits:
-  │     targets = TargetResolver.Resolve(effectUnit.TargetType)
-  │     value   = DynamicParamResolver.Resolve(effectUnit.ValueExpression, priorResults, ctx)
-  │     result  = HandlerPool.Execute(effectUnit, source, targets, priorResults, ctx)
-  │     priorResults.Add(result)
-  │
-  ├─ DrainPendingQueue()
-  └─ TriggerManager.Fire(AfterPlayCard)
-```
+鎼存梻鏁ゆい鍝勭碍閸ュ搫鐣鹃敍?
+- `Add`
+- `Mul`
+- `Set`
 
 ---
 
-## 六、模块间依赖关系（精确版）
+## 12. 鐟欙箑褰傞弮鑸垫簚閻滄壆濮?
 
-```
-允许的依赖（→ 表示"可调用/引用"）：
+### 瀹稿弶甯寸痪璺ㄦ畱閺冭埖婧€
 
-RoundManager       → SettlementEngine, CardManager, BattleContext
-SettlementEngine   → HandlerPool, TriggerManager, PendingEffectQueue, BattleContext
-                   → TargetResolver, DynamicParamResolver（只读）
-HandlerPool        → IEffectHandler（分发）
-IEffectHandler     → BattleContext（写入）, EventBus（发布）
-TriggerManager     → PendingEffectQueue（推入）, ConditionChecker（只读）
-CardManager        → BattleContext（写入 CardZone）, EventBus（发布）
-BuffManager        → TriggerManager（注册/注销）, PlayerData（写入）
-StatManager        → EventBus（订阅）, BattleContext（只读统计数据）
-ValueModifierMgr   → [被 SettlementEngine 调用]
+- `OnRoundStart`
+- `OnRoundEnd`
+- `BeforePlayCard`
+- `AfterPlayCard`
+- `AfterDealDamage`
+- `AfterTakeDamage`
+- `OnShieldBroken`
+- `OnNearDeath`
+- `OnDeath`
+- `OnBuffAdded`
+- `OnBuffRemoved`
+- `OnCardDrawn`
+- `OnStatCardHeld`
+- `OnHealed`
+- `OnGainShield`
 
-严格禁止的依赖：
-TriggerManager     ✗ SettlementEngine（禁止直接调用，必须走 PendingQueue）
-Resolvers          ✗ BattleContext.写入（只读）
-EventBus订阅者     ✗ BattleContext.写入（只读）
-Foundation层       ✗ 任何 Manager（纯数据）
-```
+### 瀹告彃鐣炬稊澶夌稻瑜版挸澧犻張顏呭复缁?
+- `BeforeDealDamage`
+- `BeforeTakeDamage`
+
+鏉╂瑤琚辨稉顏呯亣娑撳墽娲伴崜宥勭箽閻ｆ瑱绱濇担鍡氱箥鐞涘本妞傚▽鈩冩箒閹跺﹤鐣犳禒顒佸复閸?`DamageHandler` 娑撶粯绁︾粙瀣剁礉娑旂喍绗夐弨顖涘瘮閳ユ粍鏁奸崘娆忕秼閸撳秳婵€鐎规枼鈧繄娈戦懗钘夊閵?
+---
+
+## 13. 娴滃娆㈤幀鑽ゅ殠
+
+`EventBus` 閸欘亣绀嬬拹锝咁嚠婢舵牕绠嶉幘顓溾偓?
+鐎瑰啫缍嬮崜宥嗗鏉炴枻绱?
+
+- 閹存ɑ鏋熷鈧慨?缂佹挻娼?
+- 閸ョ偛鎮庡鈧慨?缂佹挻娼?
+- 閸楋紕澧濋幍鎾冲毉
+- 閹剁晫澧?
+- 娴笺倕顔?
+- 濞岃崵鏋?
+- 閹躲倗娴?
+- Buff 婢х偛鍨?
+- 閸楁洑缍呭璁抽
+- 閻溾晛顔嶅璁抽
+
+鐎瑰啩绗夌拹鐔荤煑閿?
+- 鐟欙箑褰傞崘鍛村劥缂佹挾鐣?
+- 閺€鐟板晸鏉╂劘顢戦弮鍓佸Ц閹?- 娴ｆ粈璐熼幋妯绘灍闁槒绶崚銈嗘焽閸忋儱褰?
 
 ---
 
-## 七、触发时机清单（TriggerTiming V2）
+## 14. 瑜版挸澧犳稉宥呭晙闁插洨鏁ら惃鍕＋閺傝顢?
 
-| 时机 | 触发节点 | 典型用途 |
-|------|---------|---------|
-| `OnRoundStart` | `RoundManager.BeginRound` 开始时 | 回合开始增益/减益 |
-| `OnRoundEnd` | `RoundManager.EndRound` 末尾 | DOT 伤害、回合结束结算 |
-| `BeforePlayCard` | `SettlementEngine.ResolveInstant` 前 | 沉默检查、行为拦截 |
-| `AfterPlayCard` | `SettlementEngine.ResolveInstant` 后 | 出牌后触发器 |
-| `BeforeDealDamage` | `DamageHandler` Phase A | 出伤修正（可取消） |
-| `AfterDealDamage` | `DamageHandler` Phase C | 吸血、连击 |
-| `BeforeTakeDamage` | `DamageHandler` Phase B | 无敌判定、受伤修正 |
-| `AfterTakeDamage` | `DamageHandler` Phase C | 荆棘、受击获甲 |
-| `OnShieldBroken` | `DamageHandler` Phase B 护盾归零时 | 破盾特效 |
-| `OnNearDeath` | `DamageHandler` Phase B HP ≤ 0 时 | 复活技能 |
-| `OnDeath` | `SettlementEngine` 死亡确认后 | 死亡触发器 |
-| `OnBuffAdded` | `BuffManager.AddBuff` | Buff 叠加时触发 ✅ 已接线 |
-| `OnBuffRemoved` | `BuffManager.RemoveBuff` | Buff 移除时触发 ✅ 已接线 |
-| `OnCardDrawn` | `CardManager.DrawCards` | 抽牌触发器 ✅ 已接线 |
-| `OnStatCardHeld` | `CardManager.ScanStatCards`（扫描 Hand 中 IsStatCard=true 的牌） | 状态牌持有时触发 |
+娴犮儰绗呴崘鍛啇娑撳秴鍟€鐏炵偘绨?BattleCore 瑜版挸澧犳總鎴犲閿?
+- 閸╄桨绨０婵嗩樆娑撴挾鏁ら崠铏规畱閻樿埖鈧胶澧濇稉缁樼ウ缁?- 閸╄桨绨€圭偘缍嬫笟?Buff 闂€婊冨剼閻?Buff 閻喐绨?
+- 閻剛鐡ラ悧宀冿紭閺佸牊鐏夐崗銉ュ經
+- `TriggerUnit.InlineExecute`
+- 鏉╂劘顢戦弮?`HistoryLog`
 
----
-
-## 八、卡牌类型与区域流转
-
-```
-卡组配置（CardConfig × N）
-  ↓ CardManager.InitBattleDeck()
-BattleCard 实例（InstanceId 唯一）
-
-区域流转规则：
-Deck ──抽牌──► Hand ──打出──► StrategyZone（定策）
-                    ──打出──► [即时结算] ──► Discard（普通牌）
-                                          → Consume（消耗牌）
-
-弃牌堆 ◄── 结算完成（普通牌归位）
-消耗区 ◄── 结算完成（消耗牌永久记录）
-StatZone ◄── ⚠️ 遗留兼容区域，当前主流程不依赖此区域
-
-状态牌（IsStatCard=true）：正常存在于 Deck / Hand / Discard，不可主动打出，
-  回合末由 ScanStatCards() 扫描 Hand 中的状态牌触发 OnStatCardHeld → 之后随普通手牌弃置
-
-临时牌：TempCard=true → 回合末 DestroyTempCards() 直接销毁（不进 Discard）
-```
-
----
-
-## 九、与 V1 的核心差异对照
-
-| 维度 | V1 | V2 |
-|------|----|----|
-| **触发器调用** | TriggerManager 直接回调 SettlementEngine（双向） | TriggerManager 推入 PendingQueue（单向） |
-| **Buff 数据** | BuffManager._buffs（私有，难序列化） | PlayerData.ActiveBuffs（公开，可序列化） |
-| **BuffManager** | 重量级，含触发逻辑 | 薄中介，只含 CRUD + 触发器注册/注销 |
-| **力量/属性** | `AttackBuff` 字段直接累加 | ValueModifier（Add 类型），动态计算 |
-| **事件系统** | BattleEventRecorder（被动记录） | EventBus（主动广播） + StatManager（订阅统计） |
-| **卡牌实例化** | 无，配置直接使用 | BattleCard 实例（唯一 ID，区域管理） |
-| **动态参数** | 无 | DynamicParamResolver（表达式解析） |
-| **结算层数** | 4层（0-3） | 5层（0-4，增加 Resource 层） |
-| **Handler 签名** | Execute(card, effect, source, target, ctx) | Execute(ctx, effect, source, targets, priorResults) |
-| **DOT 伤害** | 直接 Hp-=（绕过 DamageHelper） | 通过 PendingQueue，走完整 DamageHandler 流程 |
-| **卡牌定义注入** | 无，配置直接耦合 | `BattleCardDefinition` + `CardDefinitionProvider` 委托解耦 |
-| **触发目标预解析** | 无 | `TriggerSource`/`TriggerTarget` 在入队时锁定实体 ID，防止目标漂移 |
-| **效果来源追踪** | 无 | 效果参数自动写入 `sourceCardInstanceId`/`sourceCardConfigId` |
-
----
-
-*本文档描述 V2 架构设计，具体实现阶段规划见 [BattleCoreRefactorPlan.md](../Planning/BattleCoreRefactorPlan.md)*  
-*卡牌规则设计见 [../GameDesign/SettlementRules.md](../GameDesign/SettlementRules.md)*
+婵″倹鐏夐崥搴ｇ敾鐎圭偟骞囬柌宥嗘煀瀵洖鍙嗘潻娆庣昂閺堝搫鍩楅敍宀勬付鐟曚礁鎮撳銉ゆ叏閺€瑙勬拱閺傚洦銆傛稉搴㈢ゴ鐠囨洩绱濋懓灞肩瑝閺勵垰鐪柈銊ㄋ夋稉浣碘偓?
