@@ -68,9 +68,9 @@ Card_Moba/
 
 | 你想... | 去看这个文件 |
 |---------|--------------|
-| 理解回合流程 | `Shared/BattleCore/RoundStateMachine/RoundManager.cs` |
-| 理解效果结算 | `Shared/BattleCore/Settlement/SettlementEngine.cs` |
-| 理解玩家状态 | `Shared/BattleCore/Context/PlayerBattleState.cs` |
+| 理解回合流程 | `Shared/BattleCore/Core/RoundManager.cs` |
+| 理解效果结算 | `Shared/BattleCore/Core/SettlementEngine.cs` |
+| 理解玩家状态 | `Shared/BattleCore/Context/PlayerData.cs` |
 | 理解卡牌配置 | `Shared/ConfigModels/Card/CardConfig.cs` |
 | 理解枚举定义 | `Shared/Protocol/Enums/` |
 | 修改 UI 显示 | `Client/Assets/Scripts/Presentation/Battle/BattleUIManager.cs` |
@@ -91,10 +91,10 @@ BattleUIManager.OnCardClicked()     [Presentation]
 BattleGameManager.PlayerPlayInstantCard()  [GameLogic]
     │ 确定目标、调用 BattleCore
     ▼
-RoundManager.PlayCard()             [BattleCore]
+RoundManager.PlayInstantCard()      [BattleCore]
     │ 校验合法性、扣能量、移除手牌
     ▼
-SettlementEngine.ResolveInstantCard()  [BattleCore]
+SettlementEngine.ResolveInstantFromCard()  [BattleCore]
     │ 执行效果（伤害/护盾/...）
     ▼
 BattleContext 状态更新

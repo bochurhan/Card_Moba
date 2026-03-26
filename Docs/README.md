@@ -36,7 +36,6 @@
 | 文档 | 说明 | 状态 |
 |------|------|------|
 | [QuickStart.md](TechGuide/QuickStart.md) | **5分钟快速入门**（必读） | ✅ 完成 |
-| [BattleCore.md](TechGuide/BattleCore.md) | BattleCore 旧版文档归档入口页 | ✅ 归档 |
 | [SystemArchitecture_V2.md](TechGuide/SystemArchitecture_V2.md) | 当前系统分层架构与模块关系图 | ✅ 完成 |
 | [ConfigSystem.md](TechGuide/ConfigSystem.md) | CSV→JSON 配置流水线使用说明 | ✅ 完成 |
 | ClientDev.md | 客户端开发规范与模块 | ⏳ 待补充 |
@@ -86,6 +85,10 @@
 ## 📁 归档说明
 
 `_Archive/` 目录包含重构前的原始文档，保留以供参考和回溯。
+
+当前仍保留一个归档入口页：
+
+- [TechGuide/BattleCore.md](TechGuide/BattleCore.md) — V1 BattleCore 历史文档入口，不作为当前开发参考
 
 ---
 
