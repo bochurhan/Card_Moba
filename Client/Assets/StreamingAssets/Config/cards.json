@@ -2,12 +2,153 @@
   "version": "2.0.0",
   "cards": [
     {
+      "cardId": 1001,
+      "cardName": "持盾向前",
+      "description": "抽 1 张牌，获得 4 点护盾。",
+      "trackType": "Instant",
+      "targetType": "Self",
+      "heroClass": "Warrior",
+      "effectRange": "Self",
+      "layer": "DefenseModifier",
+      "tags": ["Defense", "Resource"],
+      "energyCost": 1,
+      "rarity": 1,
+      "effects": [
+        {
+          "effectType": 24,
+          "value": 1,
+          "repeatCount": 1,
+          "duration": 0,
+          "targetOverride": "Self"
+        },
+        {
+          "effectType": 2,
+          "value": 4,
+          "repeatCount": 1,
+          "duration": 0,
+          "targetOverride": "Self"
+        }
+      ]
+    },
+    {
+      "cardId": 1002,
+      "cardName": "锻体",
+      "description": "本回合内，获得 2 点力量。",
+      "trackType": "Instant",
+      "targetType": "Self",
+      "heroClass": "Warrior",
+      "effectRange": "Self",
+      "layer": "BuffSpecial",
+      "tags": ["Buff"],
+      "energyCost": 1,
+      "rarity": 1,
+      "effects": [
+        {
+          "effectType": 31,
+          "value": 2,
+          "repeatCount": 1,
+          "duration": 1,
+          "targetOverride": "Self",
+          "buffConfigId": "strength"
+        }
+      ]
+    },
+    {
+      "cardId": 1003,
+      "cardName": "放血",
+      "description": "你受到 3 点物理伤害，获得 2 点能量。",
+      "trackType": "Instant",
+      "targetType": "Self",
+      "heroClass": "Warrior",
+      "effectRange": "Self",
+      "layer": "Resource",
+      "tags": ["Resource"],
+      "energyCost": 0,
+      "rarity": 1,
+      "effects": [
+        {
+          "effectType": 10,
+          "value": 3,
+          "repeatCount": 1,
+          "duration": 0,
+          "targetOverride": "Self"
+        },
+        {
+          "effectType": 26,
+          "value": 2,
+          "repeatCount": 1,
+          "duration": 0,
+          "targetOverride": "Self"
+        }
+      ]
+    },
+    {
+      "cardId": 1004,
+      "cardName": "疲劳行军",
+      "description": "抽 2 张牌，获得 1 层虚弱。",
+      "trackType": "Instant",
+      "targetType": "Self",
+      "heroClass": "Warrior",
+      "effectRange": "Self",
+      "layer": "Resource",
+      "tags": ["Resource"],
+      "energyCost": 1,
+      "rarity": 1,
+      "effects": [
+        {
+          "effectType": 24,
+          "value": 2,
+          "repeatCount": 1,
+          "duration": 0,
+          "targetOverride": "Self"
+        },
+        {
+          "effectType": 31,
+          "value": 25,
+          "repeatCount": 1,
+          "duration": 1,
+          "targetOverride": "Self",
+          "buffConfigId": "weak"
+        }
+      ]
+    },
+    {
+      "cardId": 1005,
+      "cardName": "竭泽而渔",
+      "description": "抽 3 张牌。本回合内，你不能再抽牌。",
+      "trackType": "Instant",
+      "targetType": "Self",
+      "heroClass": "Warrior",
+      "effectRange": "Self",
+      "layer": "Resource",
+      "tags": ["Resource"],
+      "energyCost": 0,
+      "rarity": 2,
+      "effects": [
+        {
+          "effectType": 24,
+          "value": 3,
+          "repeatCount": 1,
+          "duration": 0,
+          "targetOverride": "Self"
+        },
+        {
+          "effectType": 31,
+          "value": 1,
+          "repeatCount": 1,
+          "duration": 1,
+          "targetOverride": "Self",
+          "buffConfigId": "no_draw_this_turn"
+        }
+      ]
+    },
+    {
       "cardId": 2001,
-      "cardName": "打击",
-      "description": "造成6点伤害",
+      "cardName": "无情连打",
+      "description": "造成 3 点物理伤害 3 次。",
       "trackType": "Plan",
       "targetType": "CurrentEnemy",
-      "heroClass": "Universal",
+      "heroClass": "Warrior",
       "effectRange": "SingleEnemy",
       "layer": "DamageTrigger",
       "tags": ["Damage"],
@@ -16,29 +157,63 @@
       "effects": [
         {
           "effectType": 10,
-          "value": 6,
-          "repeatCount": 1,
-          "duration": 0,
-          "targetOverride": ""
+          "value": 3,
+          "repeatCount": 3,
+          "duration": 0
         }
       ]
     },
     {
       "cardId": 2002,
-      "cardName": "防御",
-      "description": "获得5点护盾",
+      "cardName": "以血还血",
+      "description": "你受到 3 点物理伤害。造成 15 点物理伤害。",
+      "trackType": "Plan",
+      "targetType": "CurrentEnemy",
+      "heroClass": "Warrior",
+      "effectRange": "SingleEnemy",
+      "layer": "DamageTrigger",
+      "tags": ["Damage"],
+      "energyCost": 1,
+      "rarity": 2,
+      "effects": [
+        {
+          "effectType": 10,
+          "value": 3,
+          "repeatCount": 1,
+          "duration": 0,
+          "targetOverride": "Self"
+        },
+        {
+          "effectType": 10,
+          "value": 15,
+          "repeatCount": 1,
+          "duration": 0
+        }
+      ]
+    },
+    {
+      "cardId": 2003,
+      "cardName": "鲜血护盾",
+      "description": "你受到 2 点物理伤害，获得 10 点护盾。",
       "trackType": "Plan",
       "targetType": "Self",
-      "heroClass": "Universal",
+      "heroClass": "Warrior",
       "effectRange": "Self",
       "layer": "DefenseModifier",
       "tags": ["Defense"],
       "energyCost": 1,
-      "rarity": 1,
+      "rarity": 2,
       "effects": [
         {
+          "effectType": 10,
+          "value": 2,
+          "repeatCount": 1,
+          "duration": 0,
+          "targetOverride": "Self"
+        },
+        {
           "effectType": 2,
-          "value": 5,
+          "value": 10,
           "repeatCount": 1,
           "duration": 0,
           "targetOverride": "Self"
@@ -46,46 +221,15 @@
       ]
     },
     {
-      "cardId": 2003,
-      "cardName": "观察弱点",
-      "description": "若敌方本回合打出过伤害牌，自身获得2点力量",
-      "trackType": "Plan",
-      "targetType": "Self",
-      "heroClass": "Warrior",
-      "effectRange": "Self",
-      "layer": "BuffSpecial",
-      "tags": ["Buff"],
-      "energyCost": 1,
-      "rarity": 2,
-      "effects": [
-        {
-          "effectType": 31,
-          "value": 2,
-          "repeatCount": 1,
-          "duration": 0,
-          "targetOverride": "Self",
-          "buffConfigId": "strength",
-          "effectConditions": [
-            {
-              "conditionType": "EnemyPlayedDamageCard",
-              "threshold": 0,
-              "negate": false,
-              "conditionBuffType": ""
-            }
-          ]
-        }
-      ]
-    },
-    {
       "cardId": 2004,
       "cardName": "死亡收割",
-      "description": "对所有敌方造成3点伤害，未被护盾格挡的伤害回复等量生命值",
+      "description": "对所有敌人造成 3 点物理伤害。回复等同于其中未被格挡伤害总和的生命值。消耗。",
       "trackType": "Plan",
       "targetType": "AllEnemies",
       "heroClass": "Warrior",
       "effectRange": "AllEnemies",
       "layer": "DamageTrigger",
-      "tags": ["Damage"],
+      "tags": ["Damage", "Resource", "Exhaust"],
       "energyCost": 2,
       "rarity": 3,
       "effects": [
@@ -107,8 +251,8 @@
     },
     {
       "cardId": 2005,
-      "cardName": "飞剑回旋镖",
-      "description": "对当前敌人造成3点伤害4次",
+      "cardName": "护盾猛击",
+      "description": "造成 6 点物理伤害。结算时，你每有 1 点护盾，该伤害额外提高 1 点。",
       "trackType": "Plan",
       "targetType": "CurrentEnemy",
       "heroClass": "Warrior",
@@ -116,33 +260,130 @@
       "layer": "DamageTrigger",
       "tags": ["Damage"],
       "energyCost": 1,
-      "rarity": 2,
+      "rarity": 3,
       "effects": [
         {
           "effectType": 10,
-          "value": 3,
-          "repeatCount": 4,
-          "duration": 0,
-          "targetOverride": ""
+          "value": 0,
+          "valueExpression": "{{6 + self.shield}}",
+          "repeatCount": 1,
+          "duration": 0
         }
       ]
     },
     {
-      "cardId": 1001,
-      "cardName": "战斗专注",
-      "description": "抽3张牌",
-      "trackType": "Instant",
-      "targetType": "Self",
+      "cardId": 2006,
+      "cardName": "全力一击",
+      "description": "造成 25 点物理伤害。下回合内，你不能再打出伤害牌。",
+      "trackType": "Plan",
+      "targetType": "CurrentEnemy",
       "heroClass": "Warrior",
-      "effectRange": "Self",
-      "layer": "Utility",
-      "tags": ["Draw"],
-      "energyCost": 0,
+      "effectRange": "SingleEnemy",
+      "layer": "DamageTrigger",
+      "tags": ["Damage"],
+      "energyCost": 3,
       "rarity": 2,
       "effects": [
         {
-          "effectType": 24,
-          "value": 3,
+          "effectType": 10,
+          "value": 25,
+          "repeatCount": 1,
+          "duration": 0
+        },
+        {
+          "effectType": 31,
+          "value": 1,
+          "repeatCount": 1,
+          "duration": 2,
+          "targetOverride": "Self",
+          "buffConfigId": "no_damage_card_this_turn"
+        }
+      ]
+    },
+    {
+      "cardId": 2007,
+      "cardName": "撕裂",
+      "description": "造成 12 点物理伤害。若此伤害未被格挡，向目标的抽牌堆洗入 1 张伤口。",
+      "trackType": "Plan",
+      "targetType": "CurrentEnemy",
+      "heroClass": "Warrior",
+      "effectRange": "SingleEnemy",
+      "layer": "DamageTrigger",
+      "tags": ["Damage", "Debuff"],
+      "energyCost": 1,
+      "rarity": 3,
+      "effects": [
+        {
+          "effectType": 10,
+          "value": 12,
+          "repeatCount": 1,
+          "duration": 0
+        },
+        {
+          "effectType": 32,
+          "value": 1,
+          "valueExpression": "{{preEffect[fx_00].totalRealHpDamage}}",
+          "repeatCount": 1,
+          "duration": 0,
+          "generateCardConfigId": "3001",
+          "generateCardZone": "Deck",
+          "generateCardIsTemp": false
+        }
+      ]
+    },
+    {
+      "cardId": 2008,
+      "cardName": "愤怒",
+      "description": "造成 6 点物理伤害。将 1 张此牌的复制洗入你的抽牌堆。",
+      "trackType": "Plan",
+      "targetType": "CurrentEnemy",
+      "heroClass": "Warrior",
+      "effectRange": "SingleEnemy",
+      "layer": "DamageTrigger",
+      "tags": ["Damage"],
+      "energyCost": 0,
+      "rarity": 1,
+      "effects": [
+        {
+          "effectType": 10,
+          "value": 6,
+          "repeatCount": 1,
+          "duration": 0
+        },
+        {
+          "effectType": 32,
+          "value": 1,
+          "repeatCount": 1,
+          "duration": 0,
+          "targetOverride": "Self",
+          "generateCardConfigId": "2008",
+          "generateCardZone": "Deck",
+          "generateCardIsTemp": false
+        }
+      ]
+    },
+    {
+      "cardId": 2009,
+      "cardName": "回旋镖",
+      "description": "造成 8 点物理伤害。回合结束时，若此牌位于你的弃牌堆中，将其返回手牌。",
+      "trackType": "Plan",
+      "targetType": "CurrentEnemy",
+      "heroClass": "Warrior",
+      "effectRange": "SingleEnemy",
+      "layer": "DamageTrigger",
+      "tags": ["Damage", "Resource"],
+      "energyCost": 1,
+      "rarity": 1,
+      "effects": [
+        {
+          "effectType": 10,
+          "value": 8,
+          "repeatCount": 1,
+          "duration": 0
+        },
+        {
+          "effectType": 34,
+          "value": 1,
           "repeatCount": 1,
           "duration": 0,
           "targetOverride": "Self"
@@ -150,27 +391,47 @@
       ]
     },
     {
-      "cardId": 1002,
-      "cardName": "突破极限",
-      "description": "获得4点力量（消耗）",
-      "trackType": "Instant",
-      "targetType": "Self",
+      "cardId": 2010,
+      "cardName": "痛击",
+      "description": "造成 8 点物理伤害。下回合开始时，目标获得 1 层易伤。",
+      "trackType": "Plan",
+      "targetType": "CurrentEnemy",
       "heroClass": "Warrior",
-      "effectRange": "Self",
-      "layer": "Utility",
-      "tags": ["Buff", "Exhaust"],
-      "energyCost": 1,
-      "rarity": 3,
+      "effectRange": "SingleEnemy",
+      "layer": "DamageTrigger",
+      "tags": ["Damage", "Debuff"],
+      "energyCost": 2,
+      "rarity": 1,
       "effects": [
         {
-          "effectType": 31,
-          "value": 4,
+          "effectType": 10,
+          "value": 8,
           "repeatCount": 1,
-          "duration": 0,
-          "targetOverride": "Self",
-          "buffConfigId": "strength"
+          "duration": 0
+        },
+        {
+          "effectType": 31,
+          "value": 50,
+          "repeatCount": 1,
+          "duration": 2,
+          "targetOverride": "Enemy",
+          "buffConfigId": "delayed_vulnerable_next_round"
         }
       ]
+    },
+    {
+      "cardId": 3001,
+      "cardName": "伤口",
+      "description": "状态牌。无法主动打出。",
+      "trackType": "Instant",
+      "targetType": "Self",
+      "heroClass": "Universal",
+      "effectRange": "Self",
+      "layer": "BuffSpecial",
+      "tags": ["Debuff", "Status"],
+      "energyCost": 0,
+      "rarity": 1,
+      "effects": []
     }
   ]
 }

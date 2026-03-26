@@ -18,8 +18,10 @@ namespace CardMoba.Client.Data.ConfigData
             EffectType.Shield,
             EffectType.AddBuff,
             EffectType.Draw,
+            EffectType.GainEnergy,
             EffectType.GenerateCard,
             EffectType.Lifesteal,
+            EffectType.ReturnSourceCardToHandAtRoundEnd,
         };
 
         private static readonly Dictionary<EffectType, SettleLayer> EffectLayerMap = new()
@@ -29,7 +31,9 @@ namespace CardMoba.Client.Data.ConfigData
             { EffectType.Lifesteal, SettleLayer.Damage },
             { EffectType.Pierce, SettleLayer.Damage },
             { EffectType.Draw, SettleLayer.Resource },
+            { EffectType.GainEnergy, SettleLayer.Resource },
             { EffectType.GenerateCard, SettleLayer.Resource },
+            { EffectType.ReturnSourceCardToHandAtRoundEnd, SettleLayer.Resource },
             { EffectType.Heal, SettleLayer.BuffSpecial },
             { EffectType.AddBuff, SettleLayer.BuffSpecial },
         };
@@ -87,7 +91,7 @@ namespace CardMoba.Client.Data.ConfigData
             if (!SupportedEffectTypes.Contains(effect.EffectType))
             {
                 throw new InvalidOperationException(
-                    $"{prefix} 不在当前 BattleCore 支持白名单内，请改为 Damage/Pierce/Heal/Shield/AddBuff/Draw/GenerateCard/Lifesteal。");
+                    $"{prefix} 不在当前 BattleCore 支持白名单内，请改为 Damage/Pierce/Heal/Shield/AddBuff/Draw/GainEnergy/GenerateCard/Lifesteal/ReturnSourceCardToHandAtRoundEnd。");
             }
         }
 
@@ -198,6 +202,8 @@ namespace CardMoba.Client.Data.ConfigData
                 parameters["targetZone"] = string.IsNullOrWhiteSpace(effect.GenerateCardZone)
                     ? "Hand"
                     : effect.GenerateCardZone;
+                parameters["count"] = effect.Value > 0 ? effect.Value.ToString() : "1";
+                parameters["tempCard"] = effect.GenerateCardIsTemp ? "true" : "false";
             }
 
             return parameters;

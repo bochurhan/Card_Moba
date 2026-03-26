@@ -50,6 +50,7 @@ namespace CardMoba.Client.Data.ConfigData.JsonModels
         public string buffConfigId;
         public string generateCardConfigId;
         public string generateCardZone;
+        public bool generateCardIsTemp;
         public int priority;
         public int subPriority;
         public List<EffectConditionJsonData> effectConditions;

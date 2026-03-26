@@ -35,9 +35,9 @@ namespace CardMoba.Client.Editor.CardEditor
         public bool TagLegendary;
         public bool TagInnate;
         public bool TagRetain;
+        public bool TagStatus;
 
         public List<PlayConditionEditData> PlayConditions = new();
-
         public List<EffectEditData> Effects = new();
 
         [NonSerialized] public bool FoldoutExpanded = true;
@@ -61,6 +61,7 @@ namespace CardMoba.Client.Editor.CardEditor
             if (TagLegendary) result |= CardTag.Legendary;
             if (TagInnate) result |= CardTag.Innate;
             if (TagRetain) result |= CardTag.Retain;
+            if (TagStatus) result |= CardTag.Status;
             return result;
         }
 
@@ -81,6 +82,7 @@ namespace CardMoba.Client.Editor.CardEditor
             TagLegendary = (tags & CardTag.Legendary) != 0;
             TagInnate = (tags & CardTag.Innate) != 0;
             TagRetain = (tags & CardTag.Retain) != 0;
+            TagStatus = (tags & CardTag.Status) != 0;
         }
 
         public List<string> GetTagList()
@@ -101,6 +103,7 @@ namespace CardMoba.Client.Editor.CardEditor
             if (TagLegendary) list.Add("Legendary");
             if (TagInnate) list.Add("Innate");
             if (TagRetain) list.Add("Retain");
+            if (TagStatus) list.Add("Status");
             return list;
         }
 
@@ -121,6 +124,7 @@ namespace CardMoba.Client.Editor.CardEditor
             TagLegendary = tags.Contains("Legendary");
             TagInnate = tags.Contains("Innate");
             TagRetain = tags.Contains("Retain");
+            TagStatus = tags.Contains("Status");
         }
 
         public CardEditData Clone(int newId)
@@ -151,7 +155,8 @@ namespace CardMoba.Client.Editor.CardEditor
                 TagReflect = TagReflect,
                 TagLegendary = TagLegendary,
                 TagInnate = TagInnate,
-                TagRetain = TagRetain
+                TagRetain = TagRetain,
+                TagStatus = TagStatus
             };
 
             foreach (var playCondition in PlayConditions)
@@ -175,6 +180,7 @@ namespace CardMoba.Client.Editor.CardEditor
         public string BuffConfigId = string.Empty;
         public string GenerateCardConfigId = string.Empty;
         public string GenerateCardZone = "Hand";
+        public bool GenerateCardIsTemp;
         public int RepeatCount = 1;
         public List<EffectConditionEditData> EffectConditions = new();
         public int Priority = 500;
@@ -215,6 +221,7 @@ namespace CardMoba.Client.Editor.CardEditor
                 EffectType.Pierce => $"穿透 {valueText} 点护甲",
                 EffectType.AddBuff when !string.IsNullOrWhiteSpace(BuffConfigId) => $"附加 Buff {BuffConfigId}",
                 EffectType.GenerateCard when !string.IsNullOrWhiteSpace(GenerateCardConfigId) => $"生成卡牌 {GenerateCardConfigId}",
+                EffectType.ReturnSourceCardToHandAtRoundEnd => "回合结束时若此牌在弃牌堆，则返回手牌",
                 _ => $"{EffectType}: {valueText}"
             };
 
@@ -239,6 +246,7 @@ namespace CardMoba.Client.Editor.CardEditor
                 BuffConfigId = BuffConfigId,
                 GenerateCardConfigId = GenerateCardConfigId,
                 GenerateCardZone = GenerateCardZone,
+                GenerateCardIsTemp = GenerateCardIsTemp,
                 RepeatCount = RepeatCount,
                 Priority = Priority,
                 SubPriority = SubPriority,

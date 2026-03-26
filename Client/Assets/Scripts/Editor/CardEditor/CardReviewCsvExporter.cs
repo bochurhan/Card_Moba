@@ -69,7 +69,10 @@ namespace CardMoba.Client.Editor.CardEditor
                 parts.Add($"buff={effect.BuffConfigId}");
 
             if (effect.EffectType == EffectType.GenerateCard && !string.IsNullOrWhiteSpace(effect.GenerateCardConfigId))
-                parts.Add($"card={effect.GenerateCardConfigId}@{effect.GenerateCardZone}");
+                parts.Add($"card={effect.GenerateCardConfigId}@{effect.GenerateCardZone}" + (effect.GenerateCardIsTemp ? " temp" : ""));
+
+            if (effect.EffectType == EffectType.ReturnSourceCardToHandAtRoundEnd)
+                parts.Add("return-source-card@end-round");
 
             if (effect.EffectConditions.Count > 0)
             {
@@ -119,6 +122,9 @@ namespace CardMoba.Client.Editor.CardEditor
 
                 if (!string.IsNullOrWhiteSpace(effect.GenerateCardZone))
                     fields.Add($"\"generateCardZone\":{QuoteJson(effect.GenerateCardZone)}");
+
+                if (effect.GenerateCardIsTemp)
+                    fields.Add("\"generateCardIsTemp\":true");
             }
 
             if (effect.EffectConditions.Count > 0)
