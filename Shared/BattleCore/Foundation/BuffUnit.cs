@@ -26,6 +26,9 @@ namespace CardMoba.BattleCore.Foundation
         /// <summary>Buff 显示名称（来自 BuffConfig，仅供日志/UI）</summary>
         public string DisplayName { get; set; } = string.Empty;
 
+        /// <summary>Buff 运行时类型，用于规则判定与拦截。</summary>
+        public BuffType BuffType { get; set; } = BuffType.Unknown;
+
         // ══════════════════════════════════════════════════════════
         // 归属
         // ══════════════════════════════════════════════════════════

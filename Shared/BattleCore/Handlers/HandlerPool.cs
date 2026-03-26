@@ -63,7 +63,9 @@ namespace CardMoba.BattleCore.Handlers
             Register(EffectType.Shield,       new ShieldHandler());
             Register(EffectType.AddBuff,      new AddBuffHandler());
             Register(EffectType.Draw,         new DrawCardHandler());
+            Register(EffectType.GainEnergy,   new GainEnergyHandler());
             Register(EffectType.GenerateCard, new GenerateCardHandler());
+            Register(EffectType.ReturnSourceCardToHandAtRoundEnd, new ReturnSourceCardToHandAtRoundEndHandler());
             Register(EffectType.Lifesteal,    new LifestealHandler());
         }
 

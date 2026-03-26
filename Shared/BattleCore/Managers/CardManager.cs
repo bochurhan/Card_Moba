@@ -3,28 +3,21 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using CardMoba.BattleCore.Foundation;
 using CardMoba.BattleCore.Context;
 using CardMoba.BattleCore.EventBus;
+using CardMoba.BattleCore.Foundation;
+using CardMoba.BattleCore.Handlers;
 
 namespace CardMoba.BattleCore.Managers
 {
     /// <summary>
-    /// CardManager —— ICardManager 的具体实现。
-    ///
-    /// 负责 BattleCard 实例的生命周期和区域流转。
-    /// 区域移动通过 MoveCard() 统一完成，不在此类以外直接修改 BattleCard.Zone。
-    /// 结算逻辑（抽牌触发效果等）通过 EventBus 广播，不在此类内处理。
+    /// 管理 BattleCard 实例的生命周期和区位流转。
+    /// 不负责卡牌结算本身，结算副作用通过 EventBus / TriggerManager 向外广播。
     /// </summary>
     public class CardManager : ICardManager
     {
-        private int _instanceCounter = 0;
+        private int _instanceCounter;
 
-        // ══════════════════════════════════════════════════════════
-        // 初始化
-        // ══════════════════════════════════════════════════════════
-
-        /// <inheritdoc/>
         public void InitBattleDeck(
             BattleContext ctx,
             string playerId,
@@ -33,11 +26,10 @@ namespace CardMoba.BattleCore.Managers
             var player = ctx.GetPlayer(playerId);
             if (player == null)
             {
-                ctx.RoundLog.Add($"[CardManager] ⚠️ 找不到玩家 {playerId}，无法初始化卡组。");
+                ctx.RoundLog.Add($"[CardManager] 找不到玩家 {playerId}，无法初始化牌组。");
                 return;
             }
 
-            // 清空现有卡牌（防止重复初始化）
             player.AllCards.Clear();
 
             foreach (var (configId, count) in deckConfig)
@@ -45,68 +37,65 @@ namespace CardMoba.BattleCore.Managers
                 for (int i = 0; i < count; i++)
                 {
                     var definition = ctx.GetCardDefinition(configId);
-                    var card = new BattleCard
+                    player.AllCards.Add(new BattleCard
                     {
                         InstanceId = $"bc_{++_instanceCounter:D4}",
-                        ConfigId   = configId,
-                        OwnerId    = playerId,
-                        Zone       = CardZone.Deck,
-                        IsExhaust  = definition?.IsExhaust ?? false,
+                        ConfigId = configId,
+                        OwnerId = playerId,
+                        Zone = CardZone.Deck,
+                        IsExhaust = definition?.IsExhaust ?? false,
                         IsStatCard = definition?.IsStatCard ?? false,
-                    };
-                    player.AllCards.Add(card);
+                    });
                 }
             }
 
-            // 洗牌（使用确定性随机）
             ShuffleDeck(ctx, playerId);
-
-            ctx.RoundLog.Add($"[CardManager] 玩家 {playerId} 初始化卡组完成，共 {player.AllCards.Count} 张牌。");
+            ctx.RoundLog.Add($"[CardManager] 玩家 {playerId} 初始化牌组完成，共 {player.AllCards.Count} 张牌。");
         }
 
-        // ══════════════════════════════════════════════════════════
-        // 抽牌
-        // ══════════════════════════════════════════════════════════
-
-        /// <inheritdoc/>
         public List<BattleCard> DrawCards(BattleContext ctx, string playerId, int count)
         {
             var player = ctx.GetPlayer(playerId);
-            if (player == null) return new List<BattleCard>();
+            if (player == null)
+                return new List<BattleCard>();
+
+            if (ctx.BuffManager.HasBuffType(ctx, player.HeroEntity.EntityId, Protocol.Enums.BuffType.NoDrawThisTurn))
+            {
+                ctx.RoundLog.Add($"[CardManager] {playerId} 处于 NoDrawThisTurn，抽牌被跳过。");
+                return new List<BattleCard>();
+            }
 
             var drawn = new List<BattleCard>();
-            var deck  = player.GetCardsInZone(CardZone.Deck);
+            var deck = player.GetCardsInZone(CardZone.Deck);
 
             for (int i = 0; i < count; i++)
             {
                 if (deck.Count == 0)
                 {
-                    // 卡组空时：将弃牌堆重新洗入卡组
                     var discard = player.GetCardsInZone(CardZone.Discard);
                     if (discard.Count == 0)
                     {
-                        ctx.RoundLog.Add($"[CardManager] {playerId} 卡组和弃牌堆均为空，无法继续抽牌。");
+                        ctx.RoundLog.Add($"[CardManager] {playerId} 的牌库和弃牌堆都为空，无法继续抽牌。");
                         break;
                     }
 
-                    foreach (var d in discard)
-                        d.Zone = CardZone.Deck;
+                    foreach (var card in discard)
+                        card.Zone = CardZone.Deck;
 
                     ShuffleDeck(ctx, playerId);
-                    ctx.RoundLog.Add($"[CardManager] {playerId} 卡组已空，弃牌堆 {discard.Count} 张牌洗回卡组。");
+                    ctx.RoundLog.Add($"[CardManager] {playerId} 牌库已空，将 {discard.Count} 张弃牌洗回牌库。");
                     deck = player.GetCardsInZone(CardZone.Deck);
                 }
 
-                // 从卡组顶（索引 0）抽牌
-                var card = deck[0];
-                MoveCard(ctx, card, CardZone.Hand);
-                drawn.Add(card);
+                var cardToDraw = deck[0];
+                MoveCard(ctx, cardToDraw, CardZone.Hand);
+                drawn.Add(cardToDraw);
 
                 ctx.EventBus.Publish(new CardDrawnEvent
                 {
-                    PlayerId       = playerId,
-                    CardInstanceId = card.InstanceId,
-                    CardConfigId   = card.ConfigId,
+                    PlayerId = playerId,
+                    CardInstanceId = cardToDraw.InstanceId,
+                    CardConfigId = cardToDraw.ConfigId,
                 });
                 ctx.TriggerManager.Fire(ctx, TriggerTiming.OnCardDrawn, new TriggerContext
                 {
@@ -114,37 +103,30 @@ namespace CardMoba.BattleCore.Managers
                     Extra = new Dictionary<string, object>
                     {
                         ["playerId"] = playerId,
-                        ["cardInstanceId"] = card.InstanceId,
-                        ["cardConfigId"] = card.ConfigId,
+                        ["cardInstanceId"] = cardToDraw.InstanceId,
+                        ["cardConfigId"] = cardToDraw.ConfigId,
                     },
                 });
 
-                ctx.RoundLog.Add($"[CardManager] {playerId} 抽取 [{card.ConfigId}]（InstanceId={card.InstanceId}）。");
-
-                // 刷新 deck 引用（移动后列表已变）
+                ctx.RoundLog.Add($"[CardManager] {playerId} 抽取 [{cardToDraw.ConfigId}]（{cardToDraw.InstanceId}）。");
                 deck = player.GetCardsInZone(CardZone.Deck);
             }
 
             return drawn;
         }
 
-        // ══════════════════════════════════════════════════════════
-        // 定策牌提交
-        // ══════════════════════════════════════════════════════════
-
-        /// <inheritdoc/>
         public bool CommitPlanCard(BattleContext ctx, string cardInstanceId)
         {
             var card = FindCard(ctx, cardInstanceId);
             if (card == null)
             {
-                ctx.RoundLog.Add($"[CardManager] ⚠️ 找不到卡牌实例 {cardInstanceId}。");
+                ctx.RoundLog.Add($"[CardManager] 找不到卡牌实例 {cardInstanceId}。");
                 return false;
             }
 
             if (card.Zone != CardZone.Hand)
             {
-                ctx.RoundLog.Add($"[CardManager] ⚠️ 卡牌 {cardInstanceId} 不在手牌区（当前区域={card.Zone}），无法提交。");
+                ctx.RoundLog.Add($"[CardManager] 卡牌 {cardInstanceId} 不在手牌区（当前={card.Zone}），无法提交。");
                 return false;
             }
 
@@ -159,75 +141,49 @@ namespace CardMoba.BattleCore.Managers
             return true;
         }
 
-        // ══════════════════════════════════════════════════════════
-        // 区域移动
-        // ══════════════════════════════════════════════════════════
-
-        /// <inheritdoc/>
         public void MoveCard(BattleContext ctx, BattleCard card, CardZone targetZone)
         {
-            var prevZone = card.Zone;
+            var previousZone = card.Zone;
             card.Zone = targetZone;
-            ctx.RoundLog.Add($"[CardManager] 卡牌 [{card.ConfigId}]（{card.InstanceId}）{prevZone} → {targetZone}。");
+            ctx.RoundLog.Add($"[CardManager] 卡牌 [{card.ConfigId}]（{card.InstanceId}）{previousZone} -> {targetZone}。");
         }
 
-        // ══════════════════════════════════════════════════════════
-        // 状态牌扫描
-        // ══════════════════════════════════════════════════════════
-
-        /// <inheritdoc/>
         public void ScanStatCards(BattleContext ctx)
         {
             foreach (var kv in ctx.AllPlayers)
             {
                 var player = kv.Value;
-                var handCards = player.GetCardsInZone(CardZone.Hand);
-                var statCards = handCards.Where(c => c.IsStatCard).ToList();
-
+                var statCards = player.GetCardsInZone(CardZone.Hand).Where(c => c.IsStatCard).ToList();
                 foreach (var card in statCards)
                 {
-                    var trigCtx = new TriggerContext
+                    var triggerContext = new TriggerContext
                     {
                         SourceEntityId = player.HeroEntity.EntityId,
                     };
-                    trigCtx.Extra["cardInstanceId"] = card.InstanceId;
-                    trigCtx.Extra["cardConfigId"] = card.ConfigId;
-                    ctx.TriggerManager.Fire(ctx, TriggerTiming.OnStatCardHeld, trigCtx);
+                    triggerContext.Extra["cardInstanceId"] = card.InstanceId;
+                    triggerContext.Extra["cardConfigId"] = card.ConfigId;
+                    ctx.TriggerManager.Fire(ctx, TriggerTiming.OnStatCardHeld, triggerContext);
                 }
             }
         }
 
-        // ══════════════════════════════════════════════════════════
-        // 回合事件
-        // ══════════════════════════════════════════════════════════
-
-        /// <inheritdoc/>
         public void OnRoundStart(BattleContext ctx, int round)
         {
             foreach (var kv in ctx.AllPlayers)
             {
                 var player = kv.Value;
-
-                // ── 能量回满 ──────────────────────────────────────────
                 player.Energy = player.MaxEnergy;
                 ctx.RoundLog.Add($"[CardManager] {player.PlayerId} 能量回满：{player.Energy}/{player.MaxEnergy}");
-
-                // ── 每回合固定抽 5 张 ─────────────────────────────────
                 DrawCards(ctx, kv.Key, 5);
             }
         }
 
-        /// <inheritdoc/>
         public void OnRoundEnd(BattleContext ctx, int round)
         {
-            // ── 回合结束弃手牌：Hand → Discard ───────────────────────
-            // StrategyZone（定策区）的牌在结算完成后也一并清理
-            // Exhaust 牌已在出牌时从 AllCards 移除，无需处理
             foreach (var kv in ctx.AllPlayers)
             {
                 var player = kv.Value;
 
-                // 弃手牌
                 var handCards = player.GetCardsInZone(CardZone.Hand);
                 foreach (var card in handCards)
                     MoveCard(ctx, card, CardZone.Discard);
@@ -235,26 +191,22 @@ namespace CardMoba.BattleCore.Managers
                 if (handCards.Count > 0)
                     ctx.RoundLog.Add($"[CardManager] {player.PlayerId} 回合结束弃手牌 {handCards.Count} 张。");
 
-                // 清理遗留定策区（正常情况应已空，防御性清理）
-                var stratCards = player.GetCardsInZone(CardZone.StrategyZone);
-                foreach (var card in stratCards)
+                var strategyCards = player.GetCardsInZone(CardZone.StrategyZone);
+                foreach (var card in strategyCards)
                     MoveCard(ctx, card, CardZone.Discard);
 
-                if (stratCards.Count > 0)
-                    ctx.RoundLog.Add($"[CardManager] {player.PlayerId} 清理遗留定策区 {stratCards.Count} 张。");
+                if (strategyCards.Count > 0)
+                    ctx.RoundLog.Add($"[CardManager] {player.PlayerId} 清理遗留定策区 {strategyCards.Count} 张。");
+
+                ResolveEndRoundReturnToHand(ctx, player, round);
             }
         }
 
-        // ══════════════════════════════════════════════════════════
-        // 临时牌生命周期
-        // ══════════════════════════════════════════════════════════
-
-        /// <inheritdoc/>
         public void DestroyTempCards(BattleContext ctx)
         {
             foreach (var kv in ctx.AllPlayers)
             {
-                var player   = kv.Value;
+                var player = kv.Value;
                 var tempCards = player.AllCards.Where(c => c.TempCard).ToList();
                 foreach (var card in tempCards)
                 {
@@ -264,7 +216,6 @@ namespace CardMoba.BattleCore.Managers
             }
         }
 
-        /// <inheritdoc/>
         public BattleCard GenerateCard(
             BattleContext ctx,
             string ownerId,
@@ -275,63 +226,57 @@ namespace CardMoba.BattleCore.Managers
             var player = ctx.GetPlayer(ownerId);
             if (player == null)
             {
-                ctx.RoundLog.Add($"[CardManager] ⚠️ 找不到玩家 {ownerId}，无法生成卡牌 {configId}。");
-                // 返回一个占位实例（不加入任何玩家）
+                ctx.RoundLog.Add($"[CardManager] 找不到玩家 {ownerId}，无法生成卡牌 {configId}。");
                 return new BattleCard
                 {
                     InstanceId = $"bc_{++_instanceCounter:D4}",
-                    ConfigId   = configId,
-                    OwnerId    = ownerId,
-                    Zone       = targetZone,
-                    TempCard   = tempCard,
+                    ConfigId = configId,
+                    OwnerId = ownerId,
+                    Zone = targetZone,
+                    TempCard = tempCard,
                 };
             }
 
-            var card = new BattleCard
+            var definition = ctx.GetCardDefinition(configId);
+            var generatedCard = new BattleCard
             {
                 InstanceId = $"bc_{++_instanceCounter:D4}",
-                ConfigId   = configId,
-                OwnerId    = ownerId,
-                Zone       = targetZone,
-                TempCard   = tempCard,
-                IsExhaust  = ctx.GetCardDefinition(configId)?.IsExhaust ?? false,
-                IsStatCard = ctx.GetCardDefinition(configId)?.IsStatCard ?? false,
+                ConfigId = configId,
+                OwnerId = ownerId,
+                Zone = targetZone,
+                TempCard = tempCard,
+                IsExhaust = definition?.IsExhaust ?? false,
+                IsStatCard = definition?.IsStatCard ?? false,
             };
 
-            player.AllCards.Add(card);
-            ctx.RoundLog.Add($"[CardManager] 为 {ownerId} 生成卡牌 [{configId}]（{card.InstanceId}）→ {targetZone}。");
-            return card;
+            player.AllCards.Add(generatedCard);
+            ctx.RoundLog.Add($"[CardManager] 为 {ownerId} 生成卡牌 [{configId}]（{generatedCard.InstanceId}）-> {targetZone}，temp={tempCard}。");
+            return generatedCard;
         }
 
-        // ══════════════════════════════════════════════════════════
-        // 查询
-        // ══════════════════════════════════════════════════════════
-
-        /// <inheritdoc/>
         public BattleCard? GetCard(BattleContext ctx, string instanceId)
         {
             return FindCard(ctx, instanceId);
         }
 
-        /// <inheritdoc/>
         public BattleCard? PrepareInstantCard(BattleContext ctx, string playerId, string cardInstanceId)
         {
             var card = FindCard(ctx, cardInstanceId);
             if (card == null)
             {
-                ctx.RoundLog.Add($"[CardManager] ⚠️ 找不到瞬策牌实例 {cardInstanceId}。");
+                ctx.RoundLog.Add($"[CardManager] 找不到瞬策牌实例 {cardInstanceId}。");
                 return null;
             }
 
             if (!card.OwnerId.Equals(playerId, StringComparison.Ordinal))
             {
-                ctx.RoundLog.Add($"[CardManager] ⚠️ 瞬策牌 {cardInstanceId} 不属于玩家 {playerId}。");
+                ctx.RoundLog.Add($"[CardManager] 瞬策牌 {cardInstanceId} 不属于玩家 {playerId}。");
                 return null;
             }
 
             if (card.Zone != CardZone.Hand)
             {
-                ctx.RoundLog.Add($"[CardManager] ⚠️ 瞬策牌 {cardInstanceId} 不在手牌区（当前区域={card.Zone}）。");
+                ctx.RoundLog.Add($"[CardManager] 瞬策牌 {cardInstanceId} 不在手牌区（当前={card.Zone}）。");
                 return null;
             }
 
@@ -346,30 +291,49 @@ namespace CardMoba.BattleCore.Managers
             return card;
         }
 
-        // ══════════════════════════════════════════════════════════
-        // 工具方法
-        // ══════════════════════════════════════════════════════════
+        private void ResolveEndRoundReturnToHand(BattleContext ctx, PlayerData player, int round)
+        {
+            var markedCards = player.AllCards
+                .Where(card => card.ExtraData.TryGetValue(ReturnSourceCardToHandAtRoundEndHandler.ReturnToHandMarkedRoundKey, out var markedRound)
+                    && markedRound is int intRound
+                    && intRound == round)
+                .ToList();
 
-        /// <summary>在所有玩家的 AllCards 中按 InstanceId 查找卡牌</summary>
+            foreach (var card in markedCards)
+            {
+                bool shouldReturn = card.ExtraData.TryGetValue(ReturnSourceCardToHandAtRoundEndHandler.ReturnToHandAtRoundEndKey, out var flag)
+                    && flag is bool returnMarked
+                    && returnMarked;
+
+                if (shouldReturn && card.Zone == CardZone.Discard)
+                {
+                    MoveCard(ctx, card, CardZone.Hand);
+                    ctx.RoundLog.Add($"[CardManager] [{card.ConfigId}]（{card.InstanceId}）在回合结束返回手牌。");
+                }
+
+                card.ExtraData.Remove(ReturnSourceCardToHandAtRoundEndHandler.ReturnToHandAtRoundEndKey);
+                card.ExtraData.Remove(ReturnSourceCardToHandAtRoundEndHandler.ReturnToHandMarkedRoundKey);
+            }
+        }
+
         private BattleCard? FindCard(BattleContext ctx, string instanceId)
         {
             foreach (var kv in ctx.AllPlayers)
             {
                 var card = kv.Value.AllCards.Find(c => c.InstanceId == instanceId);
-                if (card != null) return card;
+                if (card != null)
+                    return card;
             }
+
             return null;
         }
 
-        /// <summary>对指定玩家的卡组（Deck 区域）进行确定性洗牌（Fisher-Yates）</summary>
         private void ShuffleDeck(BattleContext ctx, string playerId)
         {
             var player = ctx.GetPlayer(playerId);
-            if (player == null) return;
+            if (player == null)
+                return;
 
-            var deck = player.GetCardsInZone(CardZone.Deck);
-            // 对 AllCards 中 Deck 区域的牌做 Fisher-Yates 洗牌
-            // 找到它们在 AllCards 中的索引并互换
             var deckIndices = new List<int>();
             for (int i = 0; i < player.AllCards.Count; i++)
             {
@@ -380,10 +344,9 @@ namespace CardMoba.BattleCore.Managers
             for (int i = deckIndices.Count - 1; i > 0; i--)
             {
                 int j = ctx.Random.Next(0, i + 1);
-                // 交换 AllCards[deckIndices[i]] 与 AllCards[deckIndices[j]]
-                var tmp = player.AllCards[deckIndices[i]];
+                var temp = player.AllCards[deckIndices[i]];
                 player.AllCards[deckIndices[i]] = player.AllCards[deckIndices[j]];
-                player.AllCards[deckIndices[j]] = tmp;
+                player.AllCards[deckIndices[j]] = temp;
             }
         }
     }

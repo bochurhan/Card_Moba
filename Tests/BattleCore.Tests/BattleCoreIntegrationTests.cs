@@ -10,6 +10,7 @@ using CardMoba.BattleCore.Context;
 using CardMoba.BattleCore.Core;
 using CardMoba.BattleCore.EventBus;
 using CardMoba.BattleCore.Foundation;
+using CardMoba.BattleCore.Handlers;
 using CardMoba.Protocol.Enums;
 
 namespace CardMoba.Tests
@@ -111,6 +112,64 @@ namespace CardMoba.Tests
                 TargetType = "Self",
                 ValueExpression = value.ToString(),
                 Layer = SettleLayer.Defense,
+            };
+
+        private static EffectUnit MakeGainEnergyEffect(int value)
+            => new EffectUnit
+            {
+                EffectId = $"gain_energy_{value}",
+                Type = EffectType.GainEnergy,
+                TargetType = "Self",
+                ValueExpression = value.ToString(),
+                Layer = SettleLayer.Resource,
+            };
+
+        private static EffectUnit MakeAddBuffEffect(string buffConfigId, int value, int duration, string targetType = "Self")
+            => new EffectUnit
+            {
+                EffectId = $"add_buff_{buffConfigId}_{value}_{duration}",
+                Type = EffectType.AddBuff,
+                TargetType = targetType,
+                ValueExpression = value.ToString(),
+                Layer = SettleLayer.BuffSpecial,
+                Params = new Dictionary<string, string>
+                {
+                    ["buffConfigId"] = buffConfigId,
+                    ["duration"] = duration.ToString(),
+                },
+            };
+
+        private static EffectUnit MakeGenerateCardEffect(
+            string generatedConfigId,
+            string targetType = "Self",
+            string targetZone = "Deck",
+            bool tempCard = false,
+            int count = 1,
+            string valueExpression = "")
+            => new EffectUnit
+            {
+                EffectId = $"gen_{generatedConfigId}_{targetType}_{targetZone}_{count}",
+                Type = EffectType.GenerateCard,
+                TargetType = targetType,
+                ValueExpression = valueExpression,
+                Layer = SettleLayer.Resource,
+                Params = new Dictionary<string, string>
+                {
+                    ["configId"] = generatedConfigId,
+                    ["targetZone"] = targetZone,
+                    ["count"] = count.ToString(),
+                    ["tempCard"] = tempCard ? "true" : "false",
+                },
+            };
+
+        private static EffectUnit MakeReturnSourceCardToHandAtRoundEndEffect()
+            => new EffectUnit
+            {
+                EffectId = "return_source_card_end_round",
+                Type = EffectType.ReturnSourceCardToHandAtRoundEnd,
+                TargetType = "Self",
+                ValueExpression = "0",
+                Layer = SettleLayer.Resource,
             };
 
         private static BattleCard GiveHandCard(
@@ -986,6 +1045,309 @@ namespace CardMoba.Tests
 
             ctx.BuffManager.GetBuffs(heroP1.EntityId).Should().ContainSingle();
             typeof(Entity).GetProperty("ActiveBuffs").Should().BeNull();
+        }
+
+        [Fact]
+        public void T30_NoDrawThisTurn_BlocksRoundStartDraws()
+        {
+            var buffProvider = MakeBuffProvider(MakeBuffConfig("no_draw_this_turn", BuffType.NoDrawThisTurn, 0));
+            var result = CreateTestBattle(buffConfigProvider: buffProvider);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            for (int i = 0; i < 5; i++)
+                ctx.CardManager.GenerateCard(ctx, "P1", $"draw_block_test_{i}", CardZone.Deck, tempCard: false);
+
+            var heroP1 = ctx.AllPlayers["P1"].HeroEntity.EntityId;
+            ctx.BuffManager.AddBuff(ctx, heroP1, "no_draw_this_turn", heroP1, value: 0, duration: 1);
+
+            rm.BeginRound(ctx);
+
+            ctx.AllPlayers["P1"].GetCardsInZone(CardZone.Hand).Should().BeEmpty();
+            ctx.AllPlayers["P1"].GetCardsInZone(CardZone.Deck).Should().HaveCount(5);
+        }
+
+        [Fact]
+        public void T31_NoDamageCardThisTurn_BlocksDamageCardPlay()
+        {
+            var buffProvider = MakeBuffProvider(MakeBuffConfig("no_damage_card_this_turn", BuffType.NoDamageCardThisTurn, 0));
+            var definitions = CreateMutableCardDefinitions();
+            var result = CreateTestBattle(buffConfigProvider: buffProvider, mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            rm.BeginRound(ctx);
+
+            var heroP1 = ctx.AllPlayers["P1"].HeroEntity.EntityId;
+            ctx.BuffManager.AddBuff(ctx, heroP1, "no_damage_card_this_turn", heroP1, value: 0, duration: 1);
+
+            var instantDamageCard = GiveHandCard(ctx, definitions, "P1", "no_damage_instant", "damage_6", MakeDamageEffect(6));
+            rm.PlayInstantCard(ctx, "P1", instantDamageCard.InstanceId).Should().BeEmpty();
+            instantDamageCard.Zone.Should().Be(CardZone.Hand);
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(30);
+
+            var planDamageCard = GiveHandCard(ctx, definitions, "P1", "no_damage_plan", "plan_damage_6", MakeDamageEffect(6));
+            rm.CommitPlanCard(ctx, new CommittedPlanCard
+            {
+                PlayerId = "P1",
+                CardInstanceId = planDamageCard.InstanceId,
+            }).Should().BeFalse();
+            planDamageCard.Zone.Should().Be(CardZone.Hand);
+
+            PlayStrictInstantCard(ctx, rm, definitions, "P1", "no_damage_shield_ok", "shield_5", MakeShieldEffect(5));
+            ctx.AllPlayers["P1"].HeroEntity.Shield.Should().Be(5);
+        }
+
+        [Fact]
+        public void T32_GainEnergy_Effect_AddsCurrentEnergy()
+        {
+            var definitions = CreateMutableCardDefinitions();
+            var result = CreateTestBattle(mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            rm.BeginRound(ctx);
+
+            ctx.AllPlayers["P1"].Energy = 1;
+
+            PlayStrictInstantCard(ctx, rm, definitions, "P1", "gain_energy_card", "gain_energy_2", MakeGainEnergyEffect(2));
+
+            ctx.AllPlayers["P1"].Energy.Should().Be(3);
+        }
+
+        [Fact]
+        public void T33_Weak_ReducesOutgoingDamageBy25Percent()
+        {
+            var buffProvider = MakeBuffProvider(MakeBuffConfig("weak", BuffType.Weak, 0));
+            var definitions = CreateMutableCardDefinitions();
+            var result = CreateTestBattle(buffConfigProvider: buffProvider, mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            rm.BeginRound(ctx);
+
+            var heroP1 = ctx.AllPlayers["P1"].HeroEntity.EntityId;
+            ctx.BuffManager.AddBuff(ctx, heroP1, "weak", heroP1, value: 25, duration: 1);
+
+            PlayStrictInstantCard(ctx, rm, definitions, "P1", "weak_damage_card", "damage_8", MakeDamageEffect(8));
+
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(24);
+        }
+
+        [Fact]
+        public void T34_FullStrike_BlocksDamageCards_OnNextRoundOnly()
+        {
+            var buffProvider = MakeBuffProvider(MakeBuffConfig("no_damage_card_this_turn", BuffType.NoDamageCardThisTurn, 0));
+            var definitions = CreateMutableCardDefinitions();
+            var result = CreateTestBattle(buffConfigProvider: buffProvider, mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            CommitStrictPlanCard(
+                ctx,
+                rm,
+                definitions,
+                "P1",
+                "full_strike_card",
+                "full_strike",
+                MakeDamageEffect(25),
+                MakeAddBuffEffect("no_damage_card_this_turn", 1, 2)).Should().BeTrue();
+
+            rm.EndRound(ctx);
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(5);
+            ctx.BuffManager.HasBuffType(ctx, ctx.AllPlayers["P1"].HeroEntity.EntityId, BuffType.NoDamageCardThisTurn).Should().BeTrue();
+
+            rm.BeginRound(ctx);
+            var blockedDamageCard = GiveHandCard(ctx, definitions, "P1", "blocked_damage", "blocked_damage_6", MakeDamageEffect(6));
+            rm.PlayInstantCard(ctx, "P1", blockedDamageCard.InstanceId).Should().BeEmpty();
+            blockedDamageCard.Zone.Should().Be(CardZone.Hand);
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(5);
+
+            rm.EndRound(ctx);
+            ctx.BuffManager.HasBuffType(ctx, ctx.AllPlayers["P1"].HeroEntity.EntityId, BuffType.NoDamageCardThisTurn).Should().BeFalse();
+
+            rm.BeginRound(ctx);
+            var allowedDamageCard = GiveHandCard(ctx, definitions, "P1", "allowed_damage", "allowed_damage_6", MakeDamageEffect(6));
+            rm.PlayInstantCard(ctx, "P1", allowedDamageCard.InstanceId).Should().NotBeEmpty();
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().BeLessOrEqualTo(0);
+        }
+
+        [Fact]
+        public void T35_Rend_GeneratesWoundInOpponentDeck_WhenRealHpDamagePositive()
+        {
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinition("wound", false, true),
+                MakeCardDefinition(
+                    "rend",
+                    MakeDamageEffect(12),
+                    MakeGenerateCardEffect("wound", "Opponent", "Deck", tempCard: false, count: 1, valueExpression: "{{preEffect[dmg_12].totalRealHpDamage}}")));
+            var result = CreateTestBattle(mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            GiveHandCard(ctx, "P1", "rend_card", "rend");
+            rm.CommitPlanCard(ctx, new CommittedPlanCard
+            {
+                PlayerId = "P1",
+                CardInstanceId = "rend_card",
+            }).Should().BeTrue();
+
+            rm.EndRound(ctx);
+
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(18);
+            var woundCards = ctx.AllPlayers["P2"].AllCards.FindAll(c => c.ConfigId == "wound");
+            woundCards.Should().HaveCount(1);
+            woundCards[0].Zone.Should().Be(CardZone.Deck);
+            woundCards[0].TempCard.Should().BeFalse();
+            woundCards[0].IsStatCard.Should().BeTrue();
+        }
+
+        [Fact]
+        public void T36_Rend_DoesNotGenerateWound_WhenDamageIsFullyBlocked()
+        {
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinition("wound", false, true),
+                MakeCardDefinition(
+                    "rend",
+                    MakeDamageEffect(12),
+                    MakeGenerateCardEffect("wound", "Opponent", "Deck", tempCard: false, count: 1, valueExpression: "{{preEffect[dmg_12].totalRealHpDamage}}")));
+            var result = CreateTestBattle(mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            ctx.AllPlayers["P2"].HeroEntity.Shield = 20;
+
+            rm.BeginRound(ctx);
+            GiveHandCard(ctx, "P1", "rend_blocked_card", "rend");
+            rm.CommitPlanCard(ctx, new CommittedPlanCard
+            {
+                PlayerId = "P1",
+                CardInstanceId = "rend_blocked_card",
+            }).Should().BeTrue();
+
+            rm.EndRound(ctx);
+
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(30);
+            ctx.AllPlayers["P2"].AllCards.Should().NotContain(c => c.ConfigId == "wound");
+        }
+
+        [Fact]
+        public void T37_Anger_GeneratesPermanentCopyIntoOwnDeck()
+        {
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinition(
+                    "anger",
+                    MakeDamageEffect(6),
+                    MakeGenerateCardEffect("anger", "Self", "Deck", tempCard: false)));
+            var result = CreateTestBattle(mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            GiveHandCard(ctx, "P1", "anger_card", "anger");
+            rm.CommitPlanCard(ctx, new CommittedPlanCard
+            {
+                PlayerId = "P1",
+                CardInstanceId = "anger_card",
+            }).Should().BeTrue();
+
+            rm.EndRound(ctx);
+
+            var angerCards = ctx.AllPlayers["P1"].AllCards.FindAll(c => c.ConfigId == "anger");
+            angerCards.Should().HaveCount(2);
+            angerCards.Should().Contain(c => c.Zone == CardZone.Discard);
+            angerCards.Should().Contain(c => c.Zone == CardZone.Deck && !c.TempCard);
+        }
+
+        [Fact]
+        public void T38_GeneratedStatusCard_CannotBePlayed()
+        {
+            var definitions = CreateMutableCardDefinitions(MakeCardDefinition("wound", false, true));
+            var result = CreateTestBattle(mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            var wound = ctx.CardManager.GenerateCard(ctx, "P1", "wound", CardZone.Hand, tempCard: false);
+
+            rm.PlayInstantCard(ctx, "P1", wound.InstanceId).Should().BeEmpty();
+            wound.Zone.Should().Be(CardZone.Hand);
+        }
+
+        [Fact]
+        public void T39_PainStrike_AppliesVulnerable_OnNextRoundStartOnly()
+        {
+            var delayedVulnerable = new BuffConfig
+            {
+                BuffId = "delayed_vulnerable_next_round",
+                BuffName = "下回合易伤",
+                BuffType = BuffType.DelayedVulnerableNextRound,
+                DefaultValue = 50,
+                DefaultDuration = 2,
+                StackRule = BuffStackRule.StackValue,
+                MaxStacks = 99,
+            };
+            var vulnerable = new BuffConfig
+            {
+                BuffId = "vulnerable",
+                BuffName = "易伤",
+                BuffType = BuffType.Vulnerable,
+                DefaultValue = 50,
+                DefaultDuration = 1,
+                StackRule = BuffStackRule.StackValue,
+                MaxStacks = 99,
+            };
+
+            var definitions = CreateMutableCardDefinitions();
+            var result = CreateTestBattle(
+                buffConfigProvider: MakeBuffProvider(delayedVulnerable, vulnerable),
+                mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            CommitStrictPlanCard(
+                ctx,
+                rm,
+                definitions,
+                "P1",
+                "pain_strike_card",
+                "pain_strike",
+                MakeDamageEffect(8),
+                MakeAddBuffEffect("delayed_vulnerable_next_round", 50, 2, "Enemy")).Should().BeTrue();
+
+            rm.EndRound(ctx);
+
+            var heroP2 = ctx.AllPlayers["P2"].HeroEntity.EntityId;
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(22);
+            ctx.BuffManager.HasBuffType(ctx, heroP2, BuffType.Vulnerable).Should().BeFalse();
+            ctx.BuffManager.HasBuffType(ctx, heroP2, BuffType.DelayedVulnerableNextRound).Should().BeTrue();
+
+            rm.BeginRound(ctx);
+
+            ctx.BuffManager.HasBuffType(ctx, heroP2, BuffType.Vulnerable).Should().BeTrue();
+            PlayStrictInstantCard(ctx, rm, definitions, "P1", "followup_damage", "damage_4", MakeDamageEffect(4));
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(16);
+
+            rm.EndRound(ctx);
+            ctx.BuffManager.HasBuffType(ctx, heroP2, BuffType.Vulnerable).Should().BeFalse();
+            ctx.BuffManager.HasBuffType(ctx, heroP2, BuffType.DelayedVulnerableNextRound).Should().BeFalse();
+        }
+
+        [Fact]
+        public void T40_Boomerang_ReturnsSourceCardToHand_AtRoundEnd()
+        {
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinition(
+                    "boomerang",
+                    MakeDamageEffect(8),
+                    MakeReturnSourceCardToHandAtRoundEndEffect()));
+            var result = CreateTestBattle(mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            var boomerang = GiveHandCard(ctx, "P1", "boomerang_card", "boomerang");
+            rm.CommitPlanCard(ctx, new CommittedPlanCard
+            {
+                PlayerId = "P1",
+                CardInstanceId = boomerang.InstanceId,
+            }).Should().BeTrue();
+
+            rm.EndRound(ctx);
+
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(22);
+            boomerang.Zone.Should().Be(CardZone.Hand);
+            boomerang.ExtraData.Should().NotContainKey(ReturnSourceCardToHandAtRoundEndHandler.ReturnToHandAtRoundEndKey);
+            boomerang.ExtraData.Should().NotContainKey(ReturnSourceCardToHandAtRoundEndHandler.ReturnToHandMarkedRoundKey);
         }
     }
 }

@@ -194,6 +194,14 @@ namespace CardMoba.BattleCore.Managers
             return list.Any(b => b.ConfigId == buffConfigId);
         }
 
+        public bool HasBuffType(BattleContext ctx, string entityId, BuffType buffType)
+        {
+            if (!_buffs.TryGetValue(entityId, out var list))
+                return false;
+
+            return list.Any(b => b.BuffType == buffType);
+        }
+
         public IReadOnlyList<BuffUnit> GetBuffs(string entityId)
         {
             if (_buffs.TryGetValue(entityId, out var list))
@@ -244,6 +252,7 @@ namespace CardMoba.BattleCore.Managers
                 RuntimeId = $"buff_{++_idCounter:D6}",
                 ConfigId = config.BuffId,
                 DisplayName = config.BuffName,
+                BuffType = config.BuffType,
                 OwnerEntityId = targetEntityId,
                 OwnerPlayerId = ctx.GetPlayerByEntityId(targetEntityId)?.PlayerId ?? targetEntityId,
                 SourcePlayerId = sourcePlayerId,
@@ -482,6 +491,38 @@ namespace CardMoba.BattleCore.Managers
                         });
                         buff.RegisteredModifierIds.Add(modifierId);
                     }
+                    break;
+                }
+
+                case BuffType.DelayedVulnerableNextRound:
+                {
+                    string triggerId = ctx.TriggerManager.Register(new TriggerUnit
+                    {
+                        TriggerName = $"delayed-vulnerable-{runtimeId}",
+                        Timing = TriggerTiming.OnRoundStart,
+                        OwnerPlayerId = ownerPlayerId,
+                        SourceId = runtimeId,
+                        Priority = 200,
+                        RemainingTriggers = -1,
+                        RemainingRounds = -1,
+                        Effects = new List<EffectUnit>
+                        {
+                            new EffectUnit
+                            {
+                                EffectId = $"buff_delayed_vulnerable_{runtimeId}",
+                                Type = EffectType.AddBuff,
+                                TargetType = "Self",
+                                ValueExpression = buff.Value.ToString(),
+                                Layer = SettleLayer.BuffSpecial,
+                                Params = new Dictionary<string, string>
+                                {
+                                    ["buffConfigId"] = "vulnerable",
+                                    ["duration"] = "1",
+                                },
+                            },
+                        },
+                    });
+                    buff.RegisteredTriggerIds.Add(triggerId);
                     break;
                 }
 

@@ -121,7 +121,8 @@ namespace CardMoba.BattleCore.Core
                 foreach (var effect in planCard.Effects.Where(e => e.Layer == SettleLayer.Counter))
                 {
                     var targets = _targetResolver.Resolve(ctx, effect.TargetType, source);
-                    _handlerPool.Execute(ctx, effect, source, targets, new List<EffectResult>(), null);
+                    var result = _handlerPool.Execute(ctx, effect, source, targets, planCard.PriorResults, null);
+                    planCard.PriorResults.Add(result);
                 }
             }
         }
@@ -139,7 +140,7 @@ namespace CardMoba.BattleCore.Core
                 if (playerData == null) continue;
 
                 var source = playerData.HeroEntity;
-                var priorResults = new List<EffectResult>();
+                var priorResults = planCard.PriorResults;
 
                 foreach (var effect in planCard.Effects.Where(e => e.Layer == SettleLayer.Damage))
                 {
@@ -165,7 +166,7 @@ namespace CardMoba.BattleCore.Core
                 if (playerData == null) continue;
 
                 var source = playerData.HeroEntity;
-                var priorResults = new List<EffectResult>();
+                var priorResults = planCard.PriorResults;
 
                 foreach (var effect in planCard.Effects.Where(e => e.Layer == layer))
                 {

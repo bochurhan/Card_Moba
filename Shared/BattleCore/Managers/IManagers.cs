@@ -115,6 +115,9 @@ namespace CardMoba.BattleCore.Managers
         /// <summary>查询指定实体是否拥有某类型 Buff</summary>
         bool HasBuff(BattleContext ctx, string entityId, string buffConfigId);
 
+        /// <summary>查询指定实体是否拥有某种 BuffType，用于统一规则判定。</summary>
+        bool HasBuffType(BattleContext ctx, string entityId, BuffType buffType);
+
         /// <summary>获取指定实体当前持有的 Buff 列表。BuffManager 是唯一真源。</summary>
         IReadOnlyList<BuffUnit> GetBuffs(string entityId);
 

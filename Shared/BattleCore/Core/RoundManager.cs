@@ -1,4 +1,4 @@
-#pragma warning disable CS8632
+﻿#pragma warning disable CS8632
 
 using System;
 using System.Collections.Generic;
@@ -22,6 +22,7 @@ namespace CardMoba.BattleCore.Core
         public string CardInstanceId { get; set; } = string.Empty;
         public int SubmitOrder { get; set; }
         public List<EffectUnit> Effects { get; set; } = new List<EffectUnit>();
+        public List<EffectResult> PriorResults { get; set; } = new List<EffectResult>();
         public bool IsCountered { get; set; }
     }
 
@@ -115,6 +116,12 @@ namespace CardMoba.BattleCore.Core
                 return new List<EffectResult>();
             }
 
+            if (TryGetPlayRestrictionReason(ctx, playerId, effects, out var instantRestrictionReason))
+            {
+                ctx.RoundLog.Add($"[RoundManager] 瞬策牌 {cardInstanceId} 被限制，原因：{instantRestrictionReason}");
+                return new List<EffectResult>();
+            }
+
             StampCardSourceMetadata(effects, card);
             RecordPlayedCardStats(ctx, playerId, effects);
             ctx.RoundLog.Add($"[RoundManager] 玩家 {playerId} 打出瞬策牌 {cardInstanceId}。");
@@ -145,6 +152,12 @@ namespace CardMoba.BattleCore.Core
             if (resolvedEffects == null)
             {
                 ctx.RoundLog.Add($"[RoundManager] 找不到定策牌 {planCard.CardInstanceId}（{card.ConfigId}）的卡牌定义。");
+                return false;
+            }
+
+            if (TryGetPlayRestrictionReason(ctx, planCard.PlayerId, resolvedEffects, out var planRestrictionReason))
+            {
+                ctx.RoundLog.Add($"[RoundManager] 定策牌 {planCard.CardInstanceId} 被限制，原因：{planRestrictionReason}");
                 return false;
             }
 
@@ -305,6 +318,23 @@ namespace CardMoba.BattleCore.Core
             return ctx.BuildCardEffects(configId);
         }
 
+        public bool CanPlayCard(
+            BattleContext ctx,
+            string playerId,
+            string cardConfigId,
+            out string reason)
+        {
+            reason = string.Empty;
+            var effects = ResolveCardEffects(ctx, cardConfigId);
+            if (effects == null)
+            {
+                reason = $"找不到卡牌定义 {cardConfigId}";
+                return false;
+            }
+
+            return !TryGetPlayRestrictionReason(ctx, playerId, effects, out reason);
+        }
+
         private static void RecordPlayedCardStats(BattleContext ctx, string playerId, List<EffectUnit> effects)
         {
             var player = ctx.GetPlayer(playerId);
@@ -347,6 +377,30 @@ namespace CardMoba.BattleCore.Core
         private static bool IsCounterCard(EffectUnit effect)
         {
             return effect.Type == EffectType.Counter;
+        }
+
+        private static bool TryGetPlayRestrictionReason(
+            BattleContext ctx,
+            string playerId,
+            List<EffectUnit> effects,
+            out string reason)
+        {
+            reason = string.Empty;
+            var player = ctx.GetPlayer(playerId);
+            if (player == null)
+            {
+                reason = $"找不到玩家 {playerId}";
+                return true;
+            }
+
+            if (effects.Exists(IsDamageCard) &&
+                ctx.BuffManager.HasBuffType(ctx, player.HeroEntity.EntityId, BuffType.NoDamageCardThisTurn))
+            {
+                reason = "本回合不能再打出伤害牌";
+                return true;
+            }
+
+            return false;
         }
 
         private static void StampCardSourceMetadata(List<EffectUnit> effects, BattleCard card)
