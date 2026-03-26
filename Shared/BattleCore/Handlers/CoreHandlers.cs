@@ -1,4 +1,4 @@
-
+﻿
 #pragma warning disable CS8632
 
 using System.Collections.Generic;
@@ -11,20 +11,20 @@ using CardMoba.Protocol.Enums;
 
 namespace CardMoba.BattleCore.Handlers
 {
-    // ══════════════════════════════════════════════════════════════
-    // DamageHandler —— 处理 Damage / PierceDamage 效果
-    // ══════════════════════════════════════════════════════════════
+    // 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
+    // DamageHandler 鈥斺€?澶勭悊 Damage / PierceDamage 鏁堟灉
+    // 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
 
     /// <summary>
-    /// 伤害 Handler —— 处理 EffectType.Damage 和 EffectType.PierceDamage。
+    /// 浼ゅ Handler 鈥斺€?澶勭悊 EffectType.Damage 鍜?EffectType.PierceDamage銆?
     ///
-    /// 执行流程（A→B→C 三阶段，每次对单一目标）：
-    ///   Phase A（只读）：计算修正后伤害值，检查无敌。
-    ///   Phase B（写入）：护盾吸收 → HP 扣减，记录实际伤害量。
-    ///   Phase C（触发）：Fire(AfterDealDamage) + Fire(AfterTakeDamage)，推入 PendingQueue。
+    /// 鎵ц娴佺▼锛圓鈫払鈫扖 涓夐樁娈碉紝姣忔瀵瑰崟涓€鐩爣锛夛細
+    ///   Phase A锛堝彧璇伙級锛氳绠椾慨姝ｅ悗浼ゅ鍊硷紝妫€鏌ユ棤鏁屻€?
+    ///   Phase B锛堝啓鍏ワ級锛氭姢鐩惧惛鏀?鈫?HP 鎵ｅ噺锛岃褰曞疄闄呬激瀹抽噺銆?
+    ///   Phase C锛堣Е鍙戯級锛欶ire(AfterDealDamage) + Fire(AfterTakeDamage)锛屾帹鍏?PendingQueue銆?
     ///
-    /// ⚠️ 定策牌 Layer 2 结算时，此 Handler 被逐张调用（按出牌顺序），
-    ///    每张牌完整走完 A-B-C 再处理下一张（己方顺序依赖语义）。
+    /// 鈿狅笍 瀹氱瓥鐗?Layer 2 缁撶畻鏃讹紝姝?Handler 琚€愬紶璋冪敤锛堟寜鍑虹墝椤哄簭锛夛紝
+    ///    姣忓紶鐗屽畬鏁磋蛋瀹?A-B-C 鍐嶅鐞嗕笅涓€寮狅紙宸辨柟椤哄簭渚濊禆璇箟锛夈€?
     /// </summary>
     public class DamageHandler : IEffectHandler
     {
@@ -51,29 +51,29 @@ namespace CardMoba.BattleCore.Handlers
                 && bool.TryParse(isThornsValue, out var parsedIsThorns)
                 && parsedIsThorns;
 
-            // 基础伤害值由 HandlerPool 预解析填入 effect.ResolvedValue（支持动态表达式）
+            // 鍩虹浼ゅ鍊肩敱 HandlerPool 棰勮В鏋愬～鍏?effect.ResolvedValue锛堟敮鎸佸姩鎬佽〃杈惧紡锛?
             int baseDamage = effect.ResolvedValue;
 
-            // ── 施害方出伤修正（力量 Add / 虚弱 Mul）────────────────
-            // 修复：传 source.OwnerPlayerId，与 BuffManager 注册修正器时使用的 ownerPlayerId 一致
+            // 鈹€鈹€ 鏂藉鏂瑰嚭浼や慨姝ｏ紙鍔涢噺 Add / 铏氬急 Mul锛夆攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+            // 淇锛氫紶 source.OwnerPlayerId锛屼笌 BuffManager 娉ㄥ唽淇鍣ㄦ椂浣跨敤鐨?ownerPlayerId 涓€鑷?
             int modifiedDamage = ctx.ValueModifierManager.Apply(
                 effect.Type, source.OwnerPlayerId, ModifierScope.OutgoingDamage, baseDamage);
 
             foreach (var target in targets)
             {
-                // ── Phase A：只读校验 ─────────────────────────────────
+                // 鈹€鈹€ Phase A锛氬彧璇绘牎楠?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
                 if (!target.IsAlive) continue;
 
-                // 无敌检查
+                // 鏃犳晫妫€鏌?
                 if (target.IsInvincible)
                 {
-                    ctx.RoundLog.Add($"[DamageHandler] {target.EntityId} 处于无敌状态，本次伤害无效。");
+                    ctx.RoundLog.Add($"[DamageHandler] {target.EntityId} is invincible; damage ignored.");
                     continue;
                 }
 
-                // ── Phase B：写入 ────────────────────────────────────
-                // 受击方入伤修正（护甲 Add 负值 / 易伤 Mul）
-                // 修复：单独以 target.OwnerPlayerId 查受击方修正，与施害方修正分开路由
+                // 鈹€鈹€ Phase B锛氬啓鍏?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+                // 鍙楀嚮鏂瑰叆浼や慨姝ｏ紙鎶ょ敳 Add 璐熷€?/ 鏄撲激 Mul锛?
+                // 淇锛氬崟鐙互 target.OwnerPlayerId 鏌ュ彈鍑绘柟淇锛屼笌鏂藉鏂逛慨姝ｅ垎寮€璺敱
                 int incomingDamage = ctx.ValueModifierManager.Apply(
                     effect.Type, target.OwnerPlayerId, ModifierScope.IncomingDamage, modifiedDamage);
 
@@ -81,66 +81,66 @@ namespace CardMoba.BattleCore.Handlers
                 int shieldAbsorbed = 0;
                 int armorReduced = 0;
 
-                // ── 防御快照隔离：Layer 2 定策结算时读快照，其他场景（瞬策等）读实时值 ──
-                // 快照在 Pre-Layer 2 拍摄，代表"本轮定策开始前"的防御状态，
-                // 使双方各自的受伤计算不受对方出牌顺序影响。
-                // 修复：此前直接读 target.Shield/Armor（实时值），导致快照机制形同虚设。
+                // 鈹€鈹€ 闃插尽蹇収闅旂锛歀ayer 2 瀹氱瓥缁撶畻鏃惰蹇収锛屽叾浠栧満鏅紙鐬瓥绛夛級璇诲疄鏃跺€?鈹€鈹€
+                // 蹇収鍦?Pre-Layer 2 鎷嶆憚锛屼唬琛?鏈疆瀹氱瓥寮€濮嬪墠"鐨勯槻寰＄姸鎬侊紝
+                // 浣垮弻鏂瑰悇鑷殑鍙椾激璁＄畻涓嶅彈瀵规柟鍑虹墝椤哄簭褰卞搷銆?
+                // 淇锛氭鍓嶇洿鎺ヨ target.Shield/Armor锛堝疄鏃跺€硷級锛屽鑷村揩鐓ф満鍒跺舰鍚岃櫄璁俱€?
                 var targetPlayer = ctx.GetPlayer(target.OwnerPlayerId);
                 var snapshot     = targetPlayer?.CurrentDefenseSnapshot;
 
-                // 快照防御值：Layer 2 定策时读快照（代表本轮 Layer 2 开始前的状态），
-                // 无快照时（瞬策等场景）读实时值。
-                // ⚠️ 快照值必须随每次命中递减，否则多张伤害牌会重复消费同一份护盾。
-                //    快照和实时值同步扣减，保持语义一致。
+                // 蹇収闃插尽鍊硷細Layer 2 瀹氱瓥鏃惰蹇収锛堜唬琛ㄦ湰杞?Layer 2 寮€濮嬪墠鐨勭姸鎬侊級锛?
+                // 鏃犲揩鐓ф椂锛堢灛绛栫瓑鍦烘櫙锛夎瀹炴椂鍊笺€?
+                // 鈿狅笍 蹇収鍊煎繀椤婚殢姣忔鍛戒腑閫掑噺锛屽惁鍒欏寮犱激瀹崇墝浼氶噸澶嶆秷璐瑰悓涓€浠芥姢鐩俱€?
+                //    蹇収鍜屽疄鏃跺€煎悓姝ユ墸鍑忥紝淇濇寔璇箟涓€鑷淬€?
                 //
-                // 设计约定（见 SettlementRules.md §Layer2 快照隔离）：
-                //   Layer 2 期间 AfterTakeDamage 等触发器动态生成的护盾会写入实时 target.Shield，
-                //   但快照不更新，因此这部分护盾本回合不生效，下回合才参与防御。
-                //   这是有意为之的设计：受伤后获得的护盾代表"战斗经验积累"，下回合才转化为防御力。
+                // 璁捐绾﹀畾锛堣 SettlementRules.md 搂Layer2 蹇収闅旂锛夛細
+                //   Layer 2 鏈熼棿 AfterTakeDamage 绛夎Е鍙戝櫒鍔ㄦ€佺敓鎴愮殑鎶ょ浘浼氬啓鍏ュ疄鏃?target.Shield锛?
+                //   浣嗗揩鐓т笉鏇存柊锛屽洜姝よ繖閮ㄥ垎鎶ょ浘鏈洖鍚堜笉鐢熸晥锛屼笅鍥炲悎鎵嶅弬涓庨槻寰°€?
+                //   杩欐槸鏈夋剰涓轰箣鐨勮璁★細鍙椾激鍚庤幏寰楃殑鎶ょ浘浠ｈ〃"鎴樻枟缁忛獙绉疮"锛屼笅鍥炲悎鎵嶈浆鍖栦负闃插尽鍔涖€?
                 int snapshotShield = snapshot != null ? snapshot.Shield : target.Shield;
                 int snapshotArmor  = snapshot != null ? snapshot.Armor  : target.Armor;
 
-                // 护盾破裂标记：提前声明，供 Phase C 统一广播使用
+                // 鎶ょ浘鐮磋鏍囪锛氭彁鍓嶅０鏄庯紝渚?Phase C 缁熶竴骞挎挱浣跨敤
                 bool shieldBroken = false;
 
-                // 护盾吸收（穿透伤害不跳过护盾，只跳过护甲）
+                // 鎶ょ浘鍚告敹锛堢┛閫忎激瀹充笉璺宠繃鎶ょ浘锛屽彧璺宠繃鎶ょ敳锛?
                 if (snapshotShield > 0)
                 {
                     shieldAbsorbed = remaining < snapshotShield ? remaining : snapshotShield;
-                    // 同步递减快照和实时值，防止后续命中重复消费
+                    // 鍚屾閫掑噺蹇収鍜屽疄鏃跺€硷紝闃叉鍚庣画鍛戒腑閲嶅娑堣垂
                     if (snapshot != null) snapshot.Shield -= shieldAbsorbed;
                     target.Shield -= shieldAbsorbed;
                     if (target.Shield < 0) target.Shield = 0;
                     remaining -= shieldAbsorbed;
 
-                    // 护盾破裂判断：本次命中前快照有盾，且本次吸收量耗尽了全部快照盾值
-                    // snapshotShield 是递减前的值，shieldAbsorbed == snapshotShield 说明盾被打光
+                    // 鎶ょ浘鐮磋鍒ゆ柇锛氭湰娆″懡涓墠蹇収鏈夌浘锛屼笖鏈鍚告敹閲忚€楀敖浜嗗叏閮ㄥ揩鐓х浘鍊?
+                    // snapshotShield 鏄€掑噺鍓嶇殑鍊硷紝shieldAbsorbed == snapshotShield 璇存槑鐩捐鎵撳厜
                     shieldBroken = shieldAbsorbed > 0 && shieldAbsorbed == snapshotShield;
                     if (shieldBroken)
                     {
-                        ctx.RoundLog.Add($"[DamageHandler] {target.EntityId} 的护盾被击破！");
+                        ctx.RoundLog.Add($"[DamageHandler] {target.EntityId} shield broken.");
                         ctx.TriggerManager.Fire(ctx, TriggerTiming.OnShieldBroken, new TriggerContext
                         {
                             SourceEntityId = source.EntityId,
                             TargetEntityId = target.EntityId,
                             Value          = shieldAbsorbed,
                         });
-                        // 注意：不在此处广播 DamageDealtEvent，统一在 Phase C 末尾合并广播（避免重复）
+                        // 娉ㄦ剰锛氫笉鍦ㄦ澶勫箍鎾?DamageDealtEvent锛岀粺涓€鍦?Phase C 鏈熬鍚堝苟骞挎挱锛堥伩鍏嶉噸澶嶏級
                     }
                 }
 
-                // 护甲减伤（穿透伤害跳过护甲）
+                // 鎶ょ敳鍑忎激锛堢┛閫忎激瀹宠烦杩囨姢鐢诧級
                 if (!isPierce && snapshotArmor > 0 && remaining > 0)
                 {
                     armorReduced = remaining < snapshotArmor ? remaining : snapshotArmor;
-                    // 同步递减快照和实时值
+                    // 鍚屾閫掑噺蹇収鍜屽疄鏃跺€?
                     if (snapshot != null) snapshot.Armor -= armorReduced;
                     target.Armor -= armorReduced;
                     if (target.Armor < 0) target.Armor = 0;
                     remaining -= armorReduced;
                 }
 
-                // HP 扣减
+                // HP 鎵ｅ噺
                 int realHpDamage = remaining > 0 ? remaining : 0;
                 if (realHpDamage > 0)
                 {
@@ -149,12 +149,9 @@ namespace CardMoba.BattleCore.Handlers
                     result.PerTargetValues[target.EntityId] = realHpDamage;
                 }
 
-                ctx.RoundLog.Add(
-                    $"[DamageHandler] {source.EntityId} → {target.EntityId}：" +
-                    $"基础{baseDamage} 修正后{modifiedDamage} 护盾吸收{shieldAbsorbed} 护甲减{armorReduced} 实际HP伤害{realHpDamage}，" +
-                    $"剩余HP={target.Hp}");
+                ctx.RoundLog.Add($"[DamageHandler] {source.EntityId} -> {target.EntityId}: base={baseDamage}, modified={modifiedDamage}, shieldAbsorbed={shieldAbsorbed}, armorReduced={armorReduced}, realHpDamage={realHpDamage}, hp={target.Hp}");
 
-                // Phase C 统一广播（含 ShieldBroken 标记，避免护盾破裂时重复发两条事件）
+                // Phase C 缁熶竴骞挎挱锛堝惈 ShieldBroken 鏍囪锛岄伩鍏嶆姢鐩剧牬瑁傛椂閲嶅鍙戜袱鏉′簨浠讹級
                 ctx.EventBus.Publish(new DamageDealtEvent
                 {
                     SourceEntityId   = source.EntityId,
@@ -169,8 +166,8 @@ namespace CardMoba.BattleCore.Handlers
                     SourceCardInstanceId = sourceCardInstanceId,
                 });
 
-                // ── Phase C：触发器 ──────────────────────────────────
-                // AfterDealDamage（施害方视角）
+                // 鈹€鈹€ Phase C锛氳Е鍙戝櫒 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+                // AfterDealDamage锛堟柦瀹虫柟瑙嗚锛?
                 ctx.TriggerManager.Fire(ctx, TriggerTiming.AfterDealDamage, new TriggerContext
                 {
                     SourceEntityId = source.EntityId,
@@ -178,8 +175,8 @@ namespace CardMoba.BattleCore.Handlers
                     Value          = realHpDamage,
                 });
 
-                // AfterTakeDamage（受害方视角，注意 Source/Target 方向约定）
-                // SourceEntityId = 受害方，TargetEntityId = 施害方（详见文档 §4.5 约定）
+                // AfterTakeDamage锛堝彈瀹虫柟瑙嗚锛屾敞鎰?Source/Target 鏂瑰悜绾﹀畾锛?
+                // SourceEntityId = 鍙楀鏂癸紝TargetEntityId = 鏂藉鏂癸紙璇﹁鏂囨。 搂4.5 绾﹀畾锛?
                 ctx.TriggerManager.Fire(ctx, TriggerTiming.AfterTakeDamage, new TriggerContext
                 {
                     SourceEntityId = target.EntityId,
@@ -187,27 +184,27 @@ namespace CardMoba.BattleCore.Handlers
                     Value          = realHpDamage,
                 });
 
-                // 濒死标记：HP ≤ 0 时仅标记，不在此处触发 OnNearDeath/OnDeath。
+                // 濒死标记：HP <= 0 时仅标记，不在此处触发 OnNearDeath/OnDeath。
                 // 死亡链路统一由 RoundManager.CheckDeathAndBattleOver 处理，
                 // 避免同一次击杀重复触发濒死/复活/OnDeath 及战斗结束判定。
                 if (!target.IsAlive && !target.DeathEventFired)
                 {
-                    ctx.RoundLog.Add(
-                        $"[DamageHandler] {target.EntityId} HP ≤ 0，等待 RoundManager 死亡结算。");
+                    ctx.RoundLog.Add($"[DamageHandler] {target.EntityId} HP <= 0, waiting for RoundManager death resolution.");
                 }
             }
 
             return result;
         }
+
     }
 
-    // ══════════════════════════════════════════════════════════════
-    // HealHandler —— 处理 Heal 效果
-    // ══════════════════════════════════════════════════════════════
+    // 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
+    // HealHandler 鈥斺€?澶勭悊 Heal 鏁堟灉
+    // 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
 
     /// <summary>
-    /// 治疗 Handler —— 处理 EffectType.Heal。
-    /// 治疗量不得超过目标 MaxHp，不触发伤害相关的触发器。
+    /// 娌荤枟 Handler 鈥斺€?澶勭悊 EffectType.Heal銆?
+    /// 娌荤枟閲忎笉寰楄秴杩囩洰鏍?MaxHp锛屼笉瑙﹀彂浼ゅ鐩稿叧鐨勮Е鍙戝櫒銆?
     /// </summary>
     public class HealHandler : IEffectHandler
     {
@@ -226,7 +223,7 @@ namespace CardMoba.BattleCore.Handlers
                 Success  = true,
             };
 
-            // 治疗量由 HandlerPool 预解析填入 effect.ResolvedValue（支持动态表达式）
+            // 娌荤枟閲忕敱 HandlerPool 棰勮В鏋愬～鍏?effect.ResolvedValue锛堟敮鎸佸姩鎬佽〃杈惧紡锛?
             int baseHeal = effect.ResolvedValue;
             effect.Params.TryGetValue("sourceCardInstanceId", out var sourceCardInstanceId);
 
@@ -242,7 +239,7 @@ namespace CardMoba.BattleCore.Handlers
                 result.TotalRealHeal += realHeal;
                 result.PerTargetValues[target.EntityId] = realHeal;
 
-                ctx.RoundLog.Add($"[HealHandler] {source.EntityId} → {target.EntityId}：治疗 {realHeal}，当前HP={target.Hp}");
+                ctx.RoundLog.Add($"[HealHandler] {source.EntityId} 閳�?{target.EntityId}閿涙碍涓嶉悿?{realHeal}閿涘苯缍嬮崜宀篜={target.Hp}");
 
                 ctx.EventBus.Publish(new HealEvent
                 {
@@ -264,13 +261,13 @@ namespace CardMoba.BattleCore.Handlers
         }
     }
 
-    // ══════════════════════════════════════════════════════════════
-    // ShieldHandler —— 处理 Shield 效果
-    // ══════════════════════════════════════════════════════════════
+    // 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
+    // ShieldHandler 鈥斺€?澶勭悊 Shield 鏁堟灉
+    // 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
 
     /// <summary>
-    /// 护盾 Handler —— 处理 EffectType.Shield。
-    /// 护盾叠加到当前护盾值（不设上限），回合结束时清零。
+    /// 鎶ょ浘 Handler 鈥斺€?澶勭悊 EffectType.Shield銆?
+    /// 鎶ょ浘鍙犲姞鍒板綋鍓嶆姢鐩惧€硷紙涓嶈涓婇檺锛夛紝鍥炲悎缁撴潫鏃舵竻闆躲€?
     /// </summary>
     public class ShieldHandler : IEffectHandler
     {
@@ -289,7 +286,7 @@ namespace CardMoba.BattleCore.Handlers
                 Success  = true,
             };
 
-            // 护盾量由 HandlerPool 预解析填入 effect.ResolvedValue（支持动态表达式）
+            // 鎶ょ浘閲忕敱 HandlerPool 棰勮В鏋愬～鍏?effect.ResolvedValue锛堟敮鎸佸姩鎬佽〃杈惧紡锛?
             int shieldAmount = effect.ResolvedValue;
             effect.Params.TryGetValue("sourceCardInstanceId", out var sourceCardInstanceId);
 
@@ -301,7 +298,7 @@ namespace CardMoba.BattleCore.Handlers
                 result.TotalRealShield += shieldAmount;
                 result.PerTargetValues[target.EntityId] = shieldAmount;
 
-                ctx.RoundLog.Add($"[ShieldHandler] {source.EntityId} → {target.EntityId}：获得护盾 {shieldAmount}，当前护盾={target.Shield}");
+                ctx.RoundLog.Add($"[ShieldHandler] {source.EntityId} 鈫?{target.EntityId}锛氳幏寰楁姢鐩?{shieldAmount}锛屽綋鍓嶆姢鐩?{target.Shield}");
 
                 ctx.EventBus.Publish(new ShieldGainedEvent
                 {
@@ -322,13 +319,13 @@ namespace CardMoba.BattleCore.Handlers
         }
     }
 
-    // ══════════════════════════════════════════════════════════════
-    // AddBuffHandler —— 处理 AddBuff 效果（骨架）
-    // ══════════════════════════════════════════════════════════════
+    // 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
+    // AddBuffHandler 鈥斺€?澶勭悊 AddBuff 鏁堟灉锛堥鏋讹級
+    // 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
 
     /// <summary>
-    /// 附加 Buff Handler —— 处理 EffectType.AddBuff。
-    /// 从 effect.Params["buffConfigId"] 读取配置 ID，调用 BuffManager.AddBuff。
+    /// 闄勫姞 Buff Handler 鈥斺€?澶勭悊 EffectType.AddBuff銆?
+    /// 浠?effect.Params["buffConfigId"] 璇诲彇閰嶇疆 ID锛岃皟鐢?BuffManager.AddBuff銆?
     /// </summary>
     public class AddBuffHandler : IEffectHandler
     {
@@ -344,16 +341,16 @@ namespace CardMoba.BattleCore.Handlers
 
             if (!effect.Params.TryGetValue("buffConfigId", out var buffConfigId))
             {
-                ctx.RoundLog.Add($"[AddBuffHandler] ⚠️ effect.Params 缺少 'buffConfigId'，跳过。");
+                ctx.RoundLog.Add("[AddBuffHandler] missing buffConfigId.");
                 result.Success = false;
                 return result;
             }
 
-            // Buff 层数由 HandlerPool 预解析（支持动态表达式），duration 仍从 Params 读取静态值
+            // Buff 灞傛暟鐢?HandlerPool 棰勮В鏋愶紙鏀寔鍔ㄦ€佽〃杈惧紡锛夛紝duration 浠嶄粠 Params 璇诲彇闈欐€佸€?
             int value = effect.ResolvedValue;
             effect.Params.TryGetValue("duration", out var durationStr);
             int.TryParse(durationStr, out int duration);
-            if (duration == 0) duration = -1; // 默认永久
+            if (duration == 0) duration = -1; // 榛樿姘镐箙
 
             foreach (var target in targets)
             {
@@ -365,12 +362,12 @@ namespace CardMoba.BattleCore.Handlers
         }
     }
 
-    // ══════════════════════════════════════════════════════════════
-    // DrawCardHandler —— 处理 DrawCard 效果（骨架）
-    // ══════════════════════════════════════════════════════════════
+    // 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
+    // DrawCardHandler 鈥斺€?澶勭悊 DrawCard 鏁堟灉锛堥鏋讹級
+    // 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
 
     /// <summary>
-    /// 抽牌 Handler —— 处理 EffectType.DrawCard。
+    /// 鎶界墝 Handler 鈥斺€?澶勭悊 EffectType.DrawCard銆?
     /// </summary>
     public class DrawCardHandler : IEffectHandler
     {
@@ -384,29 +381,68 @@ namespace CardMoba.BattleCore.Handlers
         {
             var result = new EffectResult { EffectId = effect.EffectId, Type = effect.Type, Success = true };
 
-            // 抽牌数量由 HandlerPool 预解析填入 effect.ResolvedValue（支持动态表达式）
+            // 鎶界墝鏁伴噺鐢?HandlerPool 棰勮В鏋愬～鍏?effect.ResolvedValue锛堟敮鎸佸姩鎬佽〃杈惧紡锛?
             int drawCount = effect.ResolvedValue;
             if (drawCount <= 0)
             {
-                ctx.RoundLog.Add($"[DrawCardHandler] ⚠️ 抽牌数量={drawCount} 无效，跳过。");
+                ctx.RoundLog.Add($"[DrawCardHandler] invalid drawCount={drawCount}, skipped.");
                 result.Success = false;
                 return result;
             }
 
             var drawn = ctx.CardManager.DrawCards(ctx, source.OwnerPlayerId, drawCount);
             result.Extra["drawnCount"] = drawn.Count;
-            ctx.RoundLog.Add($"[DrawCardHandler] {source.OwnerPlayerId} 抽取 {drawn.Count} 张牌。");
+            ctx.RoundLog.Add($"[DrawCardHandler] {source.OwnerPlayerId} drew {drawn.Count} card(s).");
             return result;
         }
     }
 
-    // ══════════════════════════════════════════════════════════════
-    // GenerateCardHandler —— 处理 GenerateCard 效果（骨架）
-    // ══════════════════════════════════════════════════════════════
+    // 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
+    // GenerateCardHandler 鈥斺€?澶勭悊 GenerateCard 鏁堟灉锛堥鏋讹級
+    // 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
 
     /// <summary>
-    /// 生成卡牌 Handler —— 处理 EffectType.GenerateCard。
+    /// 鐢熸垚鍗＄墝 Handler 鈥斺€?澶勭悊 EffectType.GenerateCard銆?
     /// </summary>
+    public class GainEnergyHandler : IEffectHandler
+    {
+        public EffectResult Execute(
+            BattleContext ctx,
+            EffectUnit effect,
+            Entity source,
+            List<Entity> targets,
+            List<EffectResult> priorResults,
+            TriggerContext? triggerContext)
+        {
+            var result = new EffectResult { EffectId = effect.EffectId, Type = effect.Type, Success = true };
+
+            int gainAmount = effect.ResolvedValue;
+            if (gainAmount <= 0)
+            {
+                ctx.RoundLog.Add($"[GainEnergyHandler] 閺冪姵鏅ラ懗浠嬪櫤閸?{gainAmount}閿涘矁鐑︽潻鍥モ偓?");
+                result.Success = false;
+                return result;
+            }
+
+            int totalGained = 0;
+            foreach (var target in targets)
+            {
+                var player = ctx.GetPlayer(target.OwnerPlayerId);
+                if (player == null)
+                    continue;
+
+                player.Energy += gainAmount;
+                totalGained += gainAmount;
+                result.PerTargetValues[target.EntityId] = gainAmount;
+                ctx.RoundLog.Add($"[GainEnergyHandler] {player.PlayerId} 閼惧嘲绶?{gainAmount} 閻愮鍏橀柌蹇ョ礉瑜版挸澧犻懗浠嬪櫤={player.Energy}/{player.MaxEnergy}");
+            }
+
+            result.Extra["gainedEnergy"] = totalGained;
+            return result;
+        }
+
+    }
+
     public class GenerateCardHandler : IEffectHandler
     {
         public EffectResult Execute(
@@ -421,36 +457,71 @@ namespace CardMoba.BattleCore.Handlers
 
             if (!effect.Params.TryGetValue("configId", out var configId))
             {
-                ctx.RoundLog.Add($"[GenerateCardHandler] ⚠️ effect.Params 缺少 'configId'，跳过。");
+                ctx.RoundLog.Add("[GenerateCardHandler] missing configId.");
                 result.Success = false;
                 return result;
             }
 
             effect.Params.TryGetValue("targetZone", out var zoneStr);
-            var zone = zoneStr == "Hand" ? CardZone.Hand : CardZone.Deck;
+            var zone = string.IsNullOrWhiteSpace(zoneStr)
+                ? CardZone.Hand
+                : zoneStr.Trim().ToLowerInvariant() switch
+                {
+                    "deck" => CardZone.Deck,
+                    "discard" => CardZone.Discard,
+                    "consume" => CardZone.Consume,
+                    _ => CardZone.Hand,
+                };
+            effect.Params.TryGetValue("count", out var countStr);
+            int count = int.TryParse(countStr, out var parsedCount) && parsedCount > 0 ? parsedCount : 1;
+            bool tempCard = effect.Params.TryGetValue("tempCard", out var tempCardStr)
+                && bool.TryParse(tempCardStr, out var parsedTempCard)
+                && parsedTempCard;
 
-            var card = ctx.CardManager.GenerateCard(ctx, source.OwnerPlayerId, configId, zone, tempCard: true);
-            result.Extra["generatedInstanceId"] = card.InstanceId;
-            ctx.RoundLog.Add($"[GenerateCardHandler] 为 {source.OwnerPlayerId} 生成临时卡牌 {configId}（{card.InstanceId}）→ {zone}");
+            if (!string.IsNullOrWhiteSpace(effect.ValueExpression) && effect.ResolvedValue <= 0)
+            {
+                ctx.RoundLog.Add($"[GenerateCardHandler] {effect.EffectId} gate resolved to {effect.ResolvedValue}, skip generate {configId}.");
+                result.Success = false;
+                return result;
+            }
+
+            var effectiveTargets = targets.Count > 0 ? targets : new List<Entity> { source };
+            var generatedIds = new List<string>();
+            foreach (var target in effectiveTargets)
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    var generatedCard = ctx.CardManager.GenerateCard(ctx, target.OwnerPlayerId, configId, zone, tempCard);
+                    generatedIds.Add(generatedCard.InstanceId);
+                }
+            }
+
+            result.Extra["generatedCount"] = generatedIds.Count;
+            if (generatedIds.Count > 0)
+            {
+                result.Extra["generatedInstanceId"] = generatedIds[0];
+                result.Extra["generatedInstanceIds"] = string.Join(",", generatedIds);
+            }
+            ctx.RoundLog.Add($"[GenerateCardHandler] generated {generatedIds.Count} x {configId} to {zone}, temp={tempCard}.");
             return result;
         }
     }
 
-    // ══════════════════════════════════════════════════════════════
-    // LifestealHandler —— 处理 Lifesteal 效果
-    // ══════════════════════════════════════════════════════════════
+    // 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
+    // LifestealHandler 鈥斺€?澶勭悊 Lifesteal 鏁堟灉
+    // 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
 
     /// <summary>
-    /// 吸血 Handler —— 处理 EffectType.Lifesteal。
+    /// 鍚歌 Handler 鈥斺€?澶勭悊 EffectType.Lifesteal銆?
     ///
-    /// 读取同一张牌前置 Damage / Pierce 效果的实际 HP 伤害总量（priorResults），
-    /// 按配置百分比（effect.ResolvedValue）为施法者回复生命值。
+    /// 璇诲彇鍚屼竴寮犵墝鍓嶇疆 Damage / Pierce 鏁堟灉鐨勫疄闄?HP 浼ゅ鎬婚噺锛坧riorResults锛夛紝
+    /// 鎸夐厤缃櫨鍒嗘瘮锛坋ffect.ResolvedValue锛変负鏂芥硶鑰呭洖澶嶇敓鍛藉€笺€?
     ///
-    /// 设计约定：
-    ///   - Value=100 表示 100% 吸血（即"未被护盾格挡的伤害全部回复"）；
-    ///   - 回血量上限为施法者当前缺失生命，不会超过 MaxHp；
-    ///   - 仅累计前置效果中类型为 Damage / Pierce 的 TotalRealHpDamage，
-    ///     护盾吸收部分不计入（体现"未被护盾格挡"语义）。
+    /// 璁捐绾﹀畾锛?
+    ///   - Value=100 琛ㄧず 100% 鍚歌锛堝嵆"鏈鎶ょ浘鏍兼尅鐨勪激瀹冲叏閮ㄥ洖澶?锛夛紱
+    ///   - 鍥炶閲忎笂闄愪负鏂芥硶鑰呭綋鍓嶇己澶辩敓鍛斤紝涓嶄細瓒呰繃 MaxHp锛?
+    ///   - 浠呯疮璁″墠缃晥鏋滀腑绫诲瀷涓?Damage / Pierce 鐨?TotalRealHpDamage锛?
+    ///     鎶ょ浘鍚告敹閮ㄥ垎涓嶈鍏ワ紙浣撶幇"鏈鎶ょ浘鏍兼尅"璇箟锛夈€?
     /// </summary>
     public class LifestealHandler : IEffectHandler
     {
@@ -469,7 +540,7 @@ namespace CardMoba.BattleCore.Handlers
                 Success  = true,
             };
 
-            // ── 累计前置 Damage / Pierce 效果造成的实际 HP 伤害 ──────
+            // 鈹€鈹€ 绱鍓嶇疆 Damage / Pierce 鏁堟灉閫犳垚鐨勫疄闄?HP 浼ゅ 鈹€鈹€鈹€鈹€鈹€鈹€
             effect.Params.TryGetValue("sourceCardInstanceId", out var sourceCardInstanceId);
             int totalHpDamage = 0;
             foreach (var prior in priorResults)
@@ -483,19 +554,19 @@ namespace CardMoba.BattleCore.Handlers
 
             if (totalHpDamage <= 0)
             {
-                ctx.RoundLog.Add($"[LifestealHandler] 前置伤害为0，吸血跳过。");
+                ctx.RoundLog.Add("[LifestealHandler] no prior HP damage; skipped.");
                 result.Success = false;
                 return result;
             }
 
-            // ── 按百分比计算回血量，不超过缺失生命 ─────────────────
+            // 鈹€鈹€ 鎸夌櫨鍒嗘瘮璁＄畻鍥炶閲忥紝涓嶈秴杩囩己澶辩敓鍛?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
             int healAmount = totalHpDamage * effect.ResolvedValue / 100;
             int missing    = source.MaxHp - source.Hp;
             healAmount     = healAmount < missing ? healAmount : missing;
 
             if (healAmount <= 0)
             {
-                ctx.RoundLog.Add($"[LifestealHandler] {source.EntityId} 已满血，吸血无效。");
+                ctx.RoundLog.Add($"[LifestealHandler] {source.EntityId} is already at full HP.");
                 return result;
             }
 
@@ -503,8 +574,8 @@ namespace CardMoba.BattleCore.Handlers
             result.TotalRealHeal = healAmount;
 
             ctx.RoundLog.Add(
-                $"[LifestealHandler] {source.EntityId} 吸血 {healAmount} HP" +
-                $"（实际伤害={totalHpDamage}×{effect.ResolvedValue}%），当前HP={source.Hp}/{source.MaxHp}");
+                $"[LifestealHandler] {source.EntityId} 鍚歌 {healAmount} HP" +
+                $"锛堝疄闄呬激瀹?{totalHpDamage}脳{effect.ResolvedValue}%锛夛紝褰撳墠HP={source.Hp}/{source.MaxHp}");
 
             ctx.EventBus.Publish(new HealEvent
             {
@@ -514,7 +585,7 @@ namespace CardMoba.BattleCore.Handlers
                 SourceCardInstanceId = sourceCardInstanceId,
             });
 
-            // 触发 OnHealed 时机（与 HealHandler 保持一致，使依赖此时机的 Buff 能响应吸血回血）
+            // 瑙﹀彂 OnHealed 鏃舵満锛堜笌 HealHandler 淇濇寔涓€鑷达紝浣夸緷璧栨鏃舵満鐨?Buff 鑳藉搷搴斿惛琛€鍥炶锛?
             ctx.TriggerManager.Fire(ctx, TriggerTiming.OnHealed, new TriggerContext
             {
                 SourceEntityId = source.EntityId,
