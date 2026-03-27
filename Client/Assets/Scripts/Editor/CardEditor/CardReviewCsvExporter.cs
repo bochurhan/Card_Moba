@@ -18,7 +18,7 @@ namespace CardMoba.Client.Editor.CardEditor
             string outPath = Path.Combine(reviewDir, "Cards.csv");
             using var writer = new StreamWriter(outPath, false, Utf8WithBom);
 
-            writer.WriteLine("CardId,CardName,Description,TrackType,TargetType,HeroClass,EffectRange,Layer,Tags,EnergyCost,Rarity,EffectSummary,EffectsJson");
+            writer.WriteLine("CardId,CardName,Description,TrackType,TargetType,HeroClass,EffectRange,Layer,Tags,EnergyCost,Rarity,UpgradedCardConfigId,EffectSummary,EffectsJson");
 
             foreach (var card in cards.OrderBy(c => c.CardId))
             {
@@ -38,6 +38,7 @@ namespace CardMoba.Client.Editor.CardEditor
                     EscapeCsv(tags),
                     card.EnergyCost.ToString(),
                     card.Rarity.ToString(),
+                    EscapeCsv(card.UpgradedCardConfigId),
                     EscapeCsv(effectSummary),
                     EscapeCsv(effectsJson)));
             }
@@ -73,6 +74,9 @@ namespace CardMoba.Client.Editor.CardEditor
 
             if (effect.EffectType == EffectType.ReturnSourceCardToHandAtRoundEnd)
                 parts.Add("return-source-card@end-round");
+
+            if (effect.EffectType == EffectType.UpgradeCardsInHand && !string.IsNullOrWhiteSpace(effect.ProjectionLifetime))
+                parts.Add($"lifetime={effect.ProjectionLifetime}");
 
             if (effect.EffectConditions.Count > 0)
             {
@@ -126,6 +130,9 @@ namespace CardMoba.Client.Editor.CardEditor
                 if (effect.GenerateCardIsTemp)
                     fields.Add("\"generateCardIsTemp\":true");
             }
+
+            if (effect.EffectType == EffectType.UpgradeCardsInHand && !string.IsNullOrWhiteSpace(effect.ProjectionLifetime))
+                fields.Add($"\"projectionLifetime\":{QuoteJson(effect.ProjectionLifetime)}");
 
             if (effect.EffectConditions.Count > 0)
             {

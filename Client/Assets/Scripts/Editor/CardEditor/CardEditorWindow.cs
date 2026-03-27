@@ -49,6 +49,7 @@ namespace CardMoba.Client.Editor.CardEditor
             EffectType.GenerateCard,
             EffectType.Lifesteal,
             EffectType.ReturnSourceCardToHandAtRoundEnd,
+            EffectType.UpgradeCardsInHand,
         };
 
         private static readonly string[] SupportedEffectTypeOptions =
@@ -63,6 +64,7 @@ namespace CardMoba.Client.Editor.CardEditor
             "GenerateCard (32)",
             "Lifesteal (11)",
             "ReturnSourceCardToHandAtRoundEnd (34)",
+            "UpgradeCardsInHand (35)",
         };
 
         private static readonly EffectConditionType[] SupportedEffectConditionValues =
@@ -355,6 +357,7 @@ namespace CardMoba.Client.Editor.CardEditor
 
             EditorGUILayout.LabelField("卡牌描述");
             card.Description = EditorGUILayout.TextArea(card.Description, GUILayout.Height(48));
+            card.UpgradedCardConfigId = EditorGUILayout.TextField("升级版配置ID", card.UpgradedCardConfigId);
 
             EditorGUI.indentLevel--;
             EditorGUILayout.EndVertical();
@@ -659,6 +662,11 @@ namespace CardMoba.Client.Editor.CardEditor
                 effect.GenerateCardZone = EditorGUILayout.TextField("GenerateCardZone", effect.GenerateCardZone);
                 effect.GenerateCardIsTemp = EditorGUILayout.ToggleLeft("GenerateCardIsTemp", effect.GenerateCardIsTemp);
             }
+            if (effect.EffectType == EffectType.UpgradeCardsInHand)
+            {
+                effect.ProjectionLifetime = EditorGUILayout.TextField("ProjectionLifetime", effect.ProjectionLifetime);
+                EditorGUILayout.HelpBox("可选值：EndOfTurn / EndOfBattle。为空时默认 EndOfTurn。", MessageType.Info);
+            }
             // 目标覆盖（使用 CardTargetType? 枚举）
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("目标覆盖", GUILayout.Width(EditorGUIUtility.labelWidth));
@@ -897,7 +905,8 @@ namespace CardMoba.Client.Editor.CardEditor
                         CardName    = c.cardName,
                         Description = c.description,
                         EnergyCost  = c.energyCost,
-                        Rarity      = c.rarity
+                        Rarity      = c.rarity,
+                        UpgradedCardConfigId = c.upgradedCardConfigId ?? string.Empty
                     };
 
                     if (Enum.TryParse<CardTrackType>(c.trackType, true, out var tt))
@@ -944,6 +953,7 @@ namespace CardMoba.Client.Editor.CardEditor
                             GenerateCardConfigId = e.generateCardConfigId ?? "",
                             GenerateCardZone = string.IsNullOrWhiteSpace(e.generateCardZone) ? "Hand" : e.generateCardZone,
                             GenerateCardIsTemp = e.generateCardIsTemp,
+                            ProjectionLifetime = e.projectionLifetime ?? string.Empty,
                             Priority = e.priority == 0 ? 500 : e.priority,
                             SubPriority = e.subPriority,
                             FoldoutExpanded = true
@@ -1000,6 +1010,7 @@ namespace CardMoba.Client.Editor.CardEditor
                     tags        = c.GetTagList().ToList(),
                     energyCost  = c.EnergyCost,
                     rarity      = c.Rarity,
+                    upgradedCardConfigId = c.UpgradedCardConfigId,
                     playConditions = c.PlayConditions.Select(pc => new PlayConditionJsonData
                     {
                         conditionType = pc.ConditionType.ToString(),
@@ -1020,6 +1031,7 @@ namespace CardMoba.Client.Editor.CardEditor
                         generateCardConfigId = e.GenerateCardConfigId,
                         generateCardZone     = e.GenerateCardZone,
                         generateCardIsTemp   = e.GenerateCardIsTemp,
+                        projectionLifetime   = e.ProjectionLifetime,
                         priority             = e.Priority,
                         subPriority          = e.SubPriority,
                         effectConditions     = e.EffectConditions.Select(ec => new EffectConditionJsonData
@@ -1104,6 +1116,13 @@ namespace CardMoba.Client.Editor.CardEditor
                         { Level = ValidationLevel.Warning,
                           Message = $"卡牌描述为空: [{card.CardId}] {card.CardName}", CardId = card.CardId });
 
+                if (!string.IsNullOrWhiteSpace(card.UpgradedCardConfigId)
+                    && !_cards.Any(other => other.CardId.ToString() == card.UpgradedCardConfigId))
+                    _validationErrors.Add(new ValidationError
+                        { Level = ValidationLevel.Warning,
+                          Message = $"[{card.CardId}] 升级版配置ID {card.UpgradedCardConfigId} 当前不存在",
+                          CardId = card.CardId });
+
                 // ID 范围规则
                 bool isInstant = card.TrackType == CardTrackType.Instant;
                 bool idInRange = isInstant ? (card.CardId >= 1000 && card.CardId < 2000)
@@ -1151,6 +1170,15 @@ namespace CardMoba.Client.Editor.CardEditor
                         _validationErrors.Add(new ValidationError
                             { Level = ValidationLevel.Error,
                               Message = $"[{card.CardId}] GenerateCard 缺少 GenerateCardConfigId",
+                              CardId = card.CardId });
+
+                    if (eff.EffectType == EffectType.UpgradeCardsInHand
+                        && !string.IsNullOrWhiteSpace(eff.ProjectionLifetime)
+                        && eff.ProjectionLifetime != "EndOfTurn"
+                        && eff.ProjectionLifetime != "EndOfBattle")
+                        _validationErrors.Add(new ValidationError
+                            { Level = ValidationLevel.Error,
+                              Message = $"[{card.CardId}] UpgradeCardsInHand 的 ProjectionLifetime 仅支持 EndOfTurn / EndOfBattle",
                               CardId = card.CardId });
 
                     foreach (var cond in eff.EffectConditions)

@@ -236,7 +236,7 @@ namespace CardMoba.Client.Presentation.Battle
         {
             string cardName  = config?.CardName    ?? battleCard.ConfigId;
             string desc      = config?.Description ?? "（无描述）";
-            int    cost      = config?.EnergyCost  ?? 0;
+            int    cost      = _gameManager.GetDisplayedCost(battleCard);
             bool   isInstant = config?.TrackType   == CardTrackType.Instant;
 
             var nameText  = go.transform.Find("CardNameText")?.GetComponent<TextMeshProUGUI>();

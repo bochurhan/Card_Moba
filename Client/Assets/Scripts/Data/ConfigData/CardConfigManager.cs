@@ -98,6 +98,7 @@ namespace CardMoba.Client.Data.ConfigData
                 EffectRange = original.EffectRange,
                 Layer = original.Layer,
                 EnergyCost = original.EnergyCost,
+                UpgradedCardConfigId = original.UpgradedCardConfigId,
                 Rarity = original.Rarity,
                 PlayConditions = CloneConditions(original.PlayConditions),
                 Effects = CloneEffects(original.Effects)
@@ -229,6 +230,7 @@ namespace CardMoba.Client.Data.ConfigData
                 Layer = ParseEnum(data.layer, SettlementLayer.DamageTrigger),
                 Tags = ParseTags(data.tags),
                 EnergyCost = data.energyCost,
+                UpgradedCardConfigId = data.upgradedCardConfigId ?? string.Empty,
                 Rarity = data.rarity > 0 ? data.rarity : 1,
                 Effects = new List<CardEffect>(),
                 PlayConditions = new List<EffectCondition>()
@@ -266,6 +268,7 @@ namespace CardMoba.Client.Data.ConfigData
                 GenerateCardConfigId = data.generateCardConfigId ?? string.Empty,
                 GenerateCardZone = string.IsNullOrWhiteSpace(data.generateCardZone) ? "Hand" : data.generateCardZone,
                 GenerateCardIsTemp = data.generateCardIsTemp,
+                ProjectionLifetime = data.projectionLifetime ?? string.Empty,
                 Duration = data.duration,
                 RepeatCount = data.repeatCount > 0 ? data.repeatCount : 1,
                 Priority = data.priority == 0 ? 500 : data.priority,
@@ -373,6 +376,7 @@ namespace CardMoba.Client.Data.ConfigData
                     GenerateCardConfigId = effect.GenerateCardConfigId,
                     GenerateCardZone = effect.GenerateCardZone,
                     GenerateCardIsTemp = effect.GenerateCardIsTemp,
+                    ProjectionLifetime = effect.ProjectionLifetime,
                     Duration = effect.Duration,
                     RepeatCount = effect.RepeatCount,
                     TargetOverride = effect.TargetOverride,

@@ -19,6 +19,7 @@ namespace CardMoba.Client.Editor.CardEditor
 
         public int EnergyCost = 1;
         public int Rarity = 1;
+        public string UpgradedCardConfigId = string.Empty;
 
         public bool TagDamage;
         public bool TagDefense;
@@ -141,6 +142,7 @@ namespace CardMoba.Client.Editor.CardEditor
                 Layer = Layer,
                 EnergyCost = EnergyCost,
                 Rarity = Rarity,
+                UpgradedCardConfigId = UpgradedCardConfigId,
                 TagDamage = TagDamage,
                 TagDefense = TagDefense,
                 TagCounter = TagCounter,
@@ -181,6 +183,7 @@ namespace CardMoba.Client.Editor.CardEditor
         public string GenerateCardConfigId = string.Empty;
         public string GenerateCardZone = "Hand";
         public bool GenerateCardIsTemp;
+        public string ProjectionLifetime = string.Empty;
         public int RepeatCount = 1;
         public List<EffectConditionEditData> EffectConditions = new();
         public int Priority = 500;
@@ -222,6 +225,7 @@ namespace CardMoba.Client.Editor.CardEditor
                 EffectType.AddBuff when !string.IsNullOrWhiteSpace(BuffConfigId) => $"附加 Buff {BuffConfigId}",
                 EffectType.GenerateCard when !string.IsNullOrWhiteSpace(GenerateCardConfigId) => $"生成卡牌 {GenerateCardConfigId}",
                 EffectType.ReturnSourceCardToHandAtRoundEnd => "回合结束时若此牌在弃牌堆，则返回手牌",
+                EffectType.UpgradeCardsInHand => $"升级当前手牌（{ProjectionLifetime}）",
                 _ => $"{EffectType}: {valueText}"
             };
 
@@ -247,6 +251,7 @@ namespace CardMoba.Client.Editor.CardEditor
                 GenerateCardConfigId = GenerateCardConfigId,
                 GenerateCardZone = GenerateCardZone,
                 GenerateCardIsTemp = GenerateCardIsTemp,
+                ProjectionLifetime = ProjectionLifetime,
                 RepeatCount = RepeatCount,
                 Priority = Priority,
                 SubPriority = SubPriority,

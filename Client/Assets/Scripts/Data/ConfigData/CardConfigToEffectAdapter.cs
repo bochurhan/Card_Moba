@@ -22,6 +22,7 @@ namespace CardMoba.Client.Data.ConfigData
             EffectType.GenerateCard,
             EffectType.Lifesteal,
             EffectType.ReturnSourceCardToHandAtRoundEnd,
+            EffectType.UpgradeCardsInHand,
         };
 
         private static readonly Dictionary<EffectType, SettleLayer> EffectLayerMap = new()
@@ -36,6 +37,7 @@ namespace CardMoba.Client.Data.ConfigData
             { EffectType.ReturnSourceCardToHandAtRoundEnd, SettleLayer.Resource },
             { EffectType.Heal, SettleLayer.BuffSpecial },
             { EffectType.AddBuff, SettleLayer.BuffSpecial },
+            { EffectType.UpgradeCardsInHand, SettleLayer.BuffSpecial },
         };
 
         public static List<EffectUnit> ConvertEffects(CardConfig card, string defaultTargetType = "Enemy")
@@ -91,7 +93,7 @@ namespace CardMoba.Client.Data.ConfigData
             if (!SupportedEffectTypes.Contains(effect.EffectType))
             {
                 throw new InvalidOperationException(
-                    $"{prefix} 不在当前 BattleCore 支持白名单内，请改为 Damage/Pierce/Heal/Shield/AddBuff/Draw/GainEnergy/GenerateCard/Lifesteal/ReturnSourceCardToHandAtRoundEnd。");
+                    $"{prefix} 不在当前 BattleCore 支持白名单内，请改为 Damage/Pierce/Heal/Shield/AddBuff/Draw/GainEnergy/GenerateCard/Lifesteal/ReturnSourceCardToHandAtRoundEnd/UpgradeCardsInHand。");
             }
         }
 
@@ -204,6 +206,13 @@ namespace CardMoba.Client.Data.ConfigData
                     : effect.GenerateCardZone;
                 parameters["count"] = effect.Value > 0 ? effect.Value.ToString() : "1";
                 parameters["tempCard"] = effect.GenerateCardIsTemp ? "true" : "false";
+            }
+
+            if (effect.EffectType == EffectType.UpgradeCardsInHand)
+            {
+                parameters["projectionLifetime"] = string.IsNullOrWhiteSpace(effect.ProjectionLifetime)
+                    ? "EndOfTurn"
+                    : effect.ProjectionLifetime;
             }
 
             return parameters;

@@ -24,6 +24,7 @@ namespace CardMoba.Client.Data.ConfigData.JsonModels
         public List<string> tags;
         public int energyCost;
         public int rarity;
+        public string upgradedCardConfigId;
         public List<EffectJsonData> effects;
         public List<PlayConditionJsonData> playConditions;
     }
@@ -51,6 +52,7 @@ namespace CardMoba.Client.Data.ConfigData.JsonModels
         public string generateCardConfigId;
         public string generateCardZone;
         public bool generateCardIsTemp;
+        public string projectionLifetime;
         public int priority;
         public int subPriority;
         public List<EffectConditionJsonData> effectConditions;

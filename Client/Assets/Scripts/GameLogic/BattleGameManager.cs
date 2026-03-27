@@ -127,6 +127,8 @@ namespace CardMoba.Client.GameLogic
                         ConfigId = configId,
                         IsExhaust = cardConfig.Tags.HasFlag(CardTag.Exhaust),
                         IsStatCard = cardConfig.Tags.HasFlag(CardTag.Status),
+                        EnergyCost = cardConfig.EnergyCost,
+                        UpgradedConfigId = cardConfig.UpgradedCardConfigId,
                         Effects = CardConfigToEffectAdapter.ConvertEffects(cardConfig, defaultTarget),
                     };
                 },
@@ -251,10 +253,18 @@ namespace CardMoba.Client.GameLogic
 
             foreach (var bc in player.GetCardsInZone(CardZone.Hand))
             {
-                _cardConfigMap.TryGetValue(bc.ConfigId, out var cfg);
+                var cfg = GetEffectiveCardConfig(bc);
                 list.Add((bc, cfg));
             }
             return list;
+        }
+
+        public int GetDisplayedCost(BattleCard battleCard)
+        {
+            if (_ctx == null || _roundManager == null || battleCard == null)
+                return 0;
+
+            return _roundManager.ResolvePlayCost(_ctx, battleCard.OwnerId, battleCard).FinalCost;
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -298,17 +308,18 @@ namespace CardMoba.Client.GameLogic
                 return $"手牌索引越界（{handIndex}/{hand.Count}）";
 
             var battleCard = hand[handIndex];
-            if (!_cardConfigMap.TryGetValue(battleCard.ConfigId, out var cardConfig))
-                return $"找不到卡牌配置 configId={battleCard.ConfigId}";
+            var cardConfig = GetEffectiveCardConfig(battleCard);
+            if (cardConfig == null)
+                return $"找不到卡牌配置 configId={battleCard.GetEffectiveConfigId()}";
 
-            if (!_roundManager.CanPlayCard(_ctx, playerId, battleCard.ConfigId, out var playRestrictionReason))
+            if (!_roundManager.CanPlayCard(_ctx, playerId, battleCard, out var playRestrictionReason))
             {
                 OnLogMessage?.Invoke($"<color=#ff8866>[!] {playRestrictionReason}</color>");
                 return playRestrictionReason;
             }
 
-            // ── 能量校验 ──────────────────────────────────────────────
-            int cost = cardConfig.EnergyCost;
+            var playCost = _roundManager.ResolvePlayCost(_ctx, playerId, battleCard);
+            int cost = playCost.FinalCost;
             if (player.Energy < cost)
             {
                 string reason = $"能量不足（当前 {player.Energy}，需要 {cost}）";
@@ -316,28 +327,56 @@ namespace CardMoba.Client.GameLogic
                 return reason;
             }
 
-            // ── 扣除能量 ─────────────────────────────────────────
+            bool hadForceConsumeFlag = battleCard.ExtraData.TryGetValue("forceConsumeAfterResolve", out var previousForceConsumeFlag);
+            if (playCost.ForceConsumeAfterResolve)
+                battleCard.ExtraData["forceConsumeAfterResolve"] = true;
+
+            // ── 预扣能量，失败时回滚 ─────────────────────────────────
             player.Energy -= cost;
 
             string cardName = cardConfig.CardName;
+            bool success;
 
             // ── 出牌 ─────────────────────────────────────────────────
             if (instant)
             {
                 // 瞬策牌：先移出手牌区，再结算
-                _roundManager.PlayInstantCard(_ctx, playerId, battleCard.InstanceId);
+                var results = _roundManager.PlayInstantCard(_ctx, playerId, battleCard.InstanceId);
+                success = results.Count > 0 || battleCard.Zone != CardZone.Hand;
                 FlushLogs();
-                OnLogMessage?.Invoke($"<color=#aaffaa>{(playerId == HumanPlayerId ? "你" : "对手")} 打出瞬策牌【{cardName}】（花费 {cost} 点能量）</color>");
             }
             else
             {
                 // 定策牌：移入策略区，等待 EndRound 统一结算
-                _roundManager.CommitPlanCard(_ctx, new CommittedPlanCard
+                success = _roundManager.CommitPlanCard(_ctx, new CommittedPlanCard
                 {
                     PlayerId       = playerId,
                     CardInstanceId = battleCard.InstanceId,
                 });
                 FlushLogs();
+            }
+
+            if (!success)
+            {
+                player.Energy += cost;
+                if (hadForceConsumeFlag)
+                    battleCard.ExtraData["forceConsumeAfterResolve"] = previousForceConsumeFlag!;
+                else
+                    battleCard.ExtraData.Remove("forceConsumeAfterResolve");
+
+                string reason = "出牌失败";
+                OnLogMessage?.Invoke($"<color=#ff8866>[!] {reason}</color>");
+                return reason;
+            }
+
+            _roundManager.CommitResolvedPlayCost(_ctx, playerId, playCost);
+
+            if (instant)
+            {
+                OnLogMessage?.Invoke($"<color=#aaffaa>{(playerId == HumanPlayerId ? "你" : "对手")} 打出瞬策牌【{cardName}】（花费 {cost} 点能量）</color>");
+            }
+            else
+            {
                 OnLogMessage?.Invoke($"<color=#aaddff>{(playerId == HumanPlayerId ? "你" : "对手")} 提交定策牌【{cardName}】（花费 {cost} 点能量）</color>");
             }
 
@@ -383,7 +422,8 @@ namespace CardMoba.Client.GameLogic
             foreach (var battleCard in snapshot)
             {
                 if (!player.HeroEntity.IsAlive || IsGameOver) break;
-                if (!_cardConfigMap.TryGetValue(battleCard.ConfigId, out var cfg)) continue;
+                var cfg = GetEffectiveCardConfig(battleCard);
+                if (cfg == null) continue;
 
                 bool isInstant = cfg.TrackType == CardTrackType.Instant;
                 PlayCardInternal(AiPlayerId, 0, isInstant);
@@ -429,6 +469,10 @@ namespace CardMoba.Client.GameLogic
             2008, 2008,               // 愤怒 x2
             2009, 2009,               // 回旋镖 x2
             2010, 2010,               // 痛击 x2
+            2011, 2011,               // 暴走 x2
+            2013,                     // 血祭 x1
+            1006,                     // 武装 x1
+            2015,                     // 腐化 x1
         };
 
         private static BuffConfig? ResolveRuntimeBuffConfig(string buffId)
@@ -520,6 +564,34 @@ namespace CardMoba.Client.GameLogic
                     IsPurgeable = true,
                     IsHidden = true,
                 },
+                "blood_ritual" => new BuffConfig
+                {
+                    BuffId = "blood_ritual",
+                    BuffName = "血祭",
+                    Description = "每当你失去生命时，获得力量",
+                    BuffType = BuffType.BloodRitual,
+                    IsBuff = true,
+                    StackRule = BuffStackRule.RefreshDuration,
+                    MaxStacks = 1,
+                    DefaultDuration = 0,
+                    DefaultValue = 1,
+                    IsDispellable = true,
+                    IsPurgeable = true,
+                },
+                "corruption" => new BuffConfig
+                {
+                    BuffId = "corruption",
+                    BuffName = "腐化",
+                    Description = "每回合前 X 张牌费用变为 0，且结算后消耗",
+                    BuffType = BuffType.Corruption,
+                    IsBuff = true,
+                    StackRule = BuffStackRule.StackValue,
+                    MaxStacks = 99,
+                    DefaultDuration = 0,
+                    DefaultValue = 2,
+                    IsDispellable = true,
+                    IsPurgeable = true,
+                },
                 _ => null,
             };
         }
@@ -554,6 +626,17 @@ namespace CardMoba.Client.GameLogic
             if (all == null) return;
             foreach (var kv in all)
                 _cardConfigMap[kv.Key.ToString()] = kv.Value;
+        }
+
+        private CardConfig? GetEffectiveCardConfig(BattleCard battleCard)
+        {
+            if (battleCard == null)
+                return null;
+
+            if (_cardConfigMap.TryGetValue(battleCard.GetEffectiveConfigId(), out var effectiveConfig))
+                return effectiveConfig;
+
+            return _cardConfigMap.TryGetValue(battleCard.ConfigId, out var baseConfig) ? baseConfig : null;
         }
 
         // ══════════════════════════════════════════════════════════════════════
