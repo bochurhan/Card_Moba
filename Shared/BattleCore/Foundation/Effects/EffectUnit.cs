@@ -38,7 +38,7 @@ namespace CardMoba.BattleCore.Foundation
         public string ValueExpression { get; set; } = "0";
 
         /// <summary>效果所属结算层（决定在五层结算中的执行阶段）</summary>
-        public SettleLayer Layer { get; set; }
+        public SettlementLayer Layer { get; set; }
 
         /// <summary>
         /// 打出条件列表（全部满足时效果才执行）。

@@ -1,9 +1,9 @@
 using CardMoba.Protocol.Enums;
 
-namespace CardMoba.BattleCore.Buff
+namespace CardMoba.BattleCore.Definitions
 {
     /// <summary>
-    /// Buff 配置定义。
+    /// Buff 的静态配置定义。
     /// </summary>
     public class BuffConfig
     {
@@ -28,7 +28,7 @@ namespace CardMoba.BattleCore.Buff
         /// <summary>最大叠加层数，仅 StackValue 模式生效。</summary>
         public int MaxStacks { get; set; } = 99;
 
-        /// <summary>默认持续回合数，0 表示永久。</summary>
+        /// <summary>默认持续回合数；0 表示永久。</summary>
         public int DefaultDuration { get; set; } = 1;
 
         /// <summary>默认数值。</summary>
@@ -43,7 +43,7 @@ namespace CardMoba.BattleCore.Buff
         /// <summary>是否隐藏，不在 UI 中显示。</summary>
         public bool IsHidden { get; set; } = false;
 
-        /// <summary>触发时机，用于触发类 Buff。</summary>
+        /// <summary>触发时机，用于触发型 Buff。</summary>
         public BuffTriggerTiming TriggerTiming { get; set; } = BuffTriggerTiming.None;
 
         /// <summary>图标路径。</summary>

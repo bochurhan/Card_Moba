@@ -1,11 +1,12 @@
-#pragma warning disable CS8632
+﻿#pragma warning disable CS8632
 
 using System.Collections.Generic;
+using CardMoba.BattleCore.Foundation;
 
-namespace CardMoba.BattleCore.Foundation
+namespace CardMoba.BattleCore.Definitions
 {
     /// <summary>
-    /// BattleCore 运行时卡牌定义。
+    /// BattleCore 直接消费的最小卡牌静态定义。
     /// 由上层配置系统通过 CardDefinitionProvider 注入。
     /// </summary>
     public class BattleCardDefinition
@@ -17,7 +18,7 @@ namespace CardMoba.BattleCore.Foundation
 
         /// <summary>
         /// 当前配置的升级目标。
-        /// 为空表示无升级版。
+        /// 为空表示没有升级版。
         /// </summary>
         public string UpgradedConfigId { get; set; } = string.Empty;
 
