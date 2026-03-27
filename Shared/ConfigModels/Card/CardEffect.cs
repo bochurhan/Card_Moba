@@ -78,6 +78,7 @@ namespace CardMoba.ConfigModels.Card
                 EffectType.GainEnergy => 3,
                 EffectType.GenerateCard => 3,
                 EffectType.ReturnSourceCardToHandAtRoundEnd => 3,
+                EffectType.MoveSelectedCardToDeckTop => 3,
                 EffectType.UpgradeCardsInHand => 4,
 
                 _ => 4

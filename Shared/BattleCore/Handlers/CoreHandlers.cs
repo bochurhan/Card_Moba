@@ -352,12 +352,18 @@ namespace CardMoba.BattleCore.Handlers
             int.TryParse(durationStr, out int duration);
             if (duration == 0) duration = -1; // 默认永久
 
+            int appliedCount = 0;
             foreach (var target in targets)
             {
                 if (!target.IsAlive) continue;
                 ctx.BuffManager.AddBuff(ctx, target.EntityId, buffConfigId, source.EntityId, value, duration);
+                appliedCount++;
             }
 
+            result.Extra["buffConfigId"] = buffConfigId;
+            result.Extra["buffValue"] = value;
+            result.Extra["buffDuration"] = duration;
+            result.Extra["appliedCount"] = appliedCount;
             return result;
         }
     }
@@ -502,7 +508,67 @@ namespace CardMoba.BattleCore.Handlers
                 result.Extra["generatedInstanceId"] = generatedIds[0];
                 result.Extra["generatedInstanceIds"] = string.Join(",", generatedIds);
             }
+            result.Extra["generatedConfigId"] = configId;
+            result.Extra["generatedZone"] = zone.ToString();
+            result.Extra["generatedTempCard"] = tempCard;
             ctx.RoundLog.Add($"[GenerateCardHandler] generated {generatedIds.Count} x {configId} to {zone}, temp={tempCard}.");
+            return result;
+        }
+    }
+
+    public class MoveSelectedCardToDeckTopHandler : IEffectHandler
+    {
+        public const string SelectedCardInstanceIdKey = "selectedCardInstanceId";
+
+        public EffectResult Execute(
+            BattleContext ctx,
+            EffectUnit effect,
+            Entity source,
+            List<Entity> targets,
+            List<EffectResult> priorResults,
+            TriggerContext? triggerContext)
+        {
+            var result = new EffectResult { EffectId = effect.EffectId, Type = effect.Type, Success = true };
+
+            if (!effect.Params.TryGetValue(SelectedCardInstanceIdKey, out var selectedCardInstanceId)
+                || string.IsNullOrWhiteSpace(selectedCardInstanceId))
+            {
+                ctx.RoundLog.Add("[MoveSelectedCardToDeckTopHandler] missing selectedCardInstanceId.");
+                result.Success = false;
+                return result;
+            }
+
+            var selectedCard = ctx.CardManager.GetCard(ctx, selectedCardInstanceId);
+            if (selectedCard == null)
+            {
+                ctx.RoundLog.Add($"[MoveSelectedCardToDeckTopHandler] selected card {selectedCardInstanceId} not found.");
+                result.Success = false;
+                return result;
+            }
+
+            if (!selectedCard.OwnerId.Equals(source.OwnerPlayerId, System.StringComparison.Ordinal))
+            {
+                ctx.RoundLog.Add($"[MoveSelectedCardToDeckTopHandler] selected card {selectedCardInstanceId} does not belong to {source.OwnerPlayerId}.");
+                result.Success = false;
+                return result;
+            }
+
+            if (selectedCard.Zone != CardZone.Discard)
+            {
+                ctx.RoundLog.Add($"[MoveSelectedCardToDeckTopHandler] selected card {selectedCardInstanceId} is not in discard (zone={selectedCard.Zone}).");
+                result.Success = false;
+                return result;
+            }
+
+            if (!ctx.CardManager.MoveCardToTopOfDeck(ctx, selectedCard))
+            {
+                result.Success = false;
+                return result;
+            }
+
+            result.Extra["selectedCardInstanceId"] = selectedCard.InstanceId;
+            result.Extra["selectedCardConfigId"] = selectedCard.GetEffectiveConfigId();
+            ctx.RoundLog.Add($"[MoveSelectedCardToDeckTopHandler] moved {selectedCard.InstanceId} to deck top.");
             return result;
         }
     }

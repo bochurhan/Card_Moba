@@ -152,6 +152,36 @@ namespace CardMoba.BattleCore.Managers
             ctx.RoundLog.Add($"[CardManager] [{card.GetEffectiveConfigId()}] ({card.InstanceId}) {previousZone} -> {targetZone}.");
         }
 
+        public bool MoveCardToTopOfDeck(BattleContext ctx, BattleCard card)
+        {
+            var player = ctx.GetPlayer(card.OwnerId);
+            if (player == null)
+            {
+                ctx.RoundLog.Add($"[CardManager] cannot move {card.InstanceId} to deck top; player {card.OwnerId} not found.");
+                return false;
+            }
+
+            int existingIndex = player.AllCards.IndexOf(card);
+            if (existingIndex < 0)
+            {
+                ctx.RoundLog.Add($"[CardManager] cannot move {card.InstanceId} to deck top; card not owned by {card.OwnerId}.");
+                return false;
+            }
+
+            var previousZone = card.Zone;
+            player.AllCards.RemoveAt(existingIndex);
+            card.Zone = CardZone.Deck;
+
+            int firstDeckIndex = player.AllCards.FindIndex(c => c.Zone == CardZone.Deck);
+            if (firstDeckIndex < 0)
+                player.AllCards.Add(card);
+            else
+                player.AllCards.Insert(firstDeckIndex, card);
+
+            ctx.RoundLog.Add($"[CardManager] [{card.GetEffectiveConfigId()}] ({card.InstanceId}) {previousZone} -> Deck(top).");
+            return true;
+        }
+
         public void ScanStatCards(BattleContext ctx)
         {
             foreach (var kv in ctx.AllPlayers)

@@ -15,6 +15,7 @@ namespace CardMoba.BattleCore.Core
     {
         public string PlayerId { get; set; } = string.Empty;
         public string CardInstanceId { get; set; } = string.Empty;
+        public Dictionary<string, string> RuntimeParams { get; set; } = new Dictionary<string, string>();
     }
 
     internal sealed class PendingPlanCard
@@ -98,7 +99,8 @@ namespace CardMoba.BattleCore.Core
         public List<EffectResult> PlayInstantCard(
             BattleContext ctx,
             string playerId,
-            string cardInstanceId)
+            string cardInstanceId,
+            Dictionary<string, string>? runtimeParams = null)
         {
             if (IsBattleOver) return new List<EffectResult>();
 
@@ -129,7 +131,7 @@ namespace CardMoba.BattleCore.Core
                 return new List<EffectResult>();
             }
 
-            StampCardSourceMetadata(ctx, effects, card);
+            StampCardSourceMetadata(ctx, effects, card, runtimeParams);
             ctx.RoundLog.Add($"[RoundManager] 玩家 {playerId} 打出瞬策牌 {cardInstanceId}（{effectiveConfigId}）。");
 
             var results = _settlement.ResolveInstantFromCard(ctx, playerId, card, effects);
@@ -170,7 +172,7 @@ namespace CardMoba.BattleCore.Core
                 return false;
             }
 
-            StampCardSourceMetadata(ctx, resolvedEffects, card);
+            StampCardSourceMetadata(ctx, resolvedEffects, card, planCard.RuntimeParams);
 
             if (!ctx.CardManager.CommitPlanCard(ctx, planCard.CardInstanceId))
             {
@@ -454,7 +456,8 @@ namespace CardMoba.BattleCore.Core
         private static void StampCardSourceMetadata(
             BattleContext ctx,
             List<EffectUnit> effects,
-            BattleCard card)
+            BattleCard card,
+            Dictionary<string, string>? runtimeParams = null)
         {
             var player = ctx.GetPlayer(card.OwnerId);
             int instancePlayedCount = 0;
@@ -465,6 +468,12 @@ namespace CardMoba.BattleCore.Core
 
             foreach (var effect in effects)
             {
+                if (runtimeParams != null)
+                {
+                    foreach (var kv in runtimeParams)
+                        effect.Params[kv.Key] = kv.Value;
+                }
+
                 effect.Params["sourceCardInstanceId"] = card.InstanceId;
                 effect.Params["sourceCardConfigId"] = effectiveConfigId;
                 effect.Params["sourceCardBaseConfigId"] = card.ConfigId;

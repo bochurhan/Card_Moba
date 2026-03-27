@@ -187,6 +187,16 @@ namespace CardMoba.Tests
                 Layer = SettleLayer.Resource,
             };
 
+        private static EffectUnit MakeMoveSelectedCardToDeckTopEffect()
+            => new EffectUnit
+            {
+                EffectId = "move_selected_card_to_deck_top",
+                Type = EffectType.MoveSelectedCardToDeckTop,
+                TargetType = "Self",
+                ValueExpression = "0",
+                Layer = SettleLayer.Resource,
+            };
+
         private static BattleCard GiveHandCard(
             BattleContext ctx,
             string playerId,
@@ -200,6 +210,25 @@ namespace CardMoba.Tests
                 ConfigId = configId,
                 OwnerId = playerId,
                 Zone = CardZone.Hand,
+            };
+            player.AllCards.Add(card);
+            return card;
+        }
+
+        private static BattleCard GiveCardInZone(
+            BattleContext ctx,
+            string playerId,
+            string instanceId,
+            CardZone zone,
+            string configId = "test_card")
+        {
+            var player = ctx.GetPlayer(playerId)!;
+            var card = new BattleCard
+            {
+                InstanceId = instanceId,
+                ConfigId = configId,
+                OwnerId = playerId,
+                Zone = zone,
             };
             player.AllCards.Add(card);
             return card;
@@ -1735,6 +1764,114 @@ namespace CardMoba.Tests
             rm.ResolvePlayCost(ctx, "P1", strike).FinalCost.Should().Be(1);
             rm.PlayInstantCard(ctx, "P1", "weapon_cost_projection").Should().NotBeEmpty();
             rm.ResolvePlayCost(ctx, "P1", strike).FinalCost.Should().Be(4);
+        }
+
+        [Fact]
+        public void T52_Retrieve_MovesSelectedDiscardCard_ToDeckTop_AndDrawsExactInstance()
+        {
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinition("retrieve", MakeMoveSelectedCardToDeckTopEffect()),
+                MakeCardDefinition("deck_filler", MakeDamageEffect(1)),
+                MakeCardDefinition("rampage", MakeDamageEffect(6)));
+            var result = CreateTestBattle(mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            var retrieve = GiveHandCard(ctx, "P1", "retrieve_card", "retrieve");
+            var selected = GiveCardInZone(ctx, "P1", "discard_target", CardZone.Discard, "rampage");
+            GiveCardInZone(ctx, "P1", "deck_card", CardZone.Deck, "deck_filler");
+
+            var playResults = rm.PlayInstantCard(
+                ctx,
+                "P1",
+                retrieve.InstanceId,
+                new Dictionary<string, string>
+                {
+                    [MoveSelectedCardToDeckTopHandler.SelectedCardInstanceIdKey] = selected.InstanceId,
+                });
+
+            playResults.Should().ContainSingle();
+            playResults[0].Success.Should().BeTrue();
+            selected.Zone.Should().Be(CardZone.Deck);
+
+            var drawn = ctx.CardManager.DrawCards(ctx, "P1", 1);
+            drawn.Should().ContainSingle();
+            drawn[0].InstanceId.Should().Be(selected.InstanceId);
+        }
+
+        [Fact]
+        public void T53_Retrieve_RejectsSelectedCard_OutsideOwnDiscard()
+        {
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinition("retrieve", MakeMoveSelectedCardToDeckTopEffect()),
+                MakeCardDefinition("deck_filler", MakeDamageEffect(1)));
+            var result = CreateTestBattle(mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            var retrieve = GiveHandCard(ctx, "P1", "retrieve_invalid", "retrieve");
+            var enemyDiscard = GiveCardInZone(ctx, "P2", "enemy_discard_target", CardZone.Discard, "deck_filler");
+            var ownHandCard = GiveHandCard(ctx, "P1", "own_hand_target", "deck_filler");
+
+            var enemySelectionResult = rm.PlayInstantCard(
+                ctx,
+                "P1",
+                retrieve.InstanceId,
+                new Dictionary<string, string>
+                {
+                    [MoveSelectedCardToDeckTopHandler.SelectedCardInstanceIdKey] = enemyDiscard.InstanceId,
+                });
+
+            enemySelectionResult.Should().ContainSingle();
+            enemySelectionResult[0].Success.Should().BeFalse();
+            enemyDiscard.Zone.Should().Be(CardZone.Discard);
+
+            ctx.CardManager.MoveCard(ctx, retrieve, CardZone.Hand);
+            var handSelectionResult = rm.PlayInstantCard(
+                ctx,
+                "P1",
+                retrieve.InstanceId,
+                new Dictionary<string, string>
+                {
+                    [MoveSelectedCardToDeckTopHandler.SelectedCardInstanceIdKey] = ownHandCard.InstanceId,
+                });
+
+            handSelectionResult.Should().ContainSingle();
+            handSelectionResult[0].Success.Should().BeFalse();
+            ownHandCard.Zone.Should().Be(CardZone.Hand);
+        }
+
+        [Fact]
+        public void T54_Retrieve_PreservesSelectedCard_InstanceState()
+        {
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinition("retrieve", MakeMoveSelectedCardToDeckTopEffect()),
+                MakeCardDefinition("rampage", MakeDamageEffect(6)));
+            var result = CreateTestBattle(mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            var retrieve = GiveHandCard(ctx, "P1", "retrieve_preserve", "retrieve");
+            var selected = GiveCardInZone(ctx, "P1", "rampage_preserve", CardZone.Discard, "rampage");
+            ctx.AllPlayers["P1"].PlayedCountByInstanceId[selected.InstanceId] = 2;
+
+            var playResults = rm.PlayInstantCard(
+                ctx,
+                "P1",
+                retrieve.InstanceId,
+                new Dictionary<string, string>
+                {
+                    [MoveSelectedCardToDeckTopHandler.SelectedCardInstanceIdKey] = selected.InstanceId,
+                });
+
+            playResults.Should().ContainSingle();
+            playResults[0].Success.Should().BeTrue();
+            ctx.AllPlayers["P1"].PlayedCountByInstanceId[selected.InstanceId].Should().Be(2);
+
+            var drawn = ctx.CardManager.DrawCards(ctx, "P1", 1);
+            drawn.Should().ContainSingle();
+            drawn[0].InstanceId.Should().Be(selected.InstanceId);
+            ctx.AllPlayers["P1"].PlayedCountByInstanceId[drawn[0].InstanceId].Should().Be(2);
         }
     }
 }

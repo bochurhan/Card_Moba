@@ -46,5 +46,6 @@ namespace CardMoba.Protocol.Enums
         DOT = 33,
         ReturnSourceCardToHandAtRoundEnd = 34,
         UpgradeCardsInHand = 35,
+        MoveSelectedCardToDeckTop = 36,
     }
 }

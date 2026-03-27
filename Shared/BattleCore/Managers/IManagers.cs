@@ -60,6 +60,9 @@ namespace CardMoba.BattleCore.Managers
         /// <summary>将卡牌移动到指定区域</summary>
         void MoveCard(BattleContext ctx, BattleCard card, CardZone targetZone);
 
+        /// <summary>将现有卡牌实例移动到牌库顶。</summary>
+        bool MoveCardToTopOfDeck(BattleContext ctx, BattleCard card);
+
         /// <summary>
         /// 扫描所有玩家手牌中的状态牌，触发 OnStatCardHeld 效果，推入 PendingQueue
         /// </summary>

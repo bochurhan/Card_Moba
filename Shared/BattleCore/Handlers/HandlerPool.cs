@@ -65,6 +65,7 @@ namespace CardMoba.BattleCore.Handlers
             Register(EffectType.Draw,         new DrawCardHandler());
             Register(EffectType.GainEnergy,   new GainEnergyHandler());
             Register(EffectType.GenerateCard, new GenerateCardHandler());
+            Register(EffectType.MoveSelectedCardToDeckTop, new MoveSelectedCardToDeckTopHandler());
             Register(EffectType.ReturnSourceCardToHandAtRoundEnd, new ReturnSourceCardToHandAtRoundEndHandler());
             Register(EffectType.UpgradeCardsInHand, new UpgradeCardsInHandHandler());
             Register(EffectType.Lifesteal,    new LifestealHandler());
