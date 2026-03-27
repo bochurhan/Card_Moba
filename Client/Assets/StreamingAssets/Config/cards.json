@@ -119,6 +119,22 @@
       ]
     },
     {
+      "cardId": 1008,
+      "cardName": "重拾",
+      "description": "从你的弃牌堆中选择 1 张牌，置于抽牌堆顶。",
+      "trackType": "Instant",
+      "targetType": "Self",
+      "heroClass": "Warrior",
+      "effectRange": "Self",
+      "layer": "Resource",
+      "tags": ["Resource", "Recycle"],
+      "energyCost": 1,
+      "rarity": 1,
+      "effects": [
+        { "effectType": 36, "value": 0, "repeatCount": 1, "duration": 0, "targetOverride": "Self" }
+      ]
+    },
+    {
       "cardId": 2001,
       "cardName": "无情连打",
       "description": "造成 3 点物理伤害 3 次。",

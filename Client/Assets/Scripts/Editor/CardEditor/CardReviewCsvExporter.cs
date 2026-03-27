@@ -72,6 +72,9 @@ namespace CardMoba.Client.Editor.CardEditor
             if (effect.EffectType == EffectType.GenerateCard && !string.IsNullOrWhiteSpace(effect.GenerateCardConfigId))
                 parts.Add($"card={effect.GenerateCardConfigId}@{effect.GenerateCardZone}" + (effect.GenerateCardIsTemp ? " temp" : ""));
 
+            if (effect.EffectType == EffectType.MoveSelectedCardToDeckTop)
+                parts.Add("selected-discard->deck-top");
+
             if (effect.EffectType == EffectType.ReturnSourceCardToHandAtRoundEnd)
                 parts.Add("return-source-card@end-round");
 

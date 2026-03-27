@@ -82,8 +82,14 @@ namespace CardMoba.Client.Presentation.Battle
 
         private readonly List<GameObject> _cardObjects = new List<GameObject>();
         private readonly List<string>     _logMessages = new List<string>();
+        private readonly List<GameObject> _discardSelectionOptionObjects = new List<GameObject>();
+
+        private GameObject _discardSelectionPanel;
+        private RectTransform _discardSelectionDialog;
+        private TextMeshProUGUI _discardSelectionTitleText;
 
         private const int MaxLogLines = 50;
+        private const string SelectedCardInstanceIdParam = "selectedCardInstanceId";
 
         // ══════════════════════════════════════════════════════════════════════
         // Unity 生命周期
@@ -161,6 +167,7 @@ namespace CardMoba.Client.Presentation.Battle
         {
             _logMessages.Clear();
             _isTimerLocked = false;
+            HideDiscardSelection();
             if (_gameOverPanel != null) _gameOverPanel.SetActive(false);
             if (_logText       != null) _logText.text = "";
             _gameManager.StartBattle();
@@ -174,7 +181,7 @@ namespace CardMoba.Client.Presentation.Battle
         private void RefreshAllUI()
         {
             RefreshPlayerPanel(_gameManager.GetHumanPlayer(), true);
-            RefreshPlayerPanel(_gameManager.GetAiPlayer(),    false);
+            RefreshPlayerPanel(_gameManager.GetAiPlayer(), false);
             RefreshHandCards();
             RefreshButtons();
             if (_roundText != null) _roundText.text = $"第 {_gameManager.CurrentRound} 回合";
@@ -192,17 +199,20 @@ namespace CardMoba.Client.Presentation.Battle
             var shieldText  = isHuman ? _myShieldText  : _enemyShieldText;
             var deckInfoTxt = isHuman ? _myDeckInfoText : _enemyDeckInfoText;
 
-            if (nameText   != null) nameText.text   = player.PlayerId;
+            if (nameText   != null) nameText.text   = isHuman ? "你" : "对手";
             if (hpText     != null) hpText.text     = $"HP: {hero.Hp}/{hero.MaxHp}";
             if (hpBar      != null) { hpBar.maxValue = hero.MaxHp; hpBar.value = hero.Hp; }
-            if (shieldText != null) shieldText.text = hero.Shield > 0 ? $"护盾: {hero.Shield}" : "";
+            if (shieldText != null) shieldText.text = hero.Shield > 0 ? $"护盾: {hero.Shield}" : string.Empty;
 
             if (deckInfoTxt != null)
             {
                 int h = player.GetCardsInZone(CardZone.Hand).Count;
                 int d = player.GetCardsInZone(CardZone.Deck).Count;
                 int p = player.GetCardsInZone(CardZone.Discard).Count;
-                deckInfoTxt.text = $"手牌:{h}  牌库:{d}  弃牌:{p}";
+                string buffSummary = isHuman
+                    ? _gameManager.GetHumanBuffSummary()
+                    : _gameManager.GetAiBuffSummary();
+                deckInfoTxt.text = $"手牌:{h}  牌库:{d}  弃牌:{p}\nBuff: {buffSummary}";
             }
         }
 
@@ -269,7 +279,7 @@ namespace CardMoba.Client.Presentation.Battle
 
         private void RefreshButtons()
         {
-            bool can = _gameManager.IsPlayerTurn && !_gameManager.IsGameOver && !_isTimerLocked;
+            bool can = _gameManager.IsPlayerTurn && !_gameManager.IsGameOver && !_isTimerLocked && !IsDiscardSelectionOpen();
 
             if (_endTurnButton     != null) _endTurnButton.interactable = can;
             if (_endTurnButtonText != null)
@@ -292,12 +302,19 @@ namespace CardMoba.Client.Presentation.Battle
             if (!_gameManager.IsPlayerTurn) { AddLogMessage("<color=#ff8888>当前不是你的回合</color>"); return; }
             if (_gameManager.IsGameOver)    { AddLogMessage("<color=#ff8888>游戏已结束</color>");       return; }
             if (_isTimerLocked)             { AddLogMessage("<color=#ff8888>时间已到，等待结算...</color>"); return; }
+            if (IsDiscardSelectionOpen())   { AddLogMessage("<color=#ff8888>请先完成当前选牌操作</color>"); return; }
 
             var handCards = _gameManager.GetHumanHandCards();
             if (handIndex < 0 || handIndex >= handCards.Count) return;
 
             var (battleCard, config) = handCards[handIndex];
             bool isInstant = config?.TrackType == CardTrackType.Instant;
+
+            if (RequiresDiscardSelection(config))
+            {
+                ShowDiscardSelection(handIndex, isInstant, config?.CardName ?? battleCard.ConfigId);
+                return;
+            }
 
             string result = isInstant
                 ? _gameManager.PlayerPlayInstantCard(handIndex)
@@ -328,6 +345,7 @@ namespace CardMoba.Client.Presentation.Battle
         private void OnTimerLocked()
         {
             _isTimerLocked = true;
+            HideDiscardSelection();
             RefreshButtons();
             AddLogMessage("<color=#ffcc44>⏱ 操作时间结束，自动结算...</color>");
             if (_gameManager.IsPlayerTurn && !_gameManager.IsGameOver)
@@ -351,6 +369,186 @@ namespace CardMoba.Client.Presentation.Battle
             }
         }
 
+        private static bool RequiresDiscardSelection(CardConfig config)
+        {
+            if (config?.Effects == null)
+                return false;
+
+            foreach (var effect in config.Effects)
+            {
+                if (effect.EffectType == EffectType.MoveSelectedCardToDeckTop)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private bool IsDiscardSelectionOpen()
+        {
+            return _discardSelectionPanel != null && _discardSelectionPanel.activeSelf;
+        }
+
+        private void ShowDiscardSelection(int handIndex, bool isInstant, string sourceCardName)
+        {
+            var discardCards = _gameManager.GetHumanDiscardCards();
+            if (discardCards.Count == 0)
+            {
+                AddLogMessage("<color=#ff8888>弃牌堆为空，无法打出这张牌</color>");
+                return;
+            }
+
+            EnsureDiscardSelectionPanel();
+            if (_discardSelectionPanel == null || _discardSelectionDialog == null || _discardSelectionTitleText == null)
+                return;
+
+            ClearDiscardSelectionOptions();
+            _discardSelectionTitleText.text = $"为【{sourceCardName}】选择一张弃牌";
+
+            const float startY = -72f;
+            const float spacing = 44f;
+            for (int i = 0; i < discardCards.Count; i++)
+            {
+                var (selectedCard, selectedConfig) = discardCards[i];
+                string selectedCardName = selectedConfig?.CardName ?? selectedCard.GetEffectiveConfigId();
+                float y = startY - i * spacing;
+                var optionObject = CreateDiscardSelectionButton(
+                    _discardSelectionDialog,
+                    $"DiscardOption_{i}",
+                    $"[{i + 1}] {selectedCardName}",
+                    new Vector2(0f, y),
+                    () => ConfirmDiscardSelection(handIndex, isInstant, sourceCardName, selectedCard, selectedCardName));
+                _discardSelectionOptionObjects.Add(optionObject);
+            }
+
+            _discardSelectionPanel.SetActive(true);
+            RefreshButtons();
+        }
+
+        private void ConfirmDiscardSelection(int handIndex, bool isInstant, string sourceCardName, BattleCard selectedCard, string selectedCardName)
+        {
+            HideDiscardSelection();
+
+            var runtimeParams = new Dictionary<string, string>
+            {
+                [SelectedCardInstanceIdParam] = selectedCard.InstanceId,
+            };
+
+            string result = isInstant
+                ? _gameManager.PlayerPlayInstantCard(handIndex, runtimeParams)
+                : _gameManager.PlayerCommitPlanCard(handIndex, runtimeParams);
+
+            AddLogMessage($"<color=#aaffaa>出牌: {sourceCardName}（选择 {selectedCardName}） -> {result}</color>");
+        }
+
+        private void HideDiscardSelection()
+        {
+            ClearDiscardSelectionOptions();
+            if (_discardSelectionPanel != null)
+                _discardSelectionPanel.SetActive(false);
+            RefreshButtons();
+        }
+
+        private void ClearDiscardSelectionOptions()
+        {
+            foreach (var optionObject in _discardSelectionOptionObjects)
+            {
+                if (optionObject != null)
+                    Destroy(optionObject);
+            }
+
+            _discardSelectionOptionObjects.Clear();
+        }
+
+        private void EnsureDiscardSelectionPanel()
+        {
+            if (_discardSelectionPanel != null)
+                return;
+
+            Canvas canvas = GetComponentInParent<Canvas>() ?? GetComponent<Canvas>();
+            if (canvas == null)
+            {
+                Debug.LogError("[BattleUI] 无法创建弃牌选择面板：未找到 Canvas。");
+                return;
+            }
+
+            _discardSelectionPanel = new GameObject("DiscardSelectionPanel", typeof(RectTransform), typeof(Image));
+            _discardSelectionPanel.transform.SetParent(canvas.transform, false);
+            var panelRect = (RectTransform)_discardSelectionPanel.transform;
+            panelRect.anchorMin = Vector2.zero;
+            panelRect.anchorMax = Vector2.one;
+            panelRect.offsetMin = Vector2.zero;
+            panelRect.offsetMax = Vector2.zero;
+            var panelImage = _discardSelectionPanel.GetComponent<Image>();
+            panelImage.color = new Color(0f, 0f, 0f, 0.72f);
+
+            var dialog = new GameObject("Dialog", typeof(RectTransform), typeof(Image));
+            dialog.transform.SetParent(_discardSelectionPanel.transform, false);
+            _discardSelectionDialog = (RectTransform)dialog.transform;
+            _discardSelectionDialog.anchorMin = new Vector2(0.5f, 0.5f);
+            _discardSelectionDialog.anchorMax = new Vector2(0.5f, 0.5f);
+            _discardSelectionDialog.pivot = new Vector2(0.5f, 0.5f);
+            _discardSelectionDialog.sizeDelta = new Vector2(540f, 420f);
+            _discardSelectionDialog.anchoredPosition = Vector2.zero;
+            var dialogImage = dialog.GetComponent<Image>();
+            dialogImage.color = new Color(0.12f, 0.15f, 0.2f, 0.95f);
+
+            var title = new GameObject("Title", typeof(RectTransform), typeof(TextMeshProUGUI));
+            title.transform.SetParent(dialog.transform, false);
+            var titleRect = (RectTransform)title.transform;
+            titleRect.anchorMin = new Vector2(0.5f, 1f);
+            titleRect.anchorMax = new Vector2(0.5f, 1f);
+            titleRect.pivot = new Vector2(0.5f, 1f);
+            titleRect.sizeDelta = new Vector2(480f, 40f);
+            titleRect.anchoredPosition = new Vector2(0f, -18f);
+            _discardSelectionTitleText = title.GetComponent<TextMeshProUGUI>();
+            _discardSelectionTitleText.alignment = TextAlignmentOptions.Center;
+            _discardSelectionTitleText.fontSize = 28;
+            _discardSelectionTitleText.text = "选择一张弃牌";
+
+            CreateDiscardSelectionButton(
+                _discardSelectionDialog,
+                "CancelButton",
+                "取消",
+                new Vector2(0f, 28f),
+                HideDiscardSelection);
+
+            _discardSelectionPanel.SetActive(false);
+        }
+
+        private GameObject CreateDiscardSelectionButton(Transform parent, string name, string label, Vector2 anchoredPosition, Action onClick)
+        {
+            var buttonObject = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
+            buttonObject.transform.SetParent(parent, false);
+
+            var rect = (RectTransform)buttonObject.transform;
+            rect.anchorMin = new Vector2(0.5f, 1f);
+            rect.anchorMax = new Vector2(0.5f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.sizeDelta = new Vector2(440f, 36f);
+            rect.anchoredPosition = anchoredPosition;
+
+            var image = buttonObject.GetComponent<Image>();
+            image.color = new Color(0.22f, 0.28f, 0.36f, 1f);
+
+            var button = buttonObject.GetComponent<Button>();
+            button.onClick.AddListener(() => onClick());
+
+            var textObject = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
+            textObject.transform.SetParent(buttonObject.transform, false);
+            var textRect = (RectTransform)textObject.transform;
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = new Vector2(12f, 6f);
+            textRect.offsetMax = new Vector2(-12f, -6f);
+
+            var text = textObject.GetComponent<TextMeshProUGUI>();
+            text.alignment = TextAlignmentOptions.Center;
+            text.fontSize = 24;
+            text.text = label;
+
+            return buttonObject;
+        }
+
         // ══════════════════════════════════════════════════════════════════════
         // 日志 / 游戏结束
         // ══════════════════════════════════════════════════════════════════════
@@ -370,6 +568,7 @@ namespace CardMoba.Client.Presentation.Battle
 
         private void ShowGameOver(int winnerCode)
         {
+            HideDiscardSelection();
             if (_gameOverPanel != null) _gameOverPanel.SetActive(true);
             if (_gameOverText  != null)
                 _gameOverText.text = winnerCode == 1 ? "[胜利] 你赢了！"

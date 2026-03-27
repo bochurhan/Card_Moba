@@ -141,16 +141,16 @@ namespace CardMoba.Client.GameLogic
                     new PlayerSetupData
                     {
                         PlayerId     = HumanPlayerId,
-                        MaxHp        = 30,
-                        InitialHp    = 30,
+                        MaxHp        = 200,
+                        InitialHp    = 200,
                         InitialArmor = 0,
                         DeckConfig   = humanDeck,
                     },
                     new PlayerSetupData
                     {
                         PlayerId     = AiPlayerId,
-                        MaxHp        = 30,
-                        InitialHp    = 30,
+                        MaxHp        = 200,
+                        InitialHp    = 200,
                         InitialArmor = 0,
                         DeckConfig   = aiDeck,
                     },
@@ -185,7 +185,13 @@ namespace CardMoba.Client.GameLogic
         public string PlayerPlayInstantCard(int handIndex)
         {
             if (!IsPlayerTurn || IsGameOver) return "当前无法操作";
-            return PlayCardInternal(HumanPlayerId, handIndex, instant: true);
+            return PlayCardInternal(HumanPlayerId, handIndex, instant: true, runtimeParams: null);
+        }
+
+        public string PlayerPlayInstantCard(int handIndex, Dictionary<string, string> runtimeParams)
+        {
+            if (!IsPlayerTurn || IsGameOver) return "当前无法操作";
+            return PlayCardInternal(HumanPlayerId, handIndex, instant: true, runtimeParams);
         }
 
         /// <summary>
@@ -194,7 +200,13 @@ namespace CardMoba.Client.GameLogic
         public string PlayerCommitPlanCard(int handIndex)
         {
             if (!IsPlayerTurn || IsGameOver) return "当前无法操作";
-            return PlayCardInternal(HumanPlayerId, handIndex, instant: false);
+            return PlayCardInternal(HumanPlayerId, handIndex, instant: false, runtimeParams: null);
+        }
+
+        public string PlayerCommitPlanCard(int handIndex, Dictionary<string, string> runtimeParams)
+        {
+            if (!IsPlayerTurn || IsGameOver) return "当前无法操作";
+            return PlayCardInternal(HumanPlayerId, handIndex, instant: false, runtimeParams);
         }
 
         /// <summary>
@@ -259,12 +271,48 @@ namespace CardMoba.Client.GameLogic
             return list;
         }
 
+        public List<(BattleCard Card, CardConfig Config)> GetHumanDiscardCards()
+        {
+            var list = new List<(BattleCard, CardConfig)>();
+            var player = _ctx?.GetPlayer(HumanPlayerId);
+            if (player == null) return list;
+
+            foreach (var bc in player.GetCardsInZone(CardZone.Discard))
+            {
+                var cfg = GetEffectiveCardConfig(bc);
+                list.Add((bc, cfg));
+            }
+
+            return list;
+        }
+
         public int GetDisplayedCost(BattleCard battleCard)
         {
             if (_ctx == null || _roundManager == null || battleCard == null)
                 return 0;
 
             return _roundManager.ResolvePlayCost(_ctx, battleCard.OwnerId, battleCard).FinalCost;
+        }
+
+        public string GetHumanBuffSummary() => GetPlayerBuffSummary(HumanPlayerId);
+
+        public string GetAiBuffSummary() => GetPlayerBuffSummary(AiPlayerId);
+
+        public string GetPlayerBuffSummary(string playerId)
+        {
+            var player = _ctx?.GetPlayer(playerId);
+            if (player == null || _ctx == null)
+                return "无";
+
+            var buffs = _ctx.BuffManager.GetBuffs(player.HeroEntity.EntityId);
+            if (buffs.Count == 0)
+                return "无";
+
+            var parts = new List<string>(buffs.Count);
+            foreach (var buff in buffs)
+                parts.Add(FormatBuff(buff));
+
+            return string.Join(" / ", parts);
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -298,7 +346,11 @@ namespace CardMoba.Client.GameLogic
         // 内部：出牌核心逻辑
         // ══════════════════════════════════════════════════════════════════════
 
-        private string PlayCardInternal(string playerId, int handIndex, bool instant)
+        private string PlayCardInternal(
+            string playerId,
+            int handIndex,
+            bool instant,
+            Dictionary<string, string>? runtimeParams)
         {
             var player = _ctx.GetPlayer(playerId);
             if (player == null) return "玩家不存在";
@@ -336,13 +388,14 @@ namespace CardMoba.Client.GameLogic
 
             string cardName = cardConfig.CardName;
             bool success;
+            List<EffectResult>? instantResults = null;
 
             // ── 出牌 ─────────────────────────────────────────────────
             if (instant)
             {
                 // 瞬策牌：先移出手牌区，再结算
-                var results = _roundManager.PlayInstantCard(_ctx, playerId, battleCard.InstanceId);
-                success = results.Count > 0 || battleCard.Zone != CardZone.Hand;
+                instantResults = _roundManager.PlayInstantCard(_ctx, playerId, battleCard.InstanceId, runtimeParams);
+                success = instantResults.Count > 0 || battleCard.Zone != CardZone.Hand;
                 FlushLogs();
             }
             else
@@ -352,6 +405,7 @@ namespace CardMoba.Client.GameLogic
                 {
                     PlayerId       = playerId,
                     CardInstanceId = battleCard.InstanceId,
+                    RuntimeParams  = runtimeParams ?? new Dictionary<string, string>(),
                 });
                 FlushLogs();
             }
@@ -374,6 +428,7 @@ namespace CardMoba.Client.GameLogic
             if (instant)
             {
                 OnLogMessage?.Invoke($"<color=#aaffaa>{(playerId == HumanPlayerId ? "你" : "对手")} 打出瞬策牌【{cardName}】（花费 {cost} 点能量）</color>");
+                LogInstantEffectResults(playerId, cardName, instantResults);
             }
             else
             {
@@ -426,7 +481,7 @@ namespace CardMoba.Client.GameLogic
                 if (cfg == null) continue;
 
                 bool isInstant = cfg.TrackType == CardTrackType.Instant;
-                PlayCardInternal(AiPlayerId, 0, isInstant);
+                PlayCardInternal(AiPlayerId, 0, isInstant, runtimeParams: null);
             }
         }
 
@@ -460,6 +515,7 @@ namespace CardMoba.Client.GameLogic
             1003, 1003,               // 放血 x2
             1004, 1004,               // 疲劳行军 x2
             1005,                     // 竭泽而渔 x1
+            1008,                     // 重拾 x1
             2002, 2002,               // 以血还血 x2
             2003, 2003,               // 鲜血护盾 x2
             2004,                     // 死亡收割 x1
@@ -685,6 +741,222 @@ namespace CardMoba.Client.GameLogic
             return log;
         }
 
+        private void LogInstantEffectResults(string playerId, string cardName, List<EffectResult>? results)
+        {
+            if (results == null || results.Count == 0)
+                return;
+
+            var parts = new List<string>();
+            foreach (var result in results)
+            {
+                var summary = BuildEffectSummary(result);
+                if (!string.IsNullOrWhiteSpace(summary))
+                    parts.Add(summary);
+            }
+
+            if (parts.Count == 0)
+                return;
+
+            OnLogMessage?.Invoke(
+                $"<color=#cceeff>[效果] {GetPlayerLabel(playerId)}的【{cardName}】：{string.Join("；", parts)}</color>");
+        }
+
+        private string? BuildEffectSummary(EffectResult result)
+        {
+            if (result == null || !result.Success)
+                return null;
+
+            switch (result.Type)
+            {
+                case EffectType.Damage:
+                case EffectType.Pierce:
+                    return result.TotalRealHpDamage > 0 ? $"造成 {result.TotalRealHpDamage} 点生命伤害" : null;
+
+                case EffectType.Heal:
+                case EffectType.Lifesteal:
+                    return result.TotalRealHeal > 0 ? $"恢复 {result.TotalRealHeal} 点生命" : null;
+
+                case EffectType.Shield:
+                    return result.TotalRealShield > 0 ? $"获得 {result.TotalRealShield} 点护盾" : null;
+
+                case EffectType.Draw:
+                    return TryGetExtraInt(result, "drawnCount", out var drawnCount) && drawnCount > 0
+                        ? $"抽 {drawnCount} 张牌"
+                        : null;
+
+                case EffectType.AddBuff:
+                    if (!TryGetExtraInt(result, "appliedCount", out var appliedCount) || appliedCount <= 0)
+                        return null;
+
+                    string buffConfigId = TryGetExtraString(result, "buffConfigId") ?? string.Empty;
+                    string buffName = GetBuffDisplayName(buffConfigId);
+                    string valueText = TryGetExtraInt(result, "buffValue", out var buffValue) && buffValue > 0
+                        ? FormatBuffValue(buffConfigId, buffValue)
+                        : string.Empty;
+                    string durationText = TryGetExtraInt(result, "buffDuration", out var buffDuration)
+                        ? FormatDuration(buffDuration)
+                        : string.Empty;
+
+                    var buffParts = new List<string>();
+                    if (!string.IsNullOrWhiteSpace(valueText))
+                        buffParts.Add(valueText);
+                    if (!string.IsNullOrWhiteSpace(durationText))
+                        buffParts.Add(durationText);
+
+                    return buffParts.Count > 0
+                        ? $"附加 {buffName}（{string.Join("，", buffParts)}）"
+                        : $"附加 {buffName}";
+
+                case EffectType.GainEnergy:
+                    return TryGetExtraInt(result, "gainedEnergy", out var gainedEnergy) && gainedEnergy > 0
+                        ? $"获得 {gainedEnergy} 点能量"
+                        : null;
+
+                case EffectType.GenerateCard:
+                    if (!TryGetExtraInt(result, "generatedCount", out var generatedCount) || generatedCount <= 0)
+                        return null;
+
+                    string generatedConfigId = TryGetExtraString(result, "generatedConfigId") ?? string.Empty;
+                    string generatedName = ResolveCardName(generatedConfigId);
+                    string generatedZone = TryGetExtraString(result, "generatedZone") ?? "Hand";
+                    return $"生成 {generatedCount} 张【{generatedName}】到{FormatZoneName(generatedZone)}";
+
+                case EffectType.MoveSelectedCardToDeckTop:
+                    string selectedConfigId = TryGetExtraString(result, "selectedCardConfigId") ?? string.Empty;
+                    return !string.IsNullOrWhiteSpace(selectedConfigId)
+                        ? $"将【{ResolveCardName(selectedConfigId)}】置于牌堆顶"
+                        : "将选择的弃牌置于牌堆顶";
+
+                case EffectType.UpgradeCardsInHand:
+                    return TryGetExtraInt(result, "upgradedCount", out var upgradedCount) && upgradedCount > 0
+                        ? $"升级 {upgradedCount} 张手牌"
+                        : null;
+
+                case EffectType.ReturnSourceCardToHandAtRoundEnd:
+                    return "本回合结束时返回手牌";
+            }
+
+            return null;
+        }
+
+        private static bool TryGetExtraInt(EffectResult result, string key, out int value)
+        {
+            value = 0;
+            if (!result.Extra.TryGetValue(key, out var raw) || raw == null)
+                return false;
+
+            if (raw is int intValue)
+            {
+                value = intValue;
+                return true;
+            }
+
+            return int.TryParse(raw.ToString(), out value);
+        }
+
+        private static string? TryGetExtraString(EffectResult result, string key)
+        {
+            if (!result.Extra.TryGetValue(key, out var raw) || raw == null)
+                return null;
+
+            return raw.ToString();
+        }
+
+        private string FormatBuff(BuffUnit buff)
+        {
+            string name = !string.IsNullOrWhiteSpace(buff.DisplayName)
+                ? buff.DisplayName
+                : GetBuffDisplayName(buff.ConfigId);
+
+            var parts = new List<string>();
+            if (buff.Value > 0)
+                parts.Add(FormatBuffValue(buff.ConfigId, buff.Value));
+
+            string durationText = FormatDuration(buff.RemainingRounds);
+            if (!string.IsNullOrWhiteSpace(durationText))
+                parts.Add(durationText);
+
+            return parts.Count > 0
+                ? $"{name}({string.Join("，", parts)})"
+                : name;
+        }
+
+        private string FormatBuffValue(string buffConfigId, int value)
+        {
+            string lower = buffConfigId?.ToLowerInvariant() ?? string.Empty;
+            return lower switch
+            {
+                "weak" => $"{value}%",
+                "vulnerable" => $"{value}%",
+                _ => value.ToString(),
+            };
+        }
+
+        private static string FormatDuration(int remainingRounds)
+        {
+            if (remainingRounds < 0)
+                return "本场";
+
+            if (remainingRounds == 0)
+                return string.Empty;
+
+            return $"{remainingRounds}回合";
+        }
+
+        private string GetBuffDisplayName(string buffConfigId)
+        {
+            if (string.IsNullOrWhiteSpace(buffConfigId))
+                return "未知Buff";
+
+            var buffConfig = ResolveRuntimeBuffConfig(buffConfigId);
+            if (buffConfig != null && !string.IsNullOrWhiteSpace(buffConfig.BuffName))
+                return buffConfig.BuffName;
+
+            return buffConfigId;
+        }
+
+        private string ResolveCardName(string configId)
+        {
+            if (string.IsNullOrWhiteSpace(configId))
+                return "未知卡牌";
+
+            return _cardConfigMap.TryGetValue(configId, out var config)
+                ? config.CardName
+                : configId;
+        }
+
+        private string GetPlayerLabel(string playerId)
+        {
+            return playerId == HumanPlayerId ? "你"
+                : playerId == AiPlayerId ? "对手"
+                : playerId;
+        }
+
+        private string GetEntityLabel(string entityId)
+        {
+            if (_ctx != null)
+            {
+                foreach (var player in _ctx.AllPlayers.Values)
+                {
+                    if (player.HeroEntity.EntityId == entityId)
+                        return GetPlayerLabel(player.PlayerId);
+                }
+            }
+
+            return entityId;
+        }
+
+        private static string FormatZoneName(string zone)
+        {
+            return zone.ToLowerInvariant() switch
+            {
+                "deck" => "牌堆",
+                "discard" => "弃牌堆",
+                "consume" => "消耗区",
+                _ => "手牌",
+            };
+        }
+
         private void AppendPlayerSnapshot(System.Text.StringBuilder sb, PlayerData? p, string label)
         {
             if (p == null) { sb.AppendLine($"  [{label}]: 数据不存在"); return; }
@@ -704,6 +976,7 @@ namespace CardMoba.Client.GameLogic
                 + (hero.Armor  > 0 ? $"   护甲: <color=#88ccff>{hero.Armor}</color>" : ""));
             sb.AppendLine($"    能量  : <color=#ffdd55>{p.Energy}/{p.MaxEnergy}</color>");
             sb.AppendLine($"    手牌  : {hand.Count}  |  牌库: {deck.Count}   弃牌: {discard.Count}");
+            sb.AppendLine($"    Buff  : {GetPlayerBuffSummary(p.PlayerId)}");
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -728,23 +1001,33 @@ namespace CardMoba.Client.GameLogic
                     case DamageDealtEvent dmg:
                         if (dmg.RealHpDamage > 0)
                             _mgr.OnLogMessage?.Invoke(
-                                $"<color=#ff6666>[伤害] {dmg.SourceEntityId} -> {dmg.TargetEntityId} {dmg.RealHpDamage} 点"
+                                $"<color=#ff6666>[伤害] {_mgr.GetEntityLabel(dmg.SourceEntityId)} -> {_mgr.GetEntityLabel(dmg.TargetEntityId)} {dmg.RealHpDamage} 点"
                                 + (dmg.ShieldAbsorbed > 0 ? $"（护盾吸收 {dmg.ShieldAbsorbed}）" : "")
                                 + "</color>");
 
                         else if (dmg.ShieldAbsorbed > 0)
                             _mgr.OnLogMessage?.Invoke(
-                                $"<color=#66aaff>[护盾] 吸收 {dmg.ShieldAbsorbed} 点伤害</color>");
+                                $"<color=#66aaff>[护盾] {_mgr.GetEntityLabel(dmg.TargetEntityId)} 吸收 {dmg.ShieldAbsorbed} 点伤害</color>");
                         break;
 
                     case HealEvent heal:
                         _mgr.OnLogMessage?.Invoke(
-                            $"<color=#66ee88>[治疗] {heal.TargetEntityId} 恢复 {heal.RealHealAmount} 点生命</color>");
+                            $"<color=#66ee88>[治疗] {_mgr.GetEntityLabel(heal.TargetEntityId)} 恢复 {heal.RealHealAmount} 点生命</color>");
                         break;
 
                     case ShieldGainedEvent sg:
                         _mgr.OnLogMessage?.Invoke(
-                            $"<color=#66aaff>[护盾] {sg.TargetEntityId} 获得 {sg.ShieldAmount} 点护盾</color>");
+                            $"<color=#66aaff>[护盾] {_mgr.GetEntityLabel(sg.TargetEntityId)} 获得 {sg.ShieldAmount} 点护盾</color>");
+                        break;
+
+                    case BuffAddedEvent buffAdded:
+                        _mgr.OnLogMessage?.Invoke(
+                            $"<color=#ffdd55>[Buff] {_mgr.GetEntityLabel(buffAdded.TargetEntityId)} 获得 {_mgr.FormatBuff(buffAdded.Buff)}</color>");
+                        break;
+
+                    case BuffRemovedEvent buffRemoved:
+                        _mgr.OnLogMessage?.Invoke(
+                            $"<color=#cccccc>[Buff] {_mgr.GetEntityLabel(buffRemoved.TargetEntityId)} 失去 {_mgr.GetBuffDisplayName(buffRemoved.BuffConfigId)}</color>");
                         break;
 
                     case RoundStartEvent rs:

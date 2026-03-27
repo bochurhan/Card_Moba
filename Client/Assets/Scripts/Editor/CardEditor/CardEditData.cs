@@ -224,6 +224,7 @@ namespace CardMoba.Client.Editor.CardEditor
                 EffectType.Pierce => $"穿透 {valueText} 点护甲",
                 EffectType.AddBuff when !string.IsNullOrWhiteSpace(BuffConfigId) => $"附加 Buff {BuffConfigId}",
                 EffectType.GenerateCard when !string.IsNullOrWhiteSpace(GenerateCardConfigId) => $"生成卡牌 {GenerateCardConfigId}",
+                EffectType.MoveSelectedCardToDeckTop => "选择 1 张弃牌堆中的牌，置于牌库顶部",
                 EffectType.ReturnSourceCardToHandAtRoundEnd => "回合结束时若此牌在弃牌堆，则返回手牌",
                 EffectType.UpgradeCardsInHand => $"升级当前手牌（{ProjectionLifetime}）",
                 _ => $"{EffectType}: {valueText}"
