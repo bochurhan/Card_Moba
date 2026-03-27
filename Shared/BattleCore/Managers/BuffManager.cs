@@ -526,6 +526,39 @@ namespace CardMoba.BattleCore.Managers
                     break;
                 }
 
+                case BuffType.BloodRitual:
+                {
+                    string triggerId = ctx.TriggerManager.Register(new TriggerUnit
+                    {
+                        TriggerName = $"blood-ritual-{runtimeId}",
+                        Timing = TriggerTiming.AfterTakeDamage,
+                        OwnerPlayerId = ownerPlayerId,
+                        SourceId = runtimeId,
+                        Priority = 200,
+                        RemainingTriggers = -1,
+                        RemainingRounds = -1,
+                        Effects = new List<EffectUnit>
+                        {
+                            new EffectUnit
+                            {
+                                EffectId = $"buff_blood_ritual_{runtimeId}",
+                                Type = EffectType.AddBuff,
+                                TargetType = "Self",
+                                ValueExpression = buff.Value.ToString(),
+                                Layer = SettleLayer.BuffSpecial,
+                                Conditions = new List<string> { "trigCtx.value > 0" },
+                                Params = new Dictionary<string, string>
+                                {
+                                    ["buffConfigId"] = "strength",
+                                    ["duration"] = "0",
+                                },
+                            },
+                        },
+                    });
+                    buff.RegisteredTriggerIds.Add(triggerId);
+                    break;
+                }
+
                 default:
                     ctx.RoundLog.Add($"[BuffManager] BuffType={config.BuffType} does not register runtime hooks.");
                     break;

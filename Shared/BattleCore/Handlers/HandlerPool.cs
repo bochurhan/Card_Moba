@@ -66,6 +66,7 @@ namespace CardMoba.BattleCore.Handlers
             Register(EffectType.GainEnergy,   new GainEnergyHandler());
             Register(EffectType.GenerateCard, new GenerateCardHandler());
             Register(EffectType.ReturnSourceCardToHandAtRoundEnd, new ReturnSourceCardToHandAtRoundEndHandler());
+            Register(EffectType.UpgradeCardsInHand, new UpgradeCardsInHandHandler());
             Register(EffectType.Lifesteal,    new LifestealHandler());
         }
 
@@ -110,6 +111,7 @@ namespace CardMoba.BattleCore.Handlers
             effect.ResolvedValue = _dynParamResolver.Resolve(
                 effect.ValueExpression,
                 ctx,
+                effect,
                 source,
                 priorResults,
                 triggerContext);

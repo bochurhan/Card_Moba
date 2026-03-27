@@ -40,7 +40,8 @@ namespace CardMoba.BattleCore.Core
                 Extra = new Dictionary<string, object>
                 {
                     ["cardInstanceId"] = card.InstanceId,
-                    ["cardConfigId"] = card.ConfigId,
+                    ["cardConfigId"] = card.GetEffectiveConfigId(),
+                    ["cardBaseConfigId"] = card.ConfigId,
                 },
             };
 
@@ -73,7 +74,7 @@ namespace CardMoba.BattleCore.Core
             {
                 PlayerId = playerId,
                 CardInstanceId = preparedCard.InstanceId,
-                CardConfigId = preparedCard.ConfigId,
+                CardConfigId = preparedCard.GetEffectiveConfigId(),
             });
 
             return priorResults;

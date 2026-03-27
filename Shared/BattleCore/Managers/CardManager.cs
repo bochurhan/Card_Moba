@@ -11,8 +11,8 @@ using CardMoba.BattleCore.Handlers;
 namespace CardMoba.BattleCore.Managers
 {
     /// <summary>
-    /// 管理 BattleCard 实例的生命周期和区位流转。
-    /// 不负责卡牌结算本身，结算副作用通过 EventBus / TriggerManager 向外广播。
+    /// 管理 BattleCard 实例的生命周期与区位流转。
+    /// 不负责效果结算本身，结算副作用通过 EventBus / TriggerManager 向外广播。
     /// </summary>
     public class CardManager : ICardManager
     {
@@ -26,7 +26,7 @@ namespace CardMoba.BattleCore.Managers
             var player = ctx.GetPlayer(playerId);
             if (player == null)
             {
-                ctx.RoundLog.Add($"[CardManager] 找不到玩家 {playerId}，无法初始化牌组。");
+                ctx.RoundLog.Add($"[CardManager] player {playerId} not found; skip deck init.");
                 return;
             }
 
@@ -50,7 +50,7 @@ namespace CardMoba.BattleCore.Managers
             }
 
             ShuffleDeck(ctx, playerId);
-            ctx.RoundLog.Add($"[CardManager] 玩家 {playerId} 初始化牌组完成，共 {player.AllCards.Count} 张牌。");
+            ctx.RoundLog.Add($"[CardManager] deck initialized for {playerId}: {player.AllCards.Count} cards.");
         }
 
         public List<BattleCard> DrawCards(BattleContext ctx, string playerId, int count)
@@ -61,7 +61,7 @@ namespace CardMoba.BattleCore.Managers
 
             if (ctx.BuffManager.HasBuffType(ctx, player.HeroEntity.EntityId, Protocol.Enums.BuffType.NoDrawThisTurn))
             {
-                ctx.RoundLog.Add($"[CardManager] {playerId} 处于 NoDrawThisTurn，抽牌被跳过。");
+                ctx.RoundLog.Add($"[CardManager] {playerId} draw blocked by NoDrawThisTurn.");
                 return new List<BattleCard>();
             }
 
@@ -75,7 +75,7 @@ namespace CardMoba.BattleCore.Managers
                     var discard = player.GetCardsInZone(CardZone.Discard);
                     if (discard.Count == 0)
                     {
-                        ctx.RoundLog.Add($"[CardManager] {playerId} 的牌库和弃牌堆都为空，无法继续抽牌。");
+                        ctx.RoundLog.Add($"[CardManager] {playerId} has no cards left to draw.");
                         break;
                     }
 
@@ -83,7 +83,7 @@ namespace CardMoba.BattleCore.Managers
                         card.Zone = CardZone.Deck;
 
                     ShuffleDeck(ctx, playerId);
-                    ctx.RoundLog.Add($"[CardManager] {playerId} 牌库已空，将 {discard.Count} 张弃牌洗回牌库。");
+                    ctx.RoundLog.Add($"[CardManager] reshuffled {discard.Count} discard cards back into deck for {playerId}.");
                     deck = player.GetCardsInZone(CardZone.Deck);
                 }
 
@@ -91,11 +91,12 @@ namespace CardMoba.BattleCore.Managers
                 MoveCard(ctx, cardToDraw, CardZone.Hand);
                 drawn.Add(cardToDraw);
 
+                string effectiveConfigId = cardToDraw.GetEffectiveConfigId();
                 ctx.EventBus.Publish(new CardDrawnEvent
                 {
                     PlayerId = playerId,
                     CardInstanceId = cardToDraw.InstanceId,
-                    CardConfigId = cardToDraw.ConfigId,
+                    CardConfigId = effectiveConfigId,
                 });
                 ctx.TriggerManager.Fire(ctx, TriggerTiming.OnCardDrawn, new TriggerContext
                 {
@@ -104,11 +105,12 @@ namespace CardMoba.BattleCore.Managers
                     {
                         ["playerId"] = playerId,
                         ["cardInstanceId"] = cardToDraw.InstanceId,
-                        ["cardConfigId"] = cardToDraw.ConfigId,
+                        ["cardConfigId"] = effectiveConfigId,
+                        ["cardBaseConfigId"] = cardToDraw.ConfigId,
                     },
                 });
 
-                ctx.RoundLog.Add($"[CardManager] {playerId} 抽取 [{cardToDraw.ConfigId}]（{cardToDraw.InstanceId}）。");
+                ctx.RoundLog.Add($"[CardManager] {playerId} drew [{effectiveConfigId}] ({cardToDraw.InstanceId}).");
                 deck = player.GetCardsInZone(CardZone.Deck);
             }
 
@@ -120,24 +122,26 @@ namespace CardMoba.BattleCore.Managers
             var card = FindCard(ctx, cardInstanceId);
             if (card == null)
             {
-                ctx.RoundLog.Add($"[CardManager] 找不到卡牌实例 {cardInstanceId}。");
+                ctx.RoundLog.Add($"[CardManager] plan card {cardInstanceId} not found.");
                 return false;
             }
 
             if (card.Zone != CardZone.Hand)
             {
-                ctx.RoundLog.Add($"[CardManager] 卡牌 {cardInstanceId} 不在手牌区（当前={card.Zone}），无法提交。");
+                ctx.RoundLog.Add($"[CardManager] plan card {cardInstanceId} is not in hand (zone={card.Zone}).");
                 return false;
             }
 
-            if (card.IsStatCard)
+            var definition = ctx.GetEffectiveCardDefinition(card);
+            bool isStatCard = definition?.IsStatCard ?? card.IsStatCard;
+            if (isStatCard)
             {
-                ctx.RoundLog.Add($"[CardManager] 状态牌 {cardInstanceId} 不能作为定策牌提交。");
+                ctx.RoundLog.Add($"[CardManager] status card {cardInstanceId} cannot be committed as a plan card.");
                 return false;
             }
 
             MoveCard(ctx, card, CardZone.StrategyZone);
-            ctx.RoundLog.Add($"[CardManager] {card.OwnerId} 提交定策牌 [{card.ConfigId}]（{cardInstanceId}）。");
+            ctx.RoundLog.Add($"[CardManager] {card.OwnerId} committed [{card.GetEffectiveConfigId()}] ({card.InstanceId}).");
             return true;
         }
 
@@ -145,7 +149,7 @@ namespace CardMoba.BattleCore.Managers
         {
             var previousZone = card.Zone;
             card.Zone = targetZone;
-            ctx.RoundLog.Add($"[CardManager] 卡牌 [{card.ConfigId}]（{card.InstanceId}）{previousZone} -> {targetZone}。");
+            ctx.RoundLog.Add($"[CardManager] [{card.GetEffectiveConfigId()}] ({card.InstanceId}) {previousZone} -> {targetZone}.");
         }
 
         public void ScanStatCards(BattleContext ctx)
@@ -153,15 +157,20 @@ namespace CardMoba.BattleCore.Managers
             foreach (var kv in ctx.AllPlayers)
             {
                 var player = kv.Value;
-                var statCards = player.GetCardsInZone(CardZone.Hand).Where(c => c.IsStatCard).ToList();
-                foreach (var card in statCards)
+                foreach (var card in player.GetCardsInZone(CardZone.Hand))
                 {
+                    var definition = ctx.GetEffectiveCardDefinition(card);
+                    bool isStatCard = definition?.IsStatCard ?? card.IsStatCard;
+                    if (!isStatCard)
+                        continue;
+
                     var triggerContext = new TriggerContext
                     {
                         SourceEntityId = player.HeroEntity.EntityId,
                     };
                     triggerContext.Extra["cardInstanceId"] = card.InstanceId;
-                    triggerContext.Extra["cardConfigId"] = card.ConfigId;
+                    triggerContext.Extra["cardConfigId"] = card.GetEffectiveConfigId();
+                    triggerContext.Extra["cardBaseConfigId"] = card.ConfigId;
                     ctx.TriggerManager.Fire(ctx, TriggerTiming.OnStatCardHeld, triggerContext);
                 }
             }
@@ -173,7 +182,7 @@ namespace CardMoba.BattleCore.Managers
             {
                 var player = kv.Value;
                 player.Energy = player.MaxEnergy;
-                ctx.RoundLog.Add($"[CardManager] {player.PlayerId} 能量回满：{player.Energy}/{player.MaxEnergy}");
+                ctx.RoundLog.Add($"[CardManager] {player.PlayerId} energy reset to {player.Energy}/{player.MaxEnergy}.");
                 DrawCards(ctx, kv.Key, 5);
             }
         }
@@ -189,15 +198,16 @@ namespace CardMoba.BattleCore.Managers
                     MoveCard(ctx, card, CardZone.Discard);
 
                 if (handCards.Count > 0)
-                    ctx.RoundLog.Add($"[CardManager] {player.PlayerId} 回合结束弃手牌 {handCards.Count} 张。");
+                    ctx.RoundLog.Add($"[CardManager] {player.PlayerId} discarded {handCards.Count} hand card(s) at round end.");
 
                 var strategyCards = player.GetCardsInZone(CardZone.StrategyZone);
                 foreach (var card in strategyCards)
-                    MoveCard(ctx, card, CardZone.Discard);
+                    MoveCard(ctx, card, ResolvePostPlayZone(ctx, card));
 
                 if (strategyCards.Count > 0)
-                    ctx.RoundLog.Add($"[CardManager] {player.PlayerId} 清理遗留定策区 {strategyCards.Count} 张。");
+                    ctx.RoundLog.Add($"[CardManager] {player.PlayerId} resolved {strategyCards.Count} lingering strategy card(s).");
 
+                ClearEndOfTurnProjections(ctx, player);
                 ResolveEndRoundReturnToHand(ctx, player, round);
             }
         }
@@ -211,7 +221,7 @@ namespace CardMoba.BattleCore.Managers
                 foreach (var card in tempCards)
                 {
                     player.AllCards.Remove(card);
-                    ctx.RoundLog.Add($"[CardManager] 临时牌 [{card.ConfigId}]（{card.InstanceId}）已销毁。");
+                    ctx.RoundLog.Add($"[CardManager] temp card [{card.ConfigId}] ({card.InstanceId}) destroyed.");
                 }
             }
         }
@@ -226,7 +236,7 @@ namespace CardMoba.BattleCore.Managers
             var player = ctx.GetPlayer(ownerId);
             if (player == null)
             {
-                ctx.RoundLog.Add($"[CardManager] 找不到玩家 {ownerId}，无法生成卡牌 {configId}。");
+                ctx.RoundLog.Add($"[CardManager] cannot generate card {configId}; player {ownerId} not found.");
                 return new BattleCard
                 {
                     InstanceId = $"bc_{++_instanceCounter:D4}",
@@ -250,7 +260,7 @@ namespace CardMoba.BattleCore.Managers
             };
 
             player.AllCards.Add(generatedCard);
-            ctx.RoundLog.Add($"[CardManager] 为 {ownerId} 生成卡牌 [{configId}]（{generatedCard.InstanceId}）-> {targetZone}，temp={tempCard}。");
+            ctx.RoundLog.Add($"[CardManager] generated [{configId}] ({generatedCard.InstanceId}) for {ownerId} -> {targetZone}, temp={tempCard}.");
             return generatedCard;
         }
 
@@ -264,30 +274,32 @@ namespace CardMoba.BattleCore.Managers
             var card = FindCard(ctx, cardInstanceId);
             if (card == null)
             {
-                ctx.RoundLog.Add($"[CardManager] 找不到瞬策牌实例 {cardInstanceId}。");
+                ctx.RoundLog.Add($"[CardManager] instant card {cardInstanceId} not found.");
                 return null;
             }
 
             if (!card.OwnerId.Equals(playerId, StringComparison.Ordinal))
             {
-                ctx.RoundLog.Add($"[CardManager] 瞬策牌 {cardInstanceId} 不属于玩家 {playerId}。");
+                ctx.RoundLog.Add($"[CardManager] instant card {cardInstanceId} does not belong to {playerId}.");
                 return null;
             }
 
             if (card.Zone != CardZone.Hand)
             {
-                ctx.RoundLog.Add($"[CardManager] 瞬策牌 {cardInstanceId} 不在手牌区（当前={card.Zone}）。");
+                ctx.RoundLog.Add($"[CardManager] instant card {cardInstanceId} is not in hand (zone={card.Zone}).");
                 return null;
             }
 
-            if (card.IsStatCard)
+            var definition = ctx.GetEffectiveCardDefinition(card);
+            bool isStatCard = definition?.IsStatCard ?? card.IsStatCard;
+            if (isStatCard)
             {
-                ctx.RoundLog.Add($"[CardManager] 状态牌 {cardInstanceId} 不能直接打出。");
+                ctx.RoundLog.Add($"[CardManager] status card {cardInstanceId} cannot be played directly.");
                 return null;
             }
 
-            MoveCard(ctx, card, card.IsExhaust ? CardZone.Consume : CardZone.Discard);
-            ctx.RoundLog.Add($"[CardManager] {playerId} 打出瞬策牌 [{card.ConfigId}]（{cardInstanceId}）。");
+            MoveCard(ctx, card, ResolvePostPlayZone(ctx, card));
+            ctx.RoundLog.Add($"[CardManager] {playerId} played instant [{card.GetEffectiveConfigId()}] ({card.InstanceId}).");
             return card;
         }
 
@@ -308,11 +320,37 @@ namespace CardMoba.BattleCore.Managers
                 if (shouldReturn && card.Zone == CardZone.Discard)
                 {
                     MoveCard(ctx, card, CardZone.Hand);
-                    ctx.RoundLog.Add($"[CardManager] [{card.ConfigId}]（{card.InstanceId}）在回合结束返回手牌。");
+                    ctx.RoundLog.Add($"[CardManager] [{card.GetEffectiveConfigId()}] ({card.InstanceId}) returned to hand at round end.");
                 }
 
                 card.ExtraData.Remove(ReturnSourceCardToHandAtRoundEndHandler.ReturnToHandAtRoundEndKey);
                 card.ExtraData.Remove(ReturnSourceCardToHandAtRoundEndHandler.ReturnToHandMarkedRoundKey);
+            }
+        }
+
+        private static CardZone ResolvePostPlayZone(BattleContext ctx, BattleCard card)
+        {
+            if (card.ExtraData.TryGetValue("forceConsumeAfterResolve", out var forceConsume)
+                && forceConsume is bool consume
+                && consume)
+            {
+                return CardZone.Consume;
+            }
+
+            var definition = ctx.GetEffectiveCardDefinition(card);
+            bool isExhaust = definition?.IsExhaust ?? card.IsExhaust;
+            return isExhaust ? CardZone.Consume : CardZone.Discard;
+        }
+
+        private static void ClearEndOfTurnProjections(BattleContext ctx, PlayerData player)
+        {
+            foreach (var card in player.AllCards)
+            {
+                if (card.ProjectionLifetime != CardProjectionLifetime.EndOfTurn)
+                    continue;
+
+                ctx.RoundLog.Add($"[CardManager] clear EndOfTurn projection for [{card.ConfigId}] ({card.InstanceId}).");
+                card.ClearProjection();
             }
         }
 

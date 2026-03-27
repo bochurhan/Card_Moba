@@ -1,64 +1,44 @@
-﻿#pragma warning disable CS8632
+#pragma warning disable CS8632
 
 using System;
 using System.Collections.Generic;
-using System.Text;
 using System.Text.RegularExpressions;
-using CardMoba.BattleCore.Foundation;
 using CardMoba.BattleCore.Context;
+using CardMoba.BattleCore.Foundation;
 
 namespace CardMoba.BattleCore.Resolvers
 {
     /// <summary>
-    /// 动态参数解析器（DynamicParamResolver）—— BattleCore V2 表达式求值核心。
-    ///
-    /// 职责：将 EffectUnit.ValueExpression 字符串求值为整数。
-    ///
-    /// 支持的表达式语法：
-    ///   1. 字面整数：                "10"、"-3"
-    ///   2. 前置效果引用：             "{{preEffect[effectId].totalRealHpDamage}}"
-    ///   3. 上下文属性：               "{{self.hp}}"、"{{self.shield}}"、"{{self.handCount}}"
-    ///                                "{{opponent.hp}}"、"{{opponent.shield}}"
-    ///   4. 简单算术（+、-、*、/）：  "{{preEffect[dmg_01].totalRealHpDamage * 2}}"
-    ///                                "{{(6 - self.handCount) * 3}}"
-    ///
-    /// 设计约束：
-    ///   - 不依赖浮点数（结果始终为整数，中间计算用 long 防溢出后截断）
-    ///   - 不引入外部脚本引擎（零依赖，完全自实现 mini 词法/解析器）
-    ///   - 遇到无法解析的表达式返回 0 并写入 ctx.RoundLog 警告
+    /// 解析 EffectUnit.ValueExpression，输出整数值。
+    /// 支持：
+    /// - 字面值：10 / -3
+    /// - preEffect[effectId].field
+    /// - self.field / opponent.field
+    /// - trigCtx.value / trigCtx.round / trigCtx.extra.key
+    /// - sourceCard.instancePlayedCount / sourceCard.configPlayedCount
+    /// - 简单整数算术：+ - * /
     /// </summary>
     public class DynamicParamResolver
     {
-        // 匹配 {{ ... }} 整体模板，内容为要求值的表达式
-        private static readonly Regex _templatePattern =
+        private static readonly Regex TemplatePattern =
             new Regex(@"\{\{(.+?)\}\}", RegexOptions.Compiled);
 
-        // 匹配 preEffect[effectId].field 引用
-        private static readonly Regex _preEffectPattern =
+        private static readonly Regex PreEffectPattern =
             new Regex(@"preEffect\[([^\]]+)\]\.(\w+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-        // 匹配 self.field 或 opponent.field 引用
-        private static readonly Regex _entityFieldPattern =
+        private static readonly Regex EntityFieldPattern =
             new Regex(@"(self|opponent)\.(\w+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-        private static readonly Regex _triggerContextFieldPattern =
+        private static readonly Regex TriggerContextFieldPattern =
             new Regex(@"trigCtx\.(value|round|extra\.\w+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-        // ══════════════════════════════════════════════════════════
-        // 主入口
-        // ══════════════════════════════════════════════════════════
+        private static readonly Regex SourceCardFieldPattern =
+            new Regex(@"sourceCard\.(instancePlayedCount|configPlayedCount)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-        /// <summary>
-        /// 将 ValueExpression 解析为整数值。
-        /// </summary>
-        /// <param name="expression">EffectUnit.ValueExpression 字符串</param>
-        /// <param name="ctx">战斗上下文（用于读取运行时数据）</param>
-        /// <param name="source">施法者实体</param>
-        /// <param name="priorResults">本张牌前置效果的结果列表</param>
-        /// <returns>解析出的整数值（失败时返回 0）</returns>
         public int Resolve(
             string expression,
             BattleContext ctx,
+            EffectUnit effect,
             Entity source,
             List<EffectResult> priorResults,
             TriggerContext? triggerContext = null)
@@ -66,15 +46,13 @@ namespace CardMoba.BattleCore.Resolvers
             if (string.IsNullOrWhiteSpace(expression))
                 return 0;
 
-            // 快速路径：纯字面量整数（最常见情况，避免正则开销）
             if (int.TryParse(expression.Trim(), out int literal))
                 return literal;
 
-            // 模板路径：包含 {{ }} 的表达式
-            var match = _templatePattern.Match(expression);
+            var match = TemplatePattern.Match(expression);
             if (!match.Success)
             {
-                ctx.RoundLog.Add($"[DynamicParamResolver] ⚠️ 无法识别的 ValueExpression='{expression}'，返回 0。");
+                ctx.RoundLog.Add($"[DynamicParamResolver] invalid ValueExpression='{expression}', fallback 0.");
                 return 0;
             }
 
@@ -82,38 +60,29 @@ namespace CardMoba.BattleCore.Resolvers
 
             try
             {
-                // 先展开所有引用占位符，再对纯数字算术表达式求值
-                string expanded = ExpandReferences(innerExpr, ctx, source, priorResults, triggerContext);
-                return EvaluateArithmetic(expanded, ctx);
+                string expanded = ExpandReferences(innerExpr, ctx, effect, source, priorResults, triggerContext);
+                return EvaluateArithmetic(expanded);
             }
             catch (Exception ex)
             {
-                ctx.RoundLog.Add($"[DynamicParamResolver] ⚠️ 表达式求值异常 '{expression}'：{ex.Message}，返回 0。");
+                ctx.RoundLog.Add($"[DynamicParamResolver] evaluate '{expression}' failed: {ex.Message}, fallback 0.");
                 return 0;
             }
         }
 
-        // ══════════════════════════════════════════════════════════
-        // 引用展开
-        // ══════════════════════════════════════════════════════════
-
-        /// <summary>
-        /// 将表达式中的引用（preEffect / self / opponent）替换为具体数字。
-        /// </summary>
         private string ExpandReferences(
             string expr,
             BattleContext ctx,
+            EffectUnit effect,
             Entity source,
             List<EffectResult> priorResults,
             TriggerContext? triggerContext)
         {
-            // 1. 展开 preEffect[effectId].field
-            expr = _preEffectPattern.Replace(expr, m =>
+            expr = PreEffectPattern.Replace(expr, m =>
             {
                 string effectId = m.Groups[1].Value;
-                string field    = m.Groups[2].Value.ToLowerInvariant();
+                string field = m.Groups[2].Value.ToLowerInvariant();
 
-                // 查找前置效果结果（按 EffectId 匹配）
                 EffectResult? found = null;
                 foreach (var r in priorResults)
                 {
@@ -126,85 +95,67 @@ namespace CardMoba.BattleCore.Resolvers
 
                 if (found == null)
                 {
-                    ctx.RoundLog.Add($"[DynamicParamResolver] ⚠️ 找不到前置效果 '{effectId}'，该引用替换为 0。");
+                    ctx.RoundLog.Add($"[DynamicParamResolver] preEffect '{effectId}' not found, fallback 0.");
                     return "0";
                 }
 
                 return field switch
                 {
                     "totalrealhpdamage" => found.TotalRealHpDamage.ToString(),
-                    "totalrealheal"     => found.TotalRealHeal.ToString(),
-                    "totalrealshield"   => found.TotalRealShield.ToString(),
-                    "success"           => found.Success ? "1" : "0",
+                    "totalrealheal" => found.TotalRealHeal.ToString(),
+                    "totalrealshield" => found.TotalRealShield.ToString(),
+                    "success" => found.Success ? "1" : "0",
                     _ => GetExtraValue(found, field, ctx),
                 };
             });
 
-            // 2. 展开 self.field 和 opponent.field
-            expr = _triggerContextFieldPattern.Replace(expr, m =>
+            expr = TriggerContextFieldPattern.Replace(expr, m =>
             {
                 string field = m.Groups[1].Value;
                 return GetTriggerContextValue(triggerContext, field, ctx);
             });
 
-            expr = _entityFieldPattern.Replace(expr, m =>
+            expr = SourceCardFieldPattern.Replace(expr, m =>
             {
-                string who   = m.Groups[1].Value.ToLowerInvariant();
+                string field = m.Groups[1].Value.ToLowerInvariant();
+                return field switch
+                {
+                    "instanceplayedcount" => GetEffectParamValue(effect, "sourceCardInstancePlayedCount", ctx),
+                    "configplayedcount" => GetEffectParamValue(effect, "sourceCardConfigPlayedCount", ctx),
+                    _ => "0",
+                };
+            });
+
+            expr = EntityFieldPattern.Replace(expr, m =>
+            {
+                string who = m.Groups[1].Value.ToLowerInvariant();
                 string field = m.Groups[2].Value.ToLowerInvariant();
 
-                Entity? targetEntity = null;
-                if (who == "self")
-                {
-                    targetEntity = source;
-                }
-                else // opponent
-                {
-                    foreach (var kv in ctx.AllPlayers)
-                    {
-                        if (kv.Key != source.OwnerPlayerId)
-                        {
-                            targetEntity = kv.Value.HeroEntity;
-                            break;
-                        }
-                    }
-                }
-
+                Entity? targetEntity = who == "self" ? source : GetOpponent(ctx, source);
                 if (targetEntity == null)
                 {
-                    ctx.RoundLog.Add($"[DynamicParamResolver] ⚠️ 找不到 '{who}' 实体，替换为 0。");
+                    ctx.RoundLog.Add($"[DynamicParamResolver] entity '{who}' not found, fallback 0.");
                     return "0";
                 }
 
-                switch (field)
+                return field switch
                 {
-                    case "hp":        return targetEntity.Hp.ToString();
-                    case "maxhp":     return targetEntity.MaxHp.ToString();
-                    case "shield":    return targetEntity.Shield.ToString();
-                    case "armor":     return targetEntity.Armor.ToString();
-                    case "handcount": return GetHandCount(ctx, targetEntity.OwnerPlayerId).ToString();
-                    case "deckcount": return GetDeckCount(ctx, targetEntity.OwnerPlayerId).ToString();
-                    default:
-                        ctx.RoundLog.Add($"[DynamicParamResolver] ⚠️ 未知字段 '{field}'（来源 '{who}'），替换为 0。");
-                        return "0";
-                }
+                    "hp" => targetEntity.Hp.ToString(),
+                    "maxhp" => targetEntity.MaxHp.ToString(),
+                    "shield" => targetEntity.Shield.ToString(),
+                    "armor" => targetEntity.Armor.ToString(),
+                    "handcount" => GetHandCount(ctx, targetEntity.OwnerPlayerId).ToString(),
+                    "deckcount" => GetDeckCount(ctx, targetEntity.OwnerPlayerId).ToString(),
+                    _ => UnknownField(field, ctx),
+                };
             });
 
             return expr;
         }
 
-        // ══════════════════════════════════════════════════════════
-        // 简单算术求值（纯整数，不引入浮点）
-        // ══════════════════════════════════════════════════════════
-
-        /// <summary>
-        /// 对展开后的纯数字算术表达式求值。
-        /// 支持：括号、+、-、*、/（整除，向零截断）。
-        /// </summary>
-        private int EvaluateArithmetic(string expr, BattleContext ctx)
+        private int EvaluateArithmetic(string expr)
         {
             expr = expr.Trim();
-
-            // 先尝试直接解析（展开后可能已经是纯数字）
             if (int.TryParse(expr, out int simple))
                 return simple;
 
@@ -212,20 +163,27 @@ namespace CardMoba.BattleCore.Resolvers
             int pos = 0;
             long result = ParseExpr(tokens, ref pos);
 
-            // 结果钳制在 int 范围内
             if (result > int.MaxValue) result = int.MaxValue;
             if (result < int.MinValue) result = int.MinValue;
             return (int)result;
         }
 
-        // ── 词法分析 ──────────────────────────────────────────────
-
-        private enum TokenType { Number, Plus, Minus, Mul, Div, LParen, RParen, Eof }
+        private enum TokenType
+        {
+            Number,
+            Plus,
+            Minus,
+            Mul,
+            Div,
+            LParen,
+            RParen,
+            Eof,
+        }
 
         private struct Token
         {
             public TokenType Type;
-            public long      NumValue;
+            public long NumValue;
         }
 
         private static List<Token> Tokenize(string expr)
@@ -235,134 +193,147 @@ namespace CardMoba.BattleCore.Resolvers
             while (i < expr.Length)
             {
                 char c = expr[i];
-                if (char.IsWhiteSpace(c)) { i++; continue; }
+                if (char.IsWhiteSpace(c))
+                {
+                    i++;
+                    continue;
+                }
 
                 if (c == '(') { tokens.Add(new Token { Type = TokenType.LParen }); i++; continue; }
                 if (c == ')') { tokens.Add(new Token { Type = TokenType.RParen }); i++; continue; }
-                if (c == '+') { tokens.Add(new Token { Type = TokenType.Plus  }); i++; continue; }
+                if (c == '+') { tokens.Add(new Token { Type = TokenType.Plus }); i++; continue; }
+                if (c == '*') { tokens.Add(new Token { Type = TokenType.Mul }); i++; continue; }
+                if (c == '/') { tokens.Add(new Token { Type = TokenType.Div }); i++; continue; }
+
                 if (c == '-')
                 {
-                    // 判断是减法还是负数前缀（前面没有数字/右括号时为负号）
-                    bool isNeg = tokens.Count == 0 ||
-                                 (tokens[tokens.Count - 1].Type != TokenType.Number &&
-                                  tokens[tokens.Count - 1].Type != TokenType.RParen);
-                    if (isNeg)
+                    bool isNegative = tokens.Count == 0
+                        || (tokens[tokens.Count - 1].Type != TokenType.Number && tokens[tokens.Count - 1].Type != TokenType.RParen);
+                    if (isNegative)
                     {
-                        // 负数：合并到下一个数字
                         i++;
                         int start = i;
                         while (i < expr.Length && char.IsDigit(expr[i])) i++;
-                        long val = long.Parse("-" + expr.Substring(start, i - start));
-                        tokens.Add(new Token { Type = TokenType.Number, NumValue = val });
+                        long value = long.Parse("-" + expr.Substring(start, i - start));
+                        tokens.Add(new Token { Type = TokenType.Number, NumValue = value });
                     }
                     else
                     {
-                        tokens.Add(new Token { Type = TokenType.Minus }); i++;
+                        tokens.Add(new Token { Type = TokenType.Minus });
+                        i++;
                     }
                     continue;
                 }
-                if (c == '*') { tokens.Add(new Token { Type = TokenType.Mul }); i++; continue; }
-                if (c == '/') { tokens.Add(new Token { Type = TokenType.Div }); i++; continue; }
 
                 if (char.IsDigit(c))
                 {
                     int start = i;
                     while (i < expr.Length && char.IsDigit(expr[i])) i++;
-                    long val = long.Parse(expr.Substring(start, i - start));
-                    tokens.Add(new Token { Type = TokenType.Number, NumValue = val });
+                    long value = long.Parse(expr.Substring(start, i - start));
+                    tokens.Add(new Token { Type = TokenType.Number, NumValue = value });
                     continue;
                 }
 
-                // 未识别字符，跳过
                 i++;
             }
+
             tokens.Add(new Token { Type = TokenType.Eof });
             return tokens;
         }
 
-        // ── 递归下降解析 ──────────────────────────────────────────
-
-        /// <summary>解析加减表达式（最低优先级）</summary>
         private long ParseExpr(List<Token> tokens, ref int pos)
         {
             long left = ParseTerm(tokens, ref pos);
 
             while (pos < tokens.Count)
             {
-                var t = tokens[pos];
-                if (t.Type == TokenType.Plus)
+                var token = tokens[pos];
+                if (token.Type == TokenType.Plus)
                 {
                     pos++;
                     left += ParseTerm(tokens, ref pos);
                 }
-                else if (t.Type == TokenType.Minus)
+                else if (token.Type == TokenType.Minus)
                 {
                     pos++;
                     left -= ParseTerm(tokens, ref pos);
                 }
-                else break;
+                else
+                {
+                    break;
+                }
             }
+
             return left;
         }
 
-        /// <summary>解析乘除表达式（中优先级）</summary>
         private long ParseTerm(List<Token> tokens, ref int pos)
         {
             long left = ParsePrimary(tokens, ref pos);
 
             while (pos < tokens.Count)
             {
-                var t = tokens[pos];
-                if (t.Type == TokenType.Mul)
+                var token = tokens[pos];
+                if (token.Type == TokenType.Mul)
                 {
                     pos++;
                     left *= ParsePrimary(tokens, ref pos);
                 }
-                else if (t.Type == TokenType.Div)
+                else if (token.Type == TokenType.Div)
                 {
                     pos++;
                     long divisor = ParsePrimary(tokens, ref pos);
-                    left = divisor != 0 ? left / divisor : 0; // 除零保护
+                    left = divisor != 0 ? left / divisor : 0;
                 }
-                else break;
+                else
+                {
+                    break;
+                }
             }
+
             return left;
         }
 
-        /// <summary>解析基元（数字或括号表达式）</summary>
         private long ParsePrimary(List<Token> tokens, ref int pos)
         {
-            if (pos >= tokens.Count) return 0;
-            var t = tokens[pos];
+            if (pos >= tokens.Count)
+                return 0;
 
-            if (t.Type == TokenType.Number)
+            var token = tokens[pos];
+            if (token.Type == TokenType.Number)
             {
                 pos++;
-                return t.NumValue;
+                return token.NumValue;
             }
 
-            if (t.Type == TokenType.LParen)
+            if (token.Type == TokenType.LParen)
             {
-                pos++; // 跳过 (
-                long val = ParseExpr(tokens, ref pos);
+                pos++;
+                long value = ParseExpr(tokens, ref pos);
                 if (pos < tokens.Count && tokens[pos].Type == TokenType.RParen)
-                    pos++; // 跳过 )
-                return val;
+                    pos++;
+                return value;
             }
 
             return 0;
         }
 
-        // ══════════════════════════════════════════════════════════
-        // 辅助工具方法
-        // ══════════════════════════════════════════════════════════
+        private static string GetEffectParamValue(EffectUnit effect, string key, BattleContext ctx)
+        {
+            if (!effect.Params.TryGetValue(key, out var rawValue))
+            {
+                ctx.RoundLog.Add($"[DynamicParamResolver] effect param '{key}' missing, fallback 0.");
+                return "0";
+            }
 
-        /// <summary>从 EffectResult.Extra 中读取自定义字段（返回整数）</summary>
-        private string GetTriggerContextValue(TriggerContext? triggerContext, string field, BattleContext ctx)
+            return int.TryParse(rawValue, out int parsed) ? parsed.ToString() : "0";
+        }
+
+        private static string GetTriggerContextValue(TriggerContext? triggerContext, string field, BattleContext ctx)
         {
             if (triggerContext == null)
             {
-                ctx.RoundLog.Add($"[DynamicParamResolver] ⚠️ trigCtx '{field}' 不可用，替换为 0。");
+                ctx.RoundLog.Add($"[DynamicParamResolver] trigCtx '{field}' unavailable, fallback 0.");
                 return "0";
             }
 
@@ -378,40 +349,58 @@ namespace CardMoba.BattleCore.Resolvers
                 string extraKey = field.Substring(extraPrefix.Length);
                 if (triggerContext.Extra.TryGetValue(extraKey, out var extraValue))
                 {
-                    if (extraValue is int intValue) return intValue.ToString();
-                    if (int.TryParse(extraValue?.ToString(), out int parsed)) return parsed.ToString();
+                    if (extraValue is int intValue)
+                        return intValue.ToString();
+
+                    if (int.TryParse(extraValue?.ToString(), out int parsed))
+                        return parsed.ToString();
                 }
             }
 
-            ctx.RoundLog.Add($"[DynamicParamResolver] ⚠️ trigCtx '{field}' 不可解析为数値，替换为 0。");
+            ctx.RoundLog.Add($"[DynamicParamResolver] trigCtx '{field}' not numeric, fallback 0.");
             return "0";
         }
 
-        private string GetExtraValue(EffectResult result, string field, BattleContext ctx)
+        private static string GetExtraValue(EffectResult result, string field, BattleContext ctx)
         {
             if (result.Extra.TryGetValue(field, out var obj))
             {
-                if (obj is int iv) return iv.ToString();
-                if (int.TryParse(obj?.ToString(), out int pv)) return pv.ToString();
+                if (obj is int intValue)
+                    return intValue.ToString();
+
+                if (int.TryParse(obj?.ToString(), out int parsed))
+                    return parsed.ToString();
             }
-            ctx.RoundLog.Add($"[DynamicParamResolver] ⚠️ EffectResult '{result.EffectId}' 无 Extra 字段 '{field}'，替换为 0。");
+
+            ctx.RoundLog.Add($"[DynamicParamResolver] EffectResult '{result.EffectId}' has no extra field '{field}', fallback 0.");
             return "0";
         }
 
-        /// <summary>获取玩家手牌数量</summary>
-        private int GetHandCount(BattleContext ctx, string playerId)
+        private static int GetHandCount(BattleContext ctx, string playerId)
         {
-            var player = ctx.GetPlayer(playerId);
-            if (player == null) return 0;
-            return player.GetCardsInZone(CardZone.Hand).Count;
+            return ctx.GetPlayer(playerId)?.GetCardsInZone(CardZone.Hand).Count ?? 0;
         }
 
-        /// <summary>获取玩家卡组剩余牌数</summary>
-        private int GetDeckCount(BattleContext ctx, string playerId)
+        private static int GetDeckCount(BattleContext ctx, string playerId)
         {
-            var player = ctx.GetPlayer(playerId);
-            if (player == null) return 0;
-            return player.GetCardsInZone(CardZone.Deck).Count;
+            return ctx.GetPlayer(playerId)?.GetCardsInZone(CardZone.Deck).Count ?? 0;
+        }
+
+        private static Entity? GetOpponent(BattleContext ctx, Entity source)
+        {
+            foreach (var kv in ctx.AllPlayers)
+            {
+                if (kv.Key != source.OwnerPlayerId)
+                    return kv.Value.HeroEntity;
+            }
+
+            return null;
+        }
+
+        private static string UnknownField(string field, BattleContext ctx)
+        {
+            ctx.RoundLog.Add($"[DynamicParamResolver] unknown field '{field}', fallback 0.");
+            return "0";
         }
     }
 }

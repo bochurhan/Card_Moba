@@ -507,6 +507,70 @@ namespace CardMoba.BattleCore.Handlers
         }
     }
 
+    public class UpgradeCardsInHandHandler : IEffectHandler
+    {
+        public EffectResult Execute(
+            BattleContext ctx,
+            EffectUnit effect,
+            Entity source,
+            List<Entity> targets,
+            List<EffectResult> priorResults,
+            TriggerContext? triggerContext)
+        {
+            var result = new EffectResult { EffectId = effect.EffectId, Type = effect.Type, Success = true };
+
+            var player = ctx.GetPlayer(source.OwnerPlayerId);
+            if (player == null)
+            {
+                ctx.RoundLog.Add($"[UpgradeCardsInHandHandler] owner player {source.OwnerPlayerId} not found.");
+                result.Success = false;
+                return result;
+            }
+
+            string lifetimeText = effect.Params.TryGetValue("projectionLifetime", out var rawLifetime)
+                && !string.IsNullOrWhiteSpace(rawLifetime)
+                ? rawLifetime
+                : "EndOfTurn";
+
+            CardProjectionLifetime requestedLifetime = lifetimeText.Equals(nameof(CardProjectionLifetime.EndOfBattle), System.StringComparison.OrdinalIgnoreCase)
+                ? CardProjectionLifetime.EndOfBattle
+                : CardProjectionLifetime.EndOfTurn;
+
+            int upgradedCount = 0;
+            foreach (var card in player.GetCardsInZone(CardZone.Hand))
+            {
+                string projectionTarget = card.HasProjection
+                    ? card.ProjectedConfigId
+                    : ctx.GetCardDefinition(card.ConfigId)?.UpgradedConfigId ?? string.Empty;
+
+                if (string.IsNullOrWhiteSpace(projectionTarget))
+                    continue;
+
+                if (!card.HasProjection)
+                {
+                    card.ProjectedConfigId = projectionTarget;
+                    card.ProjectionLifetime = requestedLifetime;
+                    upgradedCount++;
+                    ctx.RoundLog.Add($"[UpgradeCardsInHandHandler] projected {card.InstanceId} -> {projectionTarget} ({requestedLifetime}).");
+                    continue;
+                }
+
+                if (card.ProjectionLifetime == CardProjectionLifetime.EndOfBattle)
+                    continue;
+
+                if (requestedLifetime == CardProjectionLifetime.EndOfBattle)
+                {
+                    card.ProjectionLifetime = CardProjectionLifetime.EndOfBattle;
+                    upgradedCount++;
+                    ctx.RoundLog.Add($"[UpgradeCardsInHandHandler] extended {card.InstanceId} projection to EndOfBattle.");
+                }
+            }
+
+            result.Extra["upgradedCount"] = upgradedCount;
+            return result;
+        }
+    }
+
     /// <summary>
     /// 标记来源卡牌：本回合结束时若该卡位于弃牌堆，则返回手牌。
     /// </summary>

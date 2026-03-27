@@ -35,6 +35,7 @@ namespace CardMoba.BattleCore.Context
                 if (player.HeroEntity?.EntityId == entityId)
                     return player;
             }
+
             return null;
         }
 
@@ -42,11 +43,12 @@ namespace CardMoba.BattleCore.Context
 
         public Entity? GetEntity(string entityId)
         {
-            foreach (var kv in _players)
+            foreach (var player in _players.Values)
             {
-                if (kv.Value.HeroEntity?.EntityId == entityId)
-                    return kv.Value.HeroEntity;
+                if (player.HeroEntity?.EntityId == entityId)
+                    return player.HeroEntity;
             }
+
             return null;
         }
 
@@ -69,6 +71,11 @@ namespace CardMoba.BattleCore.Context
             return CardDefinitionProvider?.Invoke(configId);
         }
 
+        public BattleCardDefinition? GetEffectiveCardDefinition(BattleCard card)
+        {
+            return GetCardDefinition(card.GetEffectiveConfigId());
+        }
+
         public List<EffectUnit>? BuildCardEffects(string configId)
         {
             var definition = GetCardDefinition(configId);
@@ -76,6 +83,11 @@ namespace CardMoba.BattleCore.Context
                 return null;
 
             return EffectUnitCloner.CloneMany(definition.Effects);
+        }
+
+        public List<EffectUnit>? BuildCardEffects(BattleCard card)
+        {
+            return BuildCardEffects(card.GetEffectiveConfigId());
         }
 
         public enum BattlePhase

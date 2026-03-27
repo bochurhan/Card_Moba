@@ -8,6 +8,7 @@ using Xunit;
 using CardMoba.BattleCore.Buff;
 using CardMoba.BattleCore.Context;
 using CardMoba.BattleCore.Core;
+using CardMoba.BattleCore.Costs;
 using CardMoba.BattleCore.EventBus;
 using CardMoba.BattleCore.Foundation;
 using CardMoba.BattleCore.Handlers;
@@ -122,6 +123,20 @@ namespace CardMoba.Tests
                 TargetType = "Self",
                 ValueExpression = value.ToString(),
                 Layer = SettleLayer.Resource,
+            };
+
+        private static EffectUnit MakeUpgradeCardsInHandEffect(string projectionLifetime)
+            => new EffectUnit
+            {
+                EffectId = $"upgrade_hand_{projectionLifetime}",
+                Type = EffectType.UpgradeCardsInHand,
+                TargetType = "Self",
+                ValueExpression = "0",
+                Layer = SettleLayer.BuffSpecial,
+                Params = new Dictionary<string, string>
+                {
+                    ["projectionLifetime"] = projectionLifetime,
+                },
             };
 
         private static EffectUnit MakeAddBuffEffect(string buffConfigId, int value, int duration, string targetType = "Self")
@@ -241,17 +256,47 @@ namespace CardMoba.Tests
             string configId,
             bool isExhaust = false,
             bool isStatCard = false,
+            int energyCost = 0,
             params EffectUnit[] effects)
             => new BattleCardDefinition
             {
                 ConfigId = configId,
                 IsExhaust = isExhaust,
                 IsStatCard = isStatCard,
+                EnergyCost = energyCost,
                 Effects = new List<EffectUnit>(effects),
             };
 
         private static BattleCardDefinition MakeCardDefinition(string configId, params EffectUnit[] effects)
-            => MakeCardDefinition(configId, false, false, effects);
+            => MakeCardDefinition(configId, false, false, 0, effects);
+
+        private static BattleCardDefinition MakeCardDefinition(
+            string configId,
+            bool isExhaust,
+            bool isStatCard,
+            params EffectUnit[] effects)
+            => MakeCardDefinition(configId, isExhaust, isStatCard, 0, effects);
+
+        private static BattleCardDefinition MakeCardDefinitionWithUpgrade(
+            string configId,
+            string upgradedConfigId,
+            int energyCost = 0,
+            params EffectUnit[] effects)
+        {
+            return new BattleCardDefinition
+            {
+                ConfigId = configId,
+                EnergyCost = energyCost,
+                UpgradedConfigId = upgradedConfigId,
+                Effects = new List<EffectUnit>(effects),
+            };
+        }
+
+        private static BattleCardDefinition MakeCardDefinitionWithUpgrade(
+            string configId,
+            string upgradedConfigId,
+            params EffectUnit[] effects)
+            => MakeCardDefinitionWithUpgrade(configId, upgradedConfigId, 0, effects);
 
         private static Func<string, BattleCardDefinition?> MakeCardDefinitionProvider(params BattleCardDefinition[] definitions)
         {
@@ -1348,6 +1393,348 @@ namespace CardMoba.Tests
             boomerang.Zone.Should().Be(CardZone.Hand);
             boomerang.ExtraData.Should().NotContainKey(ReturnSourceCardToHandAtRoundEndHandler.ReturnToHandAtRoundEndKey);
             boomerang.ExtraData.Should().NotContainKey(ReturnSourceCardToHandAtRoundEndHandler.ReturnToHandMarkedRoundKey);
+        }
+
+        [Fact]
+        public void T41_Weapon_ProjectsCurrentHandOnly_AndClearsAtRoundEnd()
+        {
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinitionWithUpgrade("strike", "strike_plus", MakeDamageEffect(5)),
+                MakeCardDefinition("strike_plus", MakeDamageEffect(9)),
+                MakeCardDefinition("weapon", MakeUpgradeCardsInHandEffect("EndOfTurn")));
+            var result = CreateTestBattle(mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            var strikeInHand = GiveHandCard(ctx, "P1", "strike_a", "strike");
+            GiveHandCard(ctx, "P1", "weapon_card", "weapon");
+
+            rm.PlayInstantCard(ctx, "P1", "weapon_card").Should().NotBeEmpty();
+            strikeInHand.ProjectedConfigId.Should().Be("strike_plus");
+            strikeInHand.ProjectionLifetime.Should().Be(CardProjectionLifetime.EndOfTurn);
+
+            var drawnLater = ctx.CardManager.GenerateCard(ctx, "P1", "strike", CardZone.Hand, tempCard: false);
+            drawnLater.HasProjection.Should().BeFalse();
+
+            rm.EndRound(ctx);
+
+            strikeInHand.HasProjection.Should().BeFalse();
+            drawnLater.HasProjection.Should().BeFalse();
+        }
+
+        [Fact]
+        public void T42_WeaponPlus_PersistsProjectionAcrossRounds()
+        {
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinitionWithUpgrade("strike", "strike_plus", MakeDamageEffect(5)),
+                MakeCardDefinition("strike_plus", MakeDamageEffect(9)),
+                MakeCardDefinition("weapon_plus", MakeUpgradeCardsInHandEffect("EndOfBattle")));
+            var result = CreateTestBattle(mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            var strike = GiveHandCard(ctx, "P1", "strike_endbattle", "strike");
+            GiveHandCard(ctx, "P1", "weapon_plus_card", "weapon_plus");
+
+            rm.PlayInstantCard(ctx, "P1", "weapon_plus_card").Should().NotBeEmpty();
+            strike.ProjectedConfigId.Should().Be("strike_plus");
+            strike.ProjectionLifetime.Should().Be(CardProjectionLifetime.EndOfBattle);
+
+            rm.EndRound(ctx);
+            strike.ProjectedConfigId.Should().Be("strike_plus");
+            strike.Zone.Should().Be(CardZone.Discard);
+
+            rm.BeginRound(ctx);
+            ctx.CardManager.MoveCard(ctx, strike, CardZone.Hand);
+            rm.PlayInstantCard(ctx, "P1", strike.InstanceId).Should().NotBeEmpty();
+
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(21);
+        }
+
+        [Fact]
+        public void T43_Rampage_TracksPlayedCount_PerInstance()
+        {
+            var rampageDamage = new EffectUnit
+            {
+                EffectId = "rampage_damage",
+                Type = EffectType.Damage,
+                TargetType = "Enemy",
+                ValueExpression = "{{6 + sourceCard.instancePlayedCount * 5}}",
+                Layer = SettleLayer.Damage,
+            };
+
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinition("rampage", rampageDamage));
+            var result = CreateTestBattle(mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            var rampageA = GiveHandCard(ctx, "P1", "rampage_A", "rampage");
+            var rampageB = GiveHandCard(ctx, "P1", "rampage_B", "rampage");
+
+            rm.PlayInstantCard(ctx, "P1", rampageA.InstanceId).Should().NotBeEmpty();
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(24);
+
+            ctx.CardManager.MoveCard(ctx, rampageA, CardZone.Hand);
+            rm.PlayInstantCard(ctx, "P1", rampageB.InstanceId).Should().NotBeEmpty();
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(18);
+
+            rm.PlayInstantCard(ctx, "P1", rampageA.InstanceId).Should().NotBeEmpty();
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(7);
+        }
+
+        [Fact]
+        public void T44_WeaponedRampage_UsesUpgradedFormula_AndKeepsInstanceHistory()
+        {
+            var baseRampage = new EffectUnit
+            {
+                EffectId = "rampage_damage",
+                Type = EffectType.Damage,
+                TargetType = "Enemy",
+                ValueExpression = "{{6 + sourceCard.instancePlayedCount * 5}}",
+                Layer = SettleLayer.Damage,
+            };
+            var upgradedRampage = new EffectUnit
+            {
+                EffectId = "rampage_plus_damage",
+                Type = EffectType.Damage,
+                TargetType = "Enemy",
+                ValueExpression = "{{6 + sourceCard.instancePlayedCount * 6}}",
+                Layer = SettleLayer.Damage,
+            };
+
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinitionWithUpgrade("rampage", "rampage_plus", baseRampage),
+                MakeCardDefinition("rampage_plus", upgradedRampage),
+                MakeCardDefinition("weapon", MakeUpgradeCardsInHandEffect("EndOfTurn")));
+            var result = CreateTestBattle(mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            var rampage = GiveHandCard(ctx, "P1", "rampage_weaponed", "rampage");
+            GiveHandCard(ctx, "P1", "weapon_for_rampage", "weapon");
+
+            rm.PlayInstantCard(ctx, "P1", rampage.InstanceId).Should().NotBeEmpty();
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(24);
+
+            ctx.CardManager.MoveCard(ctx, rampage, CardZone.Hand);
+            rm.PlayInstantCard(ctx, "P1", "weapon_for_rampage").Should().NotBeEmpty();
+            rampage.ProjectedConfigId.Should().Be("rampage_plus");
+
+            rm.PlayInstantCard(ctx, "P1", rampage.InstanceId).Should().NotBeEmpty();
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(12);
+        }
+
+        [Fact]
+        public void T45_BloodRitual_TriggersOnlyWhenRealHpDamagePositive()
+        {
+            var buffProvider = MakeBuffProvider(
+                MakeBuffConfig("blood_ritual", BuffType.BloodRitual, 1),
+                MakeBuffConfig("strength", BuffType.Strength, 0));
+            var definitions = CreateMutableCardDefinitions();
+            var result = CreateTestBattle(buffConfigProvider: buffProvider, mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            var heroP1 = ctx.AllPlayers["P1"].HeroEntity;
+            ctx.BuffManager.AddBuff(ctx, heroP1.EntityId, "blood_ritual", heroP1.EntityId, value: 1, duration: 0);
+
+            PlayStrictInstantCard(ctx, rm, definitions, "P2", "blood_ritual_hit", "damage_4", MakeDamageEffect(4));
+            ctx.AllPlayers["P1"].HeroEntity.Hp.Should().Be(26);
+            ctx.BuffManager.GetBuffs(heroP1.EntityId).Should().ContainSingle(buff => buff.BuffType == BuffType.Strength && buff.Value == 1);
+
+            PlayStrictInstantCard(ctx, rm, definitions, "P1", "blood_ritual_followup", "damage_5", MakeDamageEffect(5));
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(24);
+        }
+
+        [Fact]
+        public void T46_BloodRitual_DoesNotTrigger_WhenDamageIsFullyBlockedByShield()
+        {
+            var buffProvider = MakeBuffProvider(
+                MakeBuffConfig("blood_ritual", BuffType.BloodRitual, 1),
+                MakeBuffConfig("strength", BuffType.Strength, 0));
+            var definitions = CreateMutableCardDefinitions();
+            var result = CreateTestBattle(buffConfigProvider: buffProvider, mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            var heroP1 = ctx.AllPlayers["P1"].HeroEntity;
+            heroP1.Shield = 10;
+            ctx.BuffManager.AddBuff(ctx, heroP1.EntityId, "blood_ritual", heroP1.EntityId, value: 1, duration: 0);
+
+            PlayStrictInstantCard(ctx, rm, definitions, "P2", "blood_ritual_blocked", "damage_4", MakeDamageEffect(4));
+            ctx.AllPlayers["P1"].HeroEntity.Hp.Should().Be(30);
+            ctx.BuffManager.GetBuffs(heroP1.EntityId).Should().NotContain(buff => buff.BuffType == BuffType.Strength);
+
+            PlayStrictInstantCard(ctx, rm, definitions, "P1", "blood_ritual_followup_blocked", "damage_5", MakeDamageEffect(5));
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(25);
+        }
+
+        [Fact]
+        public void T47_Corruption_ResetRoundQuota_FromTotalBuffValue()
+        {
+            var corruption = new BuffConfig
+            {
+                BuffId = "corruption",
+                BuffName = "腐化",
+                BuffType = BuffType.Corruption,
+                DefaultValue = 2,
+                DefaultDuration = 0,
+                StackRule = BuffStackRule.StackValue,
+                MaxStacks = 99,
+            };
+
+            var result = CreateTestBattle(buffConfigProvider: MakeBuffProvider(corruption));
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            var heroP1 = ctx.AllPlayers["P1"].HeroEntity.EntityId;
+
+            ctx.BuffManager.AddBuff(ctx, heroP1, "corruption", heroP1, value: 2, duration: 0);
+            ctx.BuffManager.AddBuff(ctx, heroP1, "corruption", heroP1, value: 2, duration: 0);
+
+            rm.BeginRound(ctx);
+
+            ctx.AllPlayers["P1"].CorruptionFreePlaysRemainingThisRound.Should().Be(4);
+        }
+
+        [Fact]
+        public void T48_Corruption_HitsZeroCostCard_AndStillConsumesCharge()
+        {
+            var corruption = new BuffConfig
+            {
+                BuffId = "corruption",
+                BuffName = "腐化",
+                BuffType = BuffType.Corruption,
+                DefaultValue = 2,
+                DefaultDuration = 0,
+                StackRule = BuffStackRule.StackValue,
+                MaxStacks = 99,
+            };
+
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinition("zero_cost_card", false, false, 0, MakeDamageEffect(6)));
+            var result = CreateTestBattle(
+                buffConfigProvider: MakeBuffProvider(corruption),
+                mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            var heroP1 = ctx.AllPlayers["P1"].HeroEntity.EntityId;
+
+            ctx.BuffManager.AddBuff(ctx, heroP1, "corruption", heroP1, value: 2, duration: 0);
+            rm.BeginRound(ctx);
+
+            var zeroCostCard = GiveHandCard(ctx, "P1", "zero_cost_instance", "zero_cost_card");
+            var cost = rm.ResolvePlayCost(ctx, "P1", zeroCostCard);
+
+            cost.BaseCost.Should().Be(0);
+            cost.FinalCost.Should().Be(0);
+            cost.HitCorruption.Should().BeTrue();
+            cost.ConsumesCorruptionCharge.Should().BeTrue();
+            cost.ForceConsumeAfterResolve.Should().BeTrue();
+
+            rm.CommitResolvedPlayCost(ctx, "P1", cost);
+            ctx.AllPlayers["P1"].CorruptionFreePlaysRemainingThisRound.Should().Be(1);
+        }
+
+        [Fact]
+        public void T49_Corruption_FirstTwoPlaysAreFree_ThirdUsesBaseCost()
+        {
+            var corruption = new BuffConfig
+            {
+                BuffId = "corruption",
+                BuffName = "腐化",
+                BuffType = BuffType.Corruption,
+                DefaultValue = 2,
+                DefaultDuration = 0,
+                StackRule = BuffStackRule.StackValue,
+                MaxStacks = 99,
+            };
+
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinition("expensive_a", false, false, 3, MakeDamageEffect(5)),
+                MakeCardDefinition("expensive_b", false, false, 2, MakeDamageEffect(5)),
+                MakeCardDefinition("expensive_c", false, false, 1, MakeDamageEffect(5)));
+            var result = CreateTestBattle(
+                buffConfigProvider: MakeBuffProvider(corruption),
+                mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            var heroP1 = ctx.AllPlayers["P1"].HeroEntity.EntityId;
+
+            ctx.BuffManager.AddBuff(ctx, heroP1, "corruption", heroP1, value: 2, duration: 0);
+            rm.BeginRound(ctx);
+
+            var cardA = GiveHandCard(ctx, "P1", "corrupt_a", "expensive_a");
+            var cardB = GiveHandCard(ctx, "P1", "corrupt_b", "expensive_b");
+            var cardC = GiveHandCard(ctx, "P1", "corrupt_c", "expensive_c");
+
+            var costA = rm.ResolvePlayCost(ctx, "P1", cardA);
+            costA.FinalCost.Should().Be(0);
+            costA.HitCorruption.Should().BeTrue();
+            rm.CommitResolvedPlayCost(ctx, "P1", costA);
+
+            var costB = rm.ResolvePlayCost(ctx, "P1", cardB);
+            costB.FinalCost.Should().Be(0);
+            costB.HitCorruption.Should().BeTrue();
+            rm.CommitResolvedPlayCost(ctx, "P1", costB);
+
+            var costC = rm.ResolvePlayCost(ctx, "P1", cardC);
+            costC.BaseCost.Should().Be(1);
+            costC.FinalCost.Should().Be(1);
+            costC.HitCorruption.Should().BeFalse();
+        }
+
+        [Fact]
+        public void T50_Corruption_SecondCastStacksQuota_ForNextRound()
+        {
+            var corruption = new BuffConfig
+            {
+                BuffId = "corruption",
+                BuffName = "腐化",
+                BuffType = BuffType.Corruption,
+                DefaultValue = 2,
+                DefaultDuration = 0,
+                StackRule = BuffStackRule.StackValue,
+                MaxStacks = 99,
+            };
+
+            var result = CreateTestBattle(buffConfigProvider: MakeBuffProvider(corruption));
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            var heroP1 = ctx.AllPlayers["P1"].HeroEntity.EntityId;
+
+            ctx.BuffManager.AddBuff(ctx, heroP1, "corruption", heroP1, value: 2, duration: 0);
+            rm.BeginRound(ctx);
+            ctx.AllPlayers["P1"].CorruptionFreePlaysRemainingThisRound.Should().Be(2);
+
+            rm.CommitResolvedPlayCost(ctx, "P1", new PlayCostResolution
+            {
+                ConsumesCorruptionCharge = true,
+                HitCorruption = true,
+                ForceConsumeAfterResolve = true,
+            });
+            ctx.AllPlayers["P1"].CorruptionFreePlaysRemainingThisRound.Should().Be(1);
+
+            rm.EndRound(ctx);
+            ctx.BuffManager.AddBuff(ctx, heroP1, "corruption", heroP1, value: 2, duration: 0);
+            rm.BeginRound(ctx);
+
+            ctx.AllPlayers["P1"].CorruptionFreePlaysRemainingThisRound.Should().Be(4);
+        }
+
+        [Fact]
+        public void T51_ResolvePlayCost_UsesEffectiveProjectedConfigEnergyCost()
+        {
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinitionWithUpgrade("strike", "strike_plus", 1, MakeDamageEffect(5)),
+                MakeCardDefinition("strike_plus", false, false, 4, MakeDamageEffect(9)),
+                MakeCardDefinition("weapon", MakeUpgradeCardsInHandEffect("EndOfTurn")));
+            var result = CreateTestBattle(mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            var strike = GiveHandCard(ctx, "P1", "strike_cost_projection", "strike");
+            GiveHandCard(ctx, "P1", "weapon_cost_projection", "weapon");
+
+            rm.ResolvePlayCost(ctx, "P1", strike).FinalCost.Should().Be(1);
+            rm.PlayInstantCard(ctx, "P1", "weapon_cost_projection").Should().NotBeEmpty();
+            rm.ResolvePlayCost(ctx, "P1", strike).FinalCost.Should().Be(4);
         }
     }
 }

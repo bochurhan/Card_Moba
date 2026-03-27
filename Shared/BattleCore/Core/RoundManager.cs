@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using CardMoba.BattleCore.Context;
+using CardMoba.BattleCore.Costs;
 using CardMoba.BattleCore.EventBus;
 using CardMoba.BattleCore.Foundation;
 using CardMoba.BattleCore.Managers;
@@ -29,6 +30,7 @@ namespace CardMoba.BattleCore.Core
     public class RoundManager
     {
         private readonly SettlementEngine _settlement;
+        private readonly PlayCostResolver _playCostResolver;
         private readonly List<PendingPlanCard> _pendingPlanCards = new List<PendingPlanCard>();
 
         public int CurrentRound { get; private set; }
@@ -38,6 +40,7 @@ namespace CardMoba.BattleCore.Core
         public RoundManager()
         {
             _settlement = new SettlementEngine();
+            _playCostResolver = new PlayCostResolver();
         }
 
         public void InitBattle(BattleContext ctx)
@@ -71,6 +74,7 @@ namespace CardMoba.BattleCore.Core
                 player.PlayedDamageCardCountThisRound = 0;
                 player.PlayedDefenseCardCountThisRound = 0;
                 player.PlayedCounterCardCountThisRound = 0;
+                player.CorruptionFreePlaysRemainingThisRound = 0;
             }
 
             ctx.RoundLog.Add($"[RoundManager] 第 {CurrentRound} 回合开始。");
@@ -81,6 +85,8 @@ namespace CardMoba.BattleCore.Core
                 Round = CurrentRound,
             });
             _settlement.DrainPendingQueue(ctx);
+
+            _playCostResolver.ResetTurnRuleState(ctx);
 
             ctx.CardManager.OnRoundStart(ctx, CurrentRound);
             _settlement.DrainPendingQueue(ctx);
@@ -109,10 +115,11 @@ namespace CardMoba.BattleCore.Core
                 return new List<EffectResult>();
             }
 
-            var effects = ResolveCardEffects(ctx, card.ConfigId);
+            var effectiveConfigId = card.GetEffectiveConfigId();
+            var effects = ResolveCardEffects(ctx, card);
             if (effects == null)
             {
-                ctx.RoundLog.Add($"[RoundManager] 找不到瞬策牌 {cardInstanceId}（{card.ConfigId}）的卡牌定义。");
+                ctx.RoundLog.Add($"[RoundManager] 找不到瞬策牌 {cardInstanceId}（{effectiveConfigId}）的卡牌定义。");
                 return new List<EffectResult>();
             }
 
@@ -122,11 +129,12 @@ namespace CardMoba.BattleCore.Core
                 return new List<EffectResult>();
             }
 
-            StampCardSourceMetadata(effects, card);
-            RecordPlayedCardStats(ctx, playerId, effects);
-            ctx.RoundLog.Add($"[RoundManager] 玩家 {playerId} 打出瞬策牌 {cardInstanceId}。");
+            StampCardSourceMetadata(ctx, effects, card);
+            ctx.RoundLog.Add($"[RoundManager] 玩家 {playerId} 打出瞬策牌 {cardInstanceId}（{effectiveConfigId}）。");
 
             var results = _settlement.ResolveInstantFromCard(ctx, playerId, card, effects);
+            if (results.Count > 0 || card.Zone != CardZone.Hand)
+                RecordPlayedCardStats(ctx, playerId, card, effects);
             CheckDeathAndBattleOver(ctx);
             return results;
         }
@@ -148,10 +156,11 @@ namespace CardMoba.BattleCore.Core
                 return false;
             }
 
-            var resolvedEffects = ResolveCardEffects(ctx, card.ConfigId);
+            var effectiveConfigId = card.GetEffectiveConfigId();
+            var resolvedEffects = ResolveCardEffects(ctx, card);
             if (resolvedEffects == null)
             {
-                ctx.RoundLog.Add($"[RoundManager] 找不到定策牌 {planCard.CardInstanceId}（{card.ConfigId}）的卡牌定义。");
+                ctx.RoundLog.Add($"[RoundManager] 找不到定策牌 {planCard.CardInstanceId}（{effectiveConfigId}）的卡牌定义。");
                 return false;
             }
 
@@ -161,7 +170,7 @@ namespace CardMoba.BattleCore.Core
                 return false;
             }
 
-            StampCardSourceMetadata(resolvedEffects, card);
+            StampCardSourceMetadata(ctx, resolvedEffects, card);
 
             if (!ctx.CardManager.CommitPlanCard(ctx, planCard.CardInstanceId))
             {
@@ -169,7 +178,7 @@ namespace CardMoba.BattleCore.Core
                 return false;
             }
 
-            RecordPlayedCardStats(ctx, planCard.PlayerId, resolvedEffects);
+            RecordPlayedCardStats(ctx, planCard.PlayerId, card, resolvedEffects);
             var pendingCard = new PendingPlanCard
             {
                 PlayerId = planCard.PlayerId,
@@ -313,9 +322,9 @@ namespace CardMoba.BattleCore.Core
 
         private static List<EffectUnit>? ResolveCardEffects(
             BattleContext ctx,
-            string configId)
+            BattleCard card)
         {
-            return ctx.BuildCardEffects(configId);
+            return ctx.BuildCardEffects(card);
         }
 
         public bool CanPlayCard(
@@ -325,7 +334,7 @@ namespace CardMoba.BattleCore.Core
             out string reason)
         {
             reason = string.Empty;
-            var effects = ResolveCardEffects(ctx, cardConfigId);
+            var effects = ctx.BuildCardEffects(cardConfigId);
             if (effects == null)
             {
                 reason = $"找不到卡牌定义 {cardConfigId}";
@@ -335,7 +344,40 @@ namespace CardMoba.BattleCore.Core
             return !TryGetPlayRestrictionReason(ctx, playerId, effects, out reason);
         }
 
-        private static void RecordPlayedCardStats(BattleContext ctx, string playerId, List<EffectUnit> effects)
+        public bool CanPlayCard(
+            BattleContext ctx,
+            string playerId,
+            BattleCard card,
+            out string reason)
+        {
+            reason = string.Empty;
+            var effects = ResolveCardEffects(ctx, card);
+            if (effects == null)
+            {
+                reason = $"找不到卡牌定义 {card.GetEffectiveConfigId()}";
+                return false;
+            }
+
+            return !TryGetPlayRestrictionReason(ctx, playerId, effects, out reason);
+        }
+
+        public PlayCostResolution ResolvePlayCost(
+            BattleContext ctx,
+            string playerId,
+            BattleCard card)
+        {
+            return _playCostResolver.Resolve(ctx, playerId, card);
+        }
+
+        public void CommitResolvedPlayCost(
+            BattleContext ctx,
+            string playerId,
+            PlayCostResolution resolution)
+        {
+            _playCostResolver.Commit(ctx, playerId, resolution);
+        }
+
+        private static void RecordPlayedCardStats(BattleContext ctx, string playerId, BattleCard card, List<EffectUnit> effects)
         {
             var player = ctx.GetPlayer(playerId);
             if (player == null)
@@ -351,6 +393,12 @@ namespace CardMoba.BattleCore.Core
 
             if (effects.Exists(IsCounterCard))
                 player.PlayedCounterCardCountThisRound++;
+
+            player.PlayedCountByInstanceId.TryGetValue(card.InstanceId, out int instanceCount);
+            player.PlayedCountByInstanceId[card.InstanceId] = instanceCount + 1;
+
+            player.PlayedCountByConfigId.TryGetValue(card.ConfigId, out int configCount);
+            player.PlayedCountByConfigId[card.ConfigId] = configCount + 1;
         }
 
         private static bool IsDamageCard(EffectUnit effect)
@@ -403,20 +451,25 @@ namespace CardMoba.BattleCore.Core
             return false;
         }
 
-        private static void StampCardSourceMetadata(List<EffectUnit> effects, BattleCard card)
-        {
-            StampCardSourceMetadata(effects, card.InstanceId, card.ConfigId);
-        }
-
         private static void StampCardSourceMetadata(
+            BattleContext ctx,
             List<EffectUnit> effects,
-            string cardInstanceId,
-            string cardConfigId)
+            BattleCard card)
         {
+            var player = ctx.GetPlayer(card.OwnerId);
+            int instancePlayedCount = 0;
+            int configPlayedCount = 0;
+            player?.PlayedCountByInstanceId.TryGetValue(card.InstanceId, out instancePlayedCount);
+            player?.PlayedCountByConfigId.TryGetValue(card.ConfigId, out configPlayedCount);
+            string effectiveConfigId = card.GetEffectiveConfigId();
+
             foreach (var effect in effects)
             {
-                effect.Params["sourceCardInstanceId"] = cardInstanceId;
-                effect.Params["sourceCardConfigId"] = cardConfigId;
+                effect.Params["sourceCardInstanceId"] = card.InstanceId;
+                effect.Params["sourceCardConfigId"] = effectiveConfigId;
+                effect.Params["sourceCardBaseConfigId"] = card.ConfigId;
+                effect.Params["sourceCardInstancePlayedCount"] = instancePlayedCount.ToString();
+                effect.Params["sourceCardConfigPlayedCount"] = configPlayedCount.ToString();
             }
         }
     }
