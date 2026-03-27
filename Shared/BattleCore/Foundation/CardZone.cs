@@ -13,7 +13,7 @@ namespace CardMoba.BattleCore.Foundation
         /// <summary>手牌（可操作）</summary>
         Hand = 1,
 
-        /// <summary>定策区（本回合已提交的定策牌，等待结算）</summary>
+        /// <summary>保留枚举：旧版真实定策区。当前定策牌改为快照记录，不再有真实实例驻留。</summary>
         StrategyZone = 2,
 
         /// <summary>弃牌堆（结算后归位，可被循环牌拉回）</summary>

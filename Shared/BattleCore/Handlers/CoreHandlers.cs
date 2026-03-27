@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using CardMoba.BattleCore.Foundation;
 using CardMoba.BattleCore.Context;
 using CardMoba.BattleCore.Managers;
+using CardMoba.BattleCore.Modifiers;
 using CardMoba.BattleCore.EventBus;
 using CardMoba.BattleCore.Resolvers;
 using CardMoba.Protocol.Enums;

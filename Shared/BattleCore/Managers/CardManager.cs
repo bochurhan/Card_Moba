@@ -140,8 +140,10 @@ namespace CardMoba.BattleCore.Managers
                 return false;
             }
 
-            MoveCard(ctx, card, CardZone.StrategyZone);
-            ctx.RoundLog.Add($"[CardManager] {card.OwnerId} committed [{card.GetEffectiveConfigId()}] ({card.InstanceId}).");
+            var targetZone = ResolvePostPlayZone(ctx, card);
+            MoveCard(ctx, card, targetZone);
+            ctx.RoundLog.Add(
+                $"[CardManager] {card.OwnerId} committed [{card.GetEffectiveConfigId()}] ({card.InstanceId}); snapshot queued, card moved to {targetZone}.");
             return true;
         }
 
@@ -229,13 +231,6 @@ namespace CardMoba.BattleCore.Managers
 
                 if (handCards.Count > 0)
                     ctx.RoundLog.Add($"[CardManager] {player.PlayerId} discarded {handCards.Count} hand card(s) at round end.");
-
-                var strategyCards = player.GetCardsInZone(CardZone.StrategyZone);
-                foreach (var card in strategyCards)
-                    MoveCard(ctx, card, ResolvePostPlayZone(ctx, card));
-
-                if (strategyCards.Count > 0)
-                    ctx.RoundLog.Add($"[CardManager] {player.PlayerId} resolved {strategyCards.Count} lingering strategy card(s).");
 
                 ClearEndOfTurnProjections(ctx, player);
                 ResolveEndRoundReturnToHand(ctx, player, round);

@@ -15,24 +15,14 @@ namespace CardMoba.BattleCore.Core
     {
         public string PlayerId { get; set; } = string.Empty;
         public string CardInstanceId { get; set; } = string.Empty;
+        public int CommittedCost { get; set; }
         public Dictionary<string, string> RuntimeParams { get; set; } = new Dictionary<string, string>();
-    }
-
-    internal sealed class PendingPlanCard
-    {
-        public string PlayerId { get; set; } = string.Empty;
-        public string CardInstanceId { get; set; } = string.Empty;
-        public int SubmitOrder { get; set; }
-        public List<EffectUnit> Effects { get; set; } = new List<EffectUnit>();
-        public List<EffectResult> PriorResults { get; set; } = new List<EffectResult>();
-        public bool IsCountered { get; set; }
     }
 
     public class RoundManager
     {
         private readonly SettlementEngine _settlement;
         private readonly PlayCostResolver _playCostResolver;
-        private readonly List<PendingPlanCard> _pendingPlanCards = new List<PendingPlanCard>();
 
         public int CurrentRound { get; private set; }
         public bool IsBattleOver { get; private set; }
@@ -49,7 +39,7 @@ namespace CardMoba.BattleCore.Core
             CurrentRound = 0;
             IsBattleOver = false;
             WinnerId = null;
-            _pendingPlanCards.Clear();
+            ctx.PendingPlanSnapshots.Clear();
 
             ctx.RoundLog.Add("[RoundManager] 战斗初始化完成。");
             ctx.EventBus.Publish(new BattleStartEvent
@@ -64,7 +54,7 @@ namespace CardMoba.BattleCore.Core
             if (IsBattleOver) return;
 
             CurrentRound++;
-            _pendingPlanCards.Clear();
+            ctx.PendingPlanSnapshots.Clear();
 
             ctx.CurrentRound = CurrentRound;
             ctx.CurrentPhase = BattleContext.BattlePhase.RoundStart;
@@ -181,16 +171,23 @@ namespace CardMoba.BattleCore.Core
             }
 
             RecordPlayedCardStats(ctx, planCard.PlayerId, card, resolvedEffects);
-            var pendingCard = new PendingPlanCard
+            var pendingCard = new PendingPlanSnapshot
             {
                 PlayerId = planCard.PlayerId,
-                CardInstanceId = planCard.CardInstanceId,
+                SnapshotId = $"pps_r{CurrentRound}_n{ctx.PendingPlanSnapshots.Count + 1:D2}",
+                SourceCardInstanceId = planCard.CardInstanceId,
+                CommittedBaseConfigId = card.ConfigId,
+                CommittedEffectiveConfigId = effectiveConfigId,
+                CommittedCost = planCard.CommittedCost,
+                RuntimeParams = new Dictionary<string, string>(planCard.RuntimeParams),
+                FrozenInputs = BuildFrozenInputs(card, resolvedEffects),
                 Effects = resolvedEffects,
-                SubmitOrder = _pendingPlanCards.Count,
+                SubmitOrder = ctx.PendingPlanSnapshots.Count,
             };
-            _pendingPlanCards.Add(pendingCard);
+            ctx.PendingPlanSnapshots.Add(pendingCard);
 
-            ctx.RoundLog.Add($"[RoundManager] 玩家 {planCard.PlayerId} 提交定策牌 {planCard.CardInstanceId}（顺序 {pendingCard.SubmitOrder}）。");
+            ctx.RoundLog.Add(
+                $"[RoundManager] 玩家 {planCard.PlayerId} 提交定策快照 {pendingCard.SnapshotId}，来源实例 {planCard.CardInstanceId}（顺序 {pendingCard.SubmitOrder}）。");
             return true;
         }
 
@@ -205,15 +202,15 @@ namespace CardMoba.BattleCore.Core
             _settlement.DrainPendingQueue(ctx);
             if (CheckDeathAndBattleOver(ctx)) return;
 
-            if (_pendingPlanCards.Count > 0)
+            if (ctx.PendingPlanSnapshots.Count > 0)
             {
-                _settlement.ResolvePlanCards(ctx, _pendingPlanCards);
+                _settlement.ResolvePlanCards(ctx, ctx.PendingPlanSnapshots);
             }
             else
             {
                 ctx.RoundLog.Add("[RoundManager] 本回合无定策牌，跳过定策结算。");
             }
-            _pendingPlanCards.Clear();
+            ctx.PendingPlanSnapshots.Clear();
 
             if (CheckDeathAndBattleOver(ctx)) return;
 
@@ -401,6 +398,27 @@ namespace CardMoba.BattleCore.Core
 
             player.PlayedCountByConfigId.TryGetValue(card.ConfigId, out int configCount);
             player.PlayedCountByConfigId[card.ConfigId] = configCount + 1;
+        }
+
+        private static Dictionary<string, string> BuildFrozenInputs(BattleCard card, List<EffectUnit> effects)
+        {
+            var frozen = new Dictionary<string, string>
+            {
+                ["sourceCard.instanceId"] = card.InstanceId,
+                ["sourceCard.baseConfigId"] = card.ConfigId,
+                ["sourceCard.effectiveConfigId"] = card.GetEffectiveConfigId(),
+            };
+
+            if (effects.Count > 0)
+            {
+                var first = effects[0];
+                if (first.Params.TryGetValue("sourceCardInstancePlayedCount", out var instancePlayedCount))
+                    frozen["sourceCard.instancePlayedCount"] = instancePlayedCount;
+                if (first.Params.TryGetValue("sourceCardConfigPlayedCount", out var configPlayedCount))
+                    frozen["sourceCard.configPlayedCount"] = configPlayedCount;
+            }
+
+            return frozen;
         }
 
         private static bool IsDamageCard(EffectUnit effect)

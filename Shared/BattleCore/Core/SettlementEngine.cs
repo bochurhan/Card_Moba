@@ -80,7 +80,7 @@ namespace CardMoba.BattleCore.Core
             return priorResults;
         }
 
-        internal void ResolvePlanCards(BattleContext ctx, List<PendingPlanCard> planCards)
+        internal void ResolvePlanCards(BattleContext ctx, List<PendingPlanSnapshot> planCards)
         {
             ctx.RoundLog.Add("[SettlementEngine] Layer 0：反制结算。");
             ResolveLayer0_Counter(ctx, planCards);
@@ -106,7 +106,7 @@ namespace CardMoba.BattleCore.Core
             DrainPendingQueue(ctx);
         }
 
-        private void ResolveLayer0_Counter(BattleContext ctx, List<PendingPlanCard> planCards)
+        private void ResolveLayer0_Counter(BattleContext ctx, List<PendingPlanSnapshot> planCards)
         {
             var counterCards = planCards
                 .Where(c => !c.IsCountered && c.Effects.Any(e => e.Layer == SettleLayer.Counter))
@@ -128,7 +128,7 @@ namespace CardMoba.BattleCore.Core
             }
         }
 
-        private void ResolveLayer2_Damage(BattleContext ctx, List<PendingPlanCard> planCards)
+        private void ResolveLayer2_Damage(BattleContext ctx, List<PendingPlanSnapshot> planCards)
         {
             var damageCards = planCards
                 .Where(c => !c.IsCountered && c.Effects.Any(e => e.Layer == SettleLayer.Damage))
@@ -154,7 +154,7 @@ namespace CardMoba.BattleCore.Core
             }
         }
 
-        private void ResolveLayer(BattleContext ctx, List<PendingPlanCard> planCards, SettleLayer layer)
+        private void ResolveLayer(BattleContext ctx, List<PendingPlanSnapshot> planCards, SettleLayer layer)
         {
             var layerCards = planCards
                 .Where(c => !c.IsCountered && c.Effects.Any(e => e.Layer == layer))

@@ -1873,5 +1873,109 @@ namespace CardMoba.Tests
             drawn[0].InstanceId.Should().Be(selected.InstanceId);
             ctx.AllPlayers["P1"].PlayedCountByInstanceId[drawn[0].InstanceId].Should().Be(2);
         }
+
+        [Fact]
+        public void T55_PlanCard_CommitsAsSnapshot_AndLeavesHandImmediately()
+        {
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinition("plan_damage", MakeDamageEffect(7)));
+            var result = CreateTestBattle(mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            var planCard = GiveHandCard(ctx, "P1", "plan_snapshot_card", "plan_damage");
+
+            rm.CommitPlanCard(ctx, new CommittedPlanCard
+            {
+                PlayerId = "P1",
+                CardInstanceId = planCard.InstanceId,
+            }).Should().BeTrue();
+
+            planCard.Zone.Should().Be(CardZone.Discard);
+            ctx.AllPlayers["P1"].GetCardsInZone(CardZone.StrategyZone).Should().BeEmpty();
+            ctx.PendingPlanSnapshots.Should().ContainSingle();
+            ctx.PendingPlanSnapshots[0].SourceCardInstanceId.Should().Be(planCard.InstanceId);
+            ctx.PendingPlanSnapshots[0].CommittedEffectiveConfigId.Should().Be("plan_damage");
+
+            rm.EndRound(ctx);
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(23);
+        }
+
+        [Fact]
+        public void T56_PlanSnapshot_FreezesPlayedCountInput_WhenSameInstanceIsCommittedAgain()
+        {
+            var rampageDamage = new EffectUnit
+            {
+                EffectId = "rampage_plan_damage",
+                Type = EffectType.Damage,
+                TargetType = "Enemy",
+                ValueExpression = "{{6 + frozen.sourceCard.instancePlayedCount * 5}}",
+                Layer = SettleLayer.Damage,
+            };
+
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinition("rampage_plan", rampageDamage));
+            var result = CreateTestBattle(mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            var rampage = GiveHandCard(ctx, "P1", "rampage_plan_instance", "rampage_plan");
+
+            rm.CommitPlanCard(ctx, new CommittedPlanCard
+            {
+                PlayerId = "P1",
+                CardInstanceId = rampage.InstanceId,
+            }).Should().BeTrue();
+
+            ctx.PendingPlanSnapshots.Should().HaveCount(1);
+            ctx.PendingPlanSnapshots[0].FrozenInputs["sourceCard.instancePlayedCount"].Should().Be("0");
+            rampage.Zone.Should().Be(CardZone.Discard);
+
+            ctx.CardManager.MoveCard(ctx, rampage, CardZone.Hand);
+            rm.CommitPlanCard(ctx, new CommittedPlanCard
+            {
+                PlayerId = "P1",
+                CardInstanceId = rampage.InstanceId,
+            }).Should().BeTrue();
+
+            ctx.PendingPlanSnapshots.Should().HaveCount(2);
+            ctx.PendingPlanSnapshots[1].FrozenInputs["sourceCard.instancePlayedCount"].Should().Be("1");
+
+            rm.EndRound(ctx);
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(13);
+        }
+
+        [Fact]
+        public void T57_ShieldSlam_UsesSettlementSnapshotShield_NotCommitTimeShield()
+        {
+            var shieldSlamDamage = new EffectUnit
+            {
+                EffectId = "shield_slam_damage",
+                Type = EffectType.Damage,
+                TargetType = "Enemy",
+                ValueExpression = "{{6 + snapshot.self.shield}}",
+                Layer = SettleLayer.Damage,
+            };
+
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinition("shield_slam", shieldSlamDamage));
+            var result = CreateTestBattle(mutableCardDefinitions: definitions);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            var shieldSlam = GiveHandCard(ctx, "P1", "shield_slam_instance", "shield_slam");
+            ctx.AllPlayers["P1"].HeroEntity.Shield = 5;
+
+            rm.CommitPlanCard(ctx, new CommittedPlanCard
+            {
+                PlayerId = "P1",
+                CardInstanceId = shieldSlam.InstanceId,
+            }).Should().BeTrue();
+
+            ctx.AllPlayers["P1"].HeroEntity.Shield = 2;
+            rm.EndRound(ctx);
+
+            ctx.AllPlayers["P2"].HeroEntity.Hp.Should().Be(22);
+        }
     }
 }

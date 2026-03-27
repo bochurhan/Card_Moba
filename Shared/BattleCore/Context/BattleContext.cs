@@ -3,6 +3,7 @@
 using System.Collections.Generic;
 using CardMoba.BattleCore.EventBus;
 using CardMoba.BattleCore.Foundation;
+using CardMoba.BattleCore.Modifiers;
 
 namespace CardMoba.BattleCore.Context
 {
@@ -54,13 +55,14 @@ namespace CardMoba.BattleCore.Context
 
         public Dictionary<string, LaneData> Lanes { get; } = new Dictionary<string, LaneData>();
         public PendingEffectQueue PendingQueue { get; } = new PendingEffectQueue();
+        public List<PendingPlanSnapshot> PendingPlanSnapshots { get; } = new List<PendingPlanSnapshot>();
         public Random.SeededRandom Random { get; }
 
         public IEventBus EventBus { get; }
         public Managers.ITriggerManager TriggerManager { get; }
         public Managers.ICardManager CardManager { get; }
         public Managers.IBuffManager BuffManager { get; }
-        public Managers.IValueModifierManager ValueModifierManager { get; }
+        public IValueModifierManager ValueModifierManager { get; }
 
         public System.Func<string, BattleCardDefinition?>? CardDefinitionProvider { get; }
 
@@ -107,7 +109,7 @@ namespace CardMoba.BattleCore.Context
             Managers.ITriggerManager triggerManager,
             Managers.ICardManager cardManager,
             Managers.IBuffManager buffManager,
-            Managers.IValueModifierManager valueModifierManager,
+            IValueModifierManager valueModifierManager,
             System.Func<string, BattleCardDefinition?>? cardDefinitionProvider = null)
         {
             BattleId = battleId;

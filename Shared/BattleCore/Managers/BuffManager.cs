@@ -6,6 +6,7 @@ using System.Linq;
 using CardMoba.BattleCore.Context;
 using CardMoba.BattleCore.EventBus;
 using CardMoba.BattleCore.Foundation;
+using CardMoba.BattleCore.Modifiers;
 using CardMoba.Protocol.Enums;
 
 namespace CardMoba.BattleCore.Managers

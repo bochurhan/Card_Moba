@@ -13,9 +13,11 @@ namespace CardMoba.BattleCore.Resolvers
     /// 支持：
     /// - 字面值：10 / -3
     /// - preEffect[effectId].field
-    /// - self.field / opponent.field
+    /// - self.field / opponent.field（结算态实时值）
+    /// - snapshot.self.field / snapshot.opponent.field（Layer 2 防御快照，缺省回退实时值）
     /// - trigCtx.value / trigCtx.round / trigCtx.extra.key
-    /// - sourceCard.instancePlayedCount / sourceCard.configPlayedCount
+    /// - sourceCard.instancePlayedCount / sourceCard.configPlayedCount（兼容旧写法）
+    /// - frozen.sourceCard.instancePlayedCount / frozen.sourceCard.configPlayedCount
     /// - 简单整数算术：+ - * /
     /// </summary>
     public class DynamicParamResolver
@@ -34,6 +36,12 @@ namespace CardMoba.BattleCore.Resolvers
 
         private static readonly Regex SourceCardFieldPattern =
             new Regex(@"sourceCard\.(instancePlayedCount|configPlayedCount)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex FrozenSourceCardFieldPattern =
+            new Regex(@"frozen\.sourceCard\.(instancePlayedCount|configPlayedCount)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex SnapshotFieldPattern =
+            new Regex(@"snapshot\.(self|opponent)\.(hp|shield|armor|isinvincible)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         public int Resolve(
             string expression,
@@ -115,6 +123,17 @@ namespace CardMoba.BattleCore.Resolvers
                 return GetTriggerContextValue(triggerContext, field, ctx);
             });
 
+            expr = FrozenSourceCardFieldPattern.Replace(expr, m =>
+            {
+                string field = m.Groups[1].Value.ToLowerInvariant();
+                return field switch
+                {
+                    "instanceplayedcount" => GetEffectParamValue(effect, "sourceCardInstancePlayedCount", ctx),
+                    "configplayedcount" => GetEffectParamValue(effect, "sourceCardConfigPlayedCount", ctx),
+                    _ => "0",
+                };
+            });
+
             expr = SourceCardFieldPattern.Replace(expr, m =>
             {
                 string field = m.Groups[1].Value.ToLowerInvariant();
@@ -124,6 +143,13 @@ namespace CardMoba.BattleCore.Resolvers
                     "configplayedcount" => GetEffectParamValue(effect, "sourceCardConfigPlayedCount", ctx),
                     _ => "0",
                 };
+            });
+
+            expr = SnapshotFieldPattern.Replace(expr, m =>
+            {
+                string who = m.Groups[1].Value.ToLowerInvariant();
+                string field = m.Groups[2].Value.ToLowerInvariant();
+                return GetSnapshotFieldValue(ctx, source, who, field);
             });
 
             expr = EntityFieldPattern.Replace(expr, m =>
@@ -151,6 +177,39 @@ namespace CardMoba.BattleCore.Resolvers
             });
 
             return expr;
+        }
+
+        private static string GetSnapshotFieldValue(BattleContext ctx, Entity source, string who, string field)
+        {
+            var player = who == "self" ? ctx.GetPlayer(source.OwnerPlayerId) : GetOpponentPlayer(ctx, source);
+            if (player == null)
+            {
+                ctx.RoundLog.Add($"[DynamicParamResolver] snapshot '{who}' player not found, fallback 0.");
+                return "0";
+            }
+
+            if (player.CurrentDefenseSnapshot != null)
+            {
+                var snapshot = player.CurrentDefenseSnapshot;
+                return field switch
+                {
+                    "hp" => snapshot.Hp.ToString(),
+                    "shield" => snapshot.Shield.ToString(),
+                    "armor" => snapshot.Armor.ToString(),
+                    "isinvincible" => snapshot.IsInvincible ? "1" : "0",
+                    _ => UnknownField(field, ctx),
+                };
+            }
+
+            var liveEntity = player.HeroEntity;
+            return field switch
+            {
+                "hp" => liveEntity.Hp.ToString(),
+                "shield" => liveEntity.Shield.ToString(),
+                "armor" => liveEntity.Armor.ToString(),
+                "isinvincible" => liveEntity.IsInvincible ? "1" : "0",
+                _ => UnknownField(field, ctx),
+            };
         }
 
         private int EvaluateArithmetic(string expr)
@@ -392,6 +451,17 @@ namespace CardMoba.BattleCore.Resolvers
             {
                 if (kv.Key != source.OwnerPlayerId)
                     return kv.Value.HeroEntity;
+            }
+
+            return null;
+        }
+
+        private static PlayerData? GetOpponentPlayer(BattleContext ctx, Entity source)
+        {
+            foreach (var kv in ctx.AllPlayers)
+            {
+                if (kv.Key != source.OwnerPlayerId)
+                    return kv.Value;
             }
 
             return null;
