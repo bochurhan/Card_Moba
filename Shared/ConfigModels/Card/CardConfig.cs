@@ -5,24 +5,18 @@ namespace CardMoba.ConfigModels.Card
 {
     /// <summary>
     /// 卡牌配置语义模型。
-    /// 对应一张牌的静态定义，不包含战斗内实例状态。
+    /// 表示一张牌的静态定义，不包含战斗内实例状态。
     /// </summary>
     public class CardConfig
     {
         public int CardId { get; set; }
-
         public string CardName { get; set; } = string.Empty;
-
         public string Description { get; set; } = string.Empty;
 
         public CardTrackType TrackType { get; set; }
-
         public HeroClass HeroClass { get; set; } = HeroClass.Universal;
-
         public CardTag Tags { get; set; } = CardTag.None;
-
         public CardTargetType TargetType { get; set; }
-
         public EffectRange EffectRange { get; set; } = EffectRange.SingleEnemy;
 
         /// <summary>
@@ -33,10 +27,14 @@ namespace CardMoba.ConfigModels.Card
 
         public int EnergyCost { get; set; }
 
+        /// <summary>
+        /// 升级版本配置 ID。
+        /// 空字符串表示该牌没有升级目标。
+        /// </summary>
+        public string UpgradedCardConfigId { get; set; } = string.Empty;
+
         public List<EffectCondition> PlayConditions { get; set; } = new();
-
         public List<CardEffect> Effects { get; set; } = new();
-
         public int Rarity { get; set; } = 1;
 
         public bool HasTag(CardTag tag)

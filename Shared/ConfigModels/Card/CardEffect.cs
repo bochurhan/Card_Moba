@@ -30,6 +30,9 @@ namespace CardMoba.ConfigModels.Card
         /// <summary>GenerateCard 生成的卡是否在回合末销毁。</summary>
         public bool GenerateCardIsTemp { get; set; }
 
+        /// <summary>UpgradeCardsInHand 使用的投影持续时间。</summary>
+        public string ProjectionLifetime { get; set; } = string.Empty;
+
         /// <summary>效果持续回合数。0 表示即时。</summary>
         public int Duration { get; set; }
 
@@ -75,6 +78,7 @@ namespace CardMoba.ConfigModels.Card
                 EffectType.GainEnergy => 3,
                 EffectType.GenerateCard => 3,
                 EffectType.ReturnSourceCardToHandAtRoundEnd => 3,
+                EffectType.UpgradeCardsInHand => 4,
 
                 _ => 4
             };

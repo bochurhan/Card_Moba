@@ -49,6 +49,8 @@ namespace CardMoba.Protocol.Enums
         NoDrawThisTurn = 506,
         NoDamageCardThisTurn = 507,
         DelayedVulnerableNextRound = 508,
+        BloodRitual = 509,
+        Corruption = 510,
     }
 
     /// <summary>

@@ -45,5 +45,6 @@ namespace CardMoba.Protocol.Enums
         GenerateCard = 32,
         DOT = 33,
         ReturnSourceCardToHandAtRoundEnd = 34,
+        UpgradeCardsInHand = 35,
     }
 }
