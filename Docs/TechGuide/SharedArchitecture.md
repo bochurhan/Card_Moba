@@ -1,30 +1,26 @@
-# Shared 当前架构
+﻿# Shared 架构说明
 
 **文档版本**: 2026-03-27  
 **状态**: 当前契约  
-**适用范围**: `Shared/` 当前代码组织、职责边界与 `Rules` 模块设计方向
-
----
+**适用范围**: `Shared/` 顶层结构、`Shared/BattleCore/` 子目录职责、`Rules` 当前落地边界
 
 ## 1. 目标
 
-这份文档回答三件事：
+这份文档只回答三件事：
 
-- `Shared/` 三个顶层模块各自负责什么
-- `Shared/BattleCore/` 当前子目录的职责边界是什么
-- `Rules` 为什么需要单独成层，以及建议怎样落地
+- `Shared/` 三个顶层模块分别负责什么
+- `Shared/BattleCore/` 当前各子目录的职责边界是什么
+- `Rules` 这层当前已经落了什么，后续准备继续收什么
 
 这份文档不替代：
 
 - [SystemArchitecture_V2.md](SystemArchitecture_V2.md)：BattleCore 当前运行时主流程
-- [ConfigSystem.md](ConfigSystem.md)：配置链路
-- [CardSystem.md](../GameDesign/CardSystem.md)：卡牌与出牌语义
-
----
+- [ConfigSystem.md](ConfigSystem.md)：配置链路与作者入口
+- [CardSystem.md](../GameDesign/CardSystem.md)：卡牌语义与出牌链路
 
 ## 2. Shared 顶层结构
 
-当前 `Shared/` 只有三块：
+当前 `Shared/` 只保留三块：
 
 - `Protocol`
 - `ConfigModels`
@@ -32,19 +28,17 @@
 
 ### 2.1 Protocol
 
-`Protocol` 是共享枚举与协议层。
+`Protocol` 是跨层共享的公共语言层。
 
 它负责：
 
-- 效果类型、Buff 类型、卡牌标签等跨层公共枚举
-- 前后端共用的协议定义
+- 效果类型、Buff 类型、卡牌标签等公共枚举
+- 前后端共享的协议常量与公共定义
 
 它不负责：
 
 - 配置语义
 - 运行时结算
-
-可以把它理解成整个项目的公共语言层。
 
 ### 2.2 ConfigModels
 
@@ -52,17 +46,17 @@
 
 它负责：
 
-- 卡牌配置长什么样
-- 效果配置长什么样
-- 哪些字段属于作者侧输入
+- 卡牌配置模型
+- 效果配置模型
+- 作者侧真正可编辑的字段集合
 
 它不负责：
 
-- 战斗运行时状态
-- 牌区流转
-- 结算时真实执行
+- 运行时牌区状态
+- 结算执行
+- Unity 编辑器逻辑
 
-`ConfigModels` 应依赖 `Protocol`，但不应依赖 `BattleCore`。
+`ConfigModels` 应依赖 `Protocol`，不应反向依赖 `BattleCore`。
 
 ### 2.3 BattleCore
 
@@ -70,56 +64,56 @@
 
 它负责：
 
-- 战斗状态容器
+- 战斗状态
 - 出牌流程
 - 定策快照
 - 结算流程
-- Buff / Trigger / Modifier / Cost 等运行时机制
+- Buff / Trigger / Modifier / Cost / Rule 等运行时机制
 
 它不负责：
 
-- Unity 表现
-- 客户端 UI
+- Unity UI
+- 客户端表现
 - 配置文件读取
 
-BattleCore 应只依赖：
+### 2.4 ConfigModels、Definitions、Foundation 的区别
 
-- `Protocol`
-- 少量必要的共享配置桥接结果
+这三个概念最容易混。
 
----
+建议按下面这条边界理解：
+
+- `ConfigModels`
+  - 作者侧配置语义
+  - 负责表达“策划真正编辑的配置长什么样”
+  - 例如 [CardConfig.cs](../..//Shared/ConfigModels/Card/CardConfig.cs)
+- `Definitions`
+  - BattleCore 直接消费的静态定义
+  - 负责表达“运行时会读取，但本身不会在战斗中变化的模板”
+  - 例如 [BuffConfig.cs](../..//Shared/BattleCore/Definitions/BuffConfig.cs)
+- `Foundation`
+  - 当前已细分为 `Cards / Effects / Entities / Triggers`
+  - BattleCore 运行时基础模型
+  - 负责表达“战斗里当前到底有什么对象、这些对象当前状态是什么”
+  - 例如 [BattleCard.cs](../..//Shared/BattleCore/Foundation/Cards/BattleCard.cs)、[BuffUnit.cs](../..//Shared/BattleCore/Foundation/Entities/BuffUnit.cs)
+
+可以把这三层理解成：
+
+- `ConfigModels`：作者世界
+- `Definitions`：BattleCore 静态模板世界
+- `Foundation`：BattleCore 运行时实例世界
+
+当前这条边界已经基本成立。`BuffConfig` 和 `BattleCardDefinition` 都已经归入 `Definitions/`，但 `Foundation/` 仍然承载较多基础运行时模型，后续仍可继续细分。
 
 ## 3. 依赖方向
 
-建议把依赖关系明确成：
+建议保持下面这条依赖方向不变：
 
 - `Protocol` <- `ConfigModels`
 - `Protocol` <- `BattleCore`
-- `ConfigModels` 与 `BattleCore` 尽量解耦
 
-也就是说：
-
-- `ConfigModels` 不要反向依赖 `BattleCore`
-- `BattleCore` 不直接知道编辑器或配置文件格式
-- 客户端通过适配层把 `ConfigModels` 转成 `BattleCore` 可执行结构
-
----
+`ConfigModels` 和 `BattleCore` 应尽量解耦，由客户端适配层连接。
 
 ## 4. BattleCore 子目录职责
-
-当前 `Shared/BattleCore/` 子目录如下：
-
-- `Buff`
-- `Context`
-- `Core`
-- `Costs`
-- `EventBus`
-- `Foundation`
-- `Handlers`
-- `Managers`
-- `Modifiers`
-- `Random`
-- `Resolvers`
 
 ### 4.1 Context
 
@@ -127,19 +121,20 @@ BattleCore 应只依赖：
 
 当前主要类型：
 
-- [BattleContext.cs](/d:/Card_Moba/Shared/BattleCore/Context/BattleContext.cs)
-- [PlayerData.cs](/d:/Card_Moba/Shared/BattleCore/Context/PlayerData.cs)
-- [PendingEffectQueue.cs](/d:/Card_Moba/Shared/BattleCore/Context/PendingEffectQueue.cs)
-- [PendingPlanSnapshot.cs](/d:/Card_Moba/Shared/BattleCore/Context/PendingPlanSnapshot.cs)
-- [LaneData.cs](/d:/Card_Moba/Shared/BattleCore/Context/LaneData.cs)
+- [BattleContext.cs](../..//Shared/BattleCore/Context/BattleContext.cs)
+- [PlayerData.cs](../..//Shared/BattleCore/Context/PlayerData.cs)
+- [PendingEffectQueue.cs](../..//Shared/BattleCore/Context/PendingEffectQueue.cs)
+- [PendingPlanSnapshot.cs](../..//Shared/BattleCore/Context/PendingPlanSnapshot.cs)
 
 职责：
 
 - 保存整局战斗状态
 - 保存玩家运行时状态
-- 保存待执行队列与定策快照
+- 保存定策快照与待执行队列
 
-它只表达“当前状态是什么”，不负责流程推进。
+它只表达“当前状态是什么”，不负责推进流程。
+
+当前 1v1 主线不再保留分路状态容器；旧的 `LaneData` 已经归档，等待后续 3v3 / 分路系统重写。
 
 ### 4.2 Core
 
@@ -147,15 +142,15 @@ BattleCore 应只依赖：
 
 当前主要类型：
 
-- [RoundManager.cs](/d:/Card_Moba/Shared/BattleCore/Core/RoundManager.cs)
-- [SettlementEngine.cs](/d:/Card_Moba/Shared/BattleCore/Core/SettlementEngine.cs)
-- [BattleFactory.cs](/d:/Card_Moba/Shared/BattleCore/Core/BattleFactory.cs)
+- [RoundManager.cs](../..//Shared/BattleCore/Core/RoundManager.cs)
+- [SettlementEngine.cs](../..//Shared/BattleCore/Core/SettlementEngine.cs)
+- [BattleFactory.cs](../..//Shared/BattleCore/Core/BattleFactory.cs)
 
 职责：
 
 - 驱动回合生命周期
-- 驱动瞬策与定策结算
-- 创建 BattleCore 所需对象
+- 协调出牌与结算
+- 创建 BattleCore 运行时对象
 
 它回答的是“什么时候做什么”。
 
@@ -165,16 +160,19 @@ BattleCore 应只依赖：
 
 当前主要类型：
 
-- [PlayCostResolver.cs](/d:/Card_Moba/Shared/BattleCore/Costs/PlayCostResolver.cs)
-- [PlayCostResolution.cs](/d:/Card_Moba/Shared/BattleCore/Costs/PlayCostResolution.cs)
+- [PlayCostResolver.cs](../..//Shared/BattleCore/Costs/PlayCostResolver.cs)
+- [PlayCostResolution.cs](../..//Shared/BattleCore/Costs/PlayCostResolution.cs)
 
-建议职责边界：
+当前边界：
 
-- 只计算“这张牌这次实际要花多少能量”
-- 不负责提交腐化次数
-- 不负责结算后改去向
+- 只负责计算这张牌这次实际耗能
+- 输入是基础费用和规则结果
+- 输出是 `BaseCost / FinalCost`
 
-也就是说，`Costs` 只处理 `ActualCost`，不处理其他出牌副作用。
+它不再负责：
+
+- 腐化次数提交
+- 出牌后去向改写
 
 ### 4.4 Handlers
 
@@ -182,34 +180,32 @@ BattleCore 应只依赖：
 
 当前主要类型：
 
-- [IEffectHandler.cs](/d:/Card_Moba/Shared/BattleCore/Handlers/IEffectHandler.cs)
-- [HandlerPool.cs](/d:/Card_Moba/Shared/BattleCore/Handlers/HandlerPool.cs)
-- [CoreHandlers.cs](/d:/Card_Moba/Shared/BattleCore/Handlers/CoreHandlers.cs)
+- [IEffectHandler.cs](../..//Shared/BattleCore/Handlers/IEffectHandler.cs)
+- [HandlerPool.cs](../..//Shared/BattleCore/Handlers/HandlerPool.cs)
+- [CoreHandlers.cs](../..//Shared/BattleCore/Handlers/CoreHandlers.cs)
 
 职责：
 
-- 真正执行单个效果
-- 修改 HP、护盾、Buff、牌区等运行时状态
-
-它回答的是“这个 effect 具体怎么落地执行”。
+- 执行具体 effect
+- 产出 `EffectResult`
 
 ### 4.5 Resolvers
 
-`Resolvers` 是语义解释层。
+`Resolvers` 是配置语义解释层。
 
 当前主要类型：
 
-- [DynamicParamResolver.cs](/d:/Card_Moba/Shared/BattleCore/Resolvers/DynamicParamResolver.cs)
-- [ConditionChecker.cs](/d:/Card_Moba/Shared/BattleCore/Resolvers/ConditionChecker.cs)
-- [TargetResolver.cs](/d:/Card_Moba/Shared/BattleCore/Resolvers/TargetResolver.cs)
+- [DynamicParamResolver.cs](../..//Shared/BattleCore/Resolvers/DynamicParamResolver.cs)
+- [ConditionChecker.cs](../..//Shared/BattleCore/Resolvers/ConditionChecker.cs)
+- [TargetResolver.cs](../..//Shared/BattleCore/Resolvers/TargetResolver.cs)
 
 职责：
 
-- 把表达式解析成数值
-- 把目标语义解析成实体集合
-- 把条件语义解析成布尔结果
+- 解析数值表达式
+- 判断条件是否成立
+- 解析目标集合
 
-它不持有长期状态，更像解释器。
+它们更像解释器，不持有长期状态。
 
 ### 4.6 Managers
 
@@ -217,10 +213,12 @@ BattleCore 应只依赖：
 
 当前主要类型：
 
-- [CardManager.cs](/d:/Card_Moba/Shared/BattleCore/Managers/CardManager.cs)
-- [BuffManager.cs](/d:/Card_Moba/Shared/BattleCore/Managers/BuffManager.cs)
-- [TriggerManager.cs](/d:/Card_Moba/Shared/BattleCore/Managers/TriggerManager.cs)
-- [IManagers.cs](/d:/Card_Moba/Shared/BattleCore/Managers/IManagers.cs)
+- [CardManager.cs](../..//Shared/BattleCore/Managers/CardManager.cs)
+- [BuffManager.cs](../..//Shared/BattleCore/Managers/BuffManager.cs)
+- [TriggerManager.cs](../..//Shared/BattleCore/Managers/TriggerManager.cs)
+- [ICardManager.cs](../..//Shared/BattleCore/Managers/ICardManager.cs)
+- [IBuffManager.cs](../..//Shared/BattleCore/Managers/IBuffManager.cs)
+- [ITriggerManager.cs](../..//Shared/BattleCore/Managers/ITriggerManager.cs)
 
 职责：
 
@@ -228,98 +226,136 @@ BattleCore 应只依赖：
 - 维护 Buff 生命周期
 - 维护 Trigger 注册与入队
 
-它回答的是“运行时状态怎么变化和维护”。
+它们负责“状态怎么变化和维护”，不是“规则怎么解释”。
 
 ### 4.7 Modifiers
 
-`Modifiers` 是数值修正规则层。
+`Modifiers` 是结算数值修正规则层。
 
 当前主要类型：
 
-- [IValueModifierManager.cs](/d:/Card_Moba/Shared/BattleCore/Modifiers/IValueModifierManager.cs)
-- [ValueModifierManager.cs](/d:/Card_Moba/Shared/BattleCore/Modifiers/ValueModifierManager.cs)
-- [ValueModifier.cs](/d:/Card_Moba/Shared/BattleCore/Modifiers/ValueModifier.cs)
-- [ModifierType.cs](/d:/Card_Moba/Shared/BattleCore/Modifiers/ModifierType.cs)
-- [ModifierScope.cs](/d:/Card_Moba/Shared/BattleCore/Modifiers/ModifierScope.cs)
+- [IValueModifierManager.cs](../..//Shared/BattleCore/Modifiers/IValueModifierManager.cs)
+- [ValueModifierManager.cs](../..//Shared/BattleCore/Modifiers/ValueModifierManager.cs)
+- [ValueModifier.cs](../..//Shared/BattleCore/Modifiers/ValueModifier.cs)
+- [ModifierType.cs](../..//Shared/BattleCore/Modifiers/ModifierType.cs)
+- [ModifierScope.cs](../..//Shared/BattleCore/Modifiers/ModifierScope.cs)
 
 职责：
 
-- 对已确定的基础数值做阶段修正
-- 当前主要服务结算值修正
+- 对已确定的基础结算值做阶段修正
+- 当前主要服务伤害、治疗、护盾等结算值
 
 它不是表达式解释器，也不是 Buff 本身。
 
-### 4.8 EventBus
+### 4.8 Rules
+
+`Rules` 是操作规则判定层。
+
+当前第一阶段已经落地：
+
+- [DrawRuleResolver.cs](../..//Shared/BattleCore/Rules/Draw/DrawRuleResolver.cs)
+- [DrawRuleResolution.cs](../..//Shared/BattleCore/Rules/Draw/DrawRuleResolution.cs)
+- [PlayRuleResolver.cs](../..//Shared/BattleCore/Rules/Play/PlayRuleResolver.cs)
+- [PlayRuleResolution.cs](../..//Shared/BattleCore/Rules/Play/PlayRuleResolution.cs)
+- [PlayOrigin.cs](../..//Shared/BattleCore/Rules/Play/PlayOrigin.cs)
+
+当前职责：
+
+- 判断一次抽牌是否允许
+- 判断一次出牌是否允许
+- 判断一次出牌是否命中腐化等规则
+- 把规则结果拆成：
+  - 费用影响
+  - 成功出牌后的副作用影响
+
+它不负责：
+
+- Buff 生命周期
+- 目标解析
+- 具体 effect 执行
+- 牌区移动
+
+### 4.9 EventBus
 
 `EventBus` 是对外观测层。
 
 当前主要类型：
 
-- [BattleEventBus.cs](/d:/Card_Moba/Shared/BattleCore/EventBus/BattleEventBus.cs)
-- [BattleEvents.cs](/d:/Card_Moba/Shared/BattleCore/EventBus/BattleEvents.cs)
+- [BattleEventBus.cs](../..//Shared/BattleCore/EventBus/BattleEventBus.cs)
+- [BattleEvents.cs](../..//Shared/BattleCore/EventBus/BattleEvents.cs)
 
 职责：
 
-- 把 BattleCore 里的关键事件向外发布
-- 服务测试观测、客户端日志和 UI 适配
+- 把 BattleCore 中的关键事件向外发布
+- 服务测试观测、客户端日志与 UI 适配
 
-它不是规则主流程的核心依赖。  
-当前更接近“事件输出口”，而不是 BattleCore 内部规则总线。
+它不是规则执行主链的一部分。
 
-### 4.9 Foundation
+### 4.10 Foundation
 
 `Foundation` 是 BattleCore 基础运行时模型层。
 
 当前主要类型包括：
 
-- [BattleCard.cs](/d:/Card_Moba/Shared/BattleCore/Foundation/BattleCard.cs)
-- [BattleCardDefinition.cs](/d:/Card_Moba/Shared/BattleCore/Foundation/BattleCardDefinition.cs)
-- [Entity.cs](/d:/Card_Moba/Shared/BattleCore/Foundation/Entity.cs)
-- [EffectUnit.cs](/d:/Card_Moba/Shared/BattleCore/Foundation/EffectUnit.cs)
-- [EffectResult.cs](/d:/Card_Moba/Shared/BattleCore/Foundation/EffectResult.cs)
-- [TriggerUnit.cs](/d:/Card_Moba/Shared/BattleCore/Foundation/TriggerUnit.cs)
-- [TriggerContext.cs](/d:/Card_Moba/Shared/BattleCore/Foundation/TriggerContext.cs)
-- [TriggerTiming.cs](/d:/Card_Moba/Shared/BattleCore/Foundation/TriggerTiming.cs)
-- [BuffUnit.cs](/d:/Card_Moba/Shared/BattleCore/Foundation/BuffUnit.cs)
+- `Foundation/Cards`
+  - [BattleCard.cs](../..//Shared/BattleCore/Foundation/Cards/BattleCard.cs)
+  - [CardZone.cs](../..//Shared/BattleCore/Foundation/Cards/CardZone.cs)
+- `Foundation/Effects`
+  - [EffectUnit.cs](../..//Shared/BattleCore/Foundation/Effects/EffectUnit.cs)
+  - [EffectResult.cs](../..//Shared/BattleCore/Foundation/Effects/EffectResult.cs)
+  - [EffectUnitCloner.cs](../..//Shared/BattleCore/Foundation/Effects/EffectUnitCloner.cs)
+- `Foundation/Entities`
+  - [Entity.cs](../..//Shared/BattleCore/Foundation/Entities/Entity.cs)
+  - [BuffUnit.cs](../..//Shared/BattleCore/Foundation/Entities/BuffUnit.cs)
+- `Foundation/Triggers`
+  - [TriggerUnit.cs](../..//Shared/BattleCore/Foundation/Triggers/TriggerUnit.cs)
+  - [TriggerContext.cs](../..//Shared/BattleCore/Foundation/Triggers/TriggerContext.cs)
+  - [TriggerTiming.cs](../..//Shared/BattleCore/Foundation/Triggers/TriggerTiming.cs)
 
 职责：
 
-- 提供运行时共享基础模型
-- 作为 BattleCore 内部通用数据结构层
+- 提供 BattleCore 共用的基础运行时数据结构
 
-当前目录名还能用，但后续如果继续细分，最适合拆成：
+这里需要特别注意：
 
-- `Cards`
-- `Effects`
-- `Entities`
-- `Triggers`
+- [BattleCard.cs](../..//Shared/BattleCore/Foundation/Cards/BattleCard.cs) 和 [BuffUnit.cs](../..//Shared/BattleCore/Foundation/Entities/BuffUnit.cs) 是标准的运行时实例模型
+- `Foundation` 现在更接近“BattleCore 基础运行时模型目录”，而不是“静态定义目录”
 
-### 4.10 Buff
+也就是说，`Foundation` 当前承载的是运行时对象和运行时结果，不再包含 `BattleCardDefinition` 这类静态模板。
 
-`Buff` 目录当前只剩配置定义：
+### 4.11 Definitions
 
-- [BuffConfig.cs](/d:/Card_Moba/Shared/BattleCore/Buff/BuffConfig.cs)
+`Definitions` 是 BattleCore 静态定义目录。
 
-当前语义应明确为：
+当前文件：
 
-- 这里放 Buff 配置定义
-- 运行时 Buff 实例是 [BuffUnit.cs](/d:/Card_Moba/Shared/BattleCore/Foundation/BuffUnit.cs)
+- [BuffConfig.cs](../..//Shared/BattleCore/Definitions/BuffConfig.cs)
+- [BattleCardDefinition.cs](../..//Shared/BattleCore/Definitions/BattleCardDefinition.cs)
 
-也就是说，这个目录已经不是“Buff 系统主实现目录”，更像定义目录。
+这意味着：
 
-### 4.11 Random
+- 运行时 Buff 实例是 [BuffUnit.cs](../..//Shared/BattleCore/Foundation/Entities/BuffUnit.cs)
+- `Definitions/` 目录放的是 BattleCore 会直接读取的静态模板
+- 这类模板本身不在战斗中变化
+
+当前这里已经至少包含两类 BattleCore 静态定义：
+
+- [BuffConfig.cs](../..//Shared/BattleCore/Definitions/BuffConfig.cs)
+- [BattleCardDefinition.cs](../..//Shared/BattleCore/Definitions/BattleCardDefinition.cs)
+
+这个目录现在已经具备独立存在的价值。
+
+### 4.12 Random
 
 `Random` 是确定性随机工具层。
 
 当前主要类型：
 
-- [SeededRandom.cs](/d:/Card_Moba/Shared/BattleCore/Random/SeededRandom.cs)
+- [SeededRandom.cs](../..//Shared/BattleCore/Random/SeededRandom.cs)
 
-职责清晰，保持现状即可。
+职责单一，保持现状即可。
 
----
-
-## 5. 当前最清晰与最需要继续收口的部分
+## 5. 当前最清晰与仍需继续收口的部分
 
 当前边界最清晰的部分：
 
@@ -328,278 +364,77 @@ BattleCore 应只依赖：
 - `Handlers`
 - `Resolvers`
 - `Modifiers`
+- `Rules` 第一阶段
+- `Definitions` 的概念边界
 
-当前还需要继续收口的部分：
+当前仍值得继续收口的部分：
 
-- `Costs`
-- `Buff`
 - `Foundation`
 - `EventBus`
 
 原因分别是：
 
-- `Costs` 开始承载出牌规则副作用语义
-- `Buff` 现在只剩配置定义，目录命名和职责不完全一致
-- `Foundation` 承载内容过多，名字过宽
-- `EventBus` 当前更像单向事件输出口，而不是完整 pub/sub 总线
+- `Foundation` 当前同时放了运行时实例模型和一部分 definition 语义模型
+- `Foundation` 承载内容较多，后续可以按领域再细分
+- `EventBus` 当前更接近单向观测输出口，而不是完整 pub/sub 系统
 
----
+## 6. Rules 当前落地边界
 
-## 6. 为什么需要 Rules
-
-当前最典型的问题是 `腐化`。
-
-从产品语义看，`腐化` 包含三件事：
-
-- 这次牌费用显示为 0
-- 这次实际支付费用为 0
-- 成功由玩家主动打出后：
-  - 扣除腐化次数
-  - 这张牌结算后改为 `Consume`
-
-这里真正麻烦的点不是“费用变 0”，而是：
-
-- 它依赖玩家身上的 Buff
-- 它依赖每回合剩余次数
-- 它依赖出牌来源是否为玩家主动从手牌打出
-- 它还会带来出牌成功后的额外副作用
-
-这已经超出了纯 `CostResolver` 的职责。
-
----
-
-## 7. Rule 的职责
-
-`Rule` 是操作规则判定层。
-
-它负责回答：
-
-- 这次操作是否允许
-- 这次操作命中了哪些规则
-- 这些规则会给这次操作带来什么结果
-
-它不负责：
-
-- Buff 生命周期
-- 表达式解析
-- 目标解析
-- 具体效果执行
-- 牌区流转
-
-换句话说，`Rule` 不是新的大总管，而是把运行时状态解释成操作规则结果的那一层。
-
----
-
-## 8. Rule 与其他模块的关系
-
-### 8.1 Rule 与 Buff
-
-- `Buff` 是状态真源
-- `Rule` 读取 Buff 状态来判断规则是否命中
-
-例如：
+当前已经迁入 Rule 的规则只有三条：
 
 - `NoDrawThisTurn`
 - `NoDamageCardThisTurn`
 - `Corruption`
 
-都仍然应该是 Buff，只是这些 Buff 对一次操作意味着什么，由 `Rule` 来解释。
+当前职责分工如下：
 
-### 8.2 Rule 与 Costs
+- `BuffManager`
+  - 维护 Buff 真状态
+- `DrawRuleResolver`
+  - 判断一次抽牌是否允许
+- `PlayRuleResolver`
+  - 判断一次出牌是否允许
+  - 判断一次出牌是否命中腐化
+  - 产出费用与成功后副作用结果
+- `PlayCostResolver`
+  - 只根据规则结果计算实际耗能
+- `RoundManager / CardManager`
+  - 在抽牌、出牌流程中调用规则层
+  - 在成功后提交规则副作用
 
-- `Rule` 先产出费用相关指令
-- `CostResolver` 再只做费用计算
+## 7. Rule 与其他模块的关系
 
-例如：
+### 7.1 Rule 与 Buff
 
-- `Rule` 判断本次命中腐化
-- 产出 `SetTo(0)`
-- `CostResolver` 只根据这个指令算最终耗能
+- `Buff` 是状态真源
+- `Rule` 读取 Buff 状态并解释成这次操作的规则结果
 
-因此：
+### 7.2 Rule 与 Costs
 
-- `CostResolver` 只负责“这次要花多少”
-- `Rule` 负责“为什么会这样，以及是否还带别的副作用”
+- `Rule` 产出费用相关结果
+- `Costs` 只消费这些结果并计算最终耗能
 
-### 8.3 Rule 与 Modifiers
+### 7.3 Rule 与 Modifiers
 
-- `Modifier` 修正的是结算值
 - `Rule` 修正的是操作本身
+- `Modifiers` 修正的是结算值
 
-也就是说：
+### 7.4 Rule 与 Managers / Core
 
-- 力量、虚弱、易伤仍然属于 `Modifiers`
-- `NoDrawThisTurn`、`NoDamageCardThisTurn`、`Corruption` 这类属于 `Rules`
+- `Managers` 和 `Core` 负责流程与状态变更
+- `Rule` 给它们提供是否允许、费用如何变化、成功后要提交什么副作用
 
-### 8.4 Rule 与 Resolvers
+## 8. 后续整理方向
 
-- `Resolvers` 负责解释配置语义
-- `Rule` 负责根据当前状态判断操作规则
+后续继续整理 `Shared/BattleCore` 时，建议优先顺序：
 
-可以简单理解成：
+1. 继续收口 `EventBus` 的命名与定位；如果它长期只做观测，可考虑明确成单向事件输出口
+2. 继续把操作规则从流程层收进 `Rules`，优先是“下一张定策牌额外结算一次”这类真正的操作规则
+3. 视需要评估 `StrategyZone` 兼容枚举值是否还能继续保留
 
-- `Resolvers` 更像解释器
-- `Rule` 更像策略判定器
-
-### 8.5 Rule 与 Managers
-
-- `Managers` 负责状态维护
-- `Rule` 负责状态解释
-
-例如：
-
-- `CardManager` 管抽牌
-- `DrawRuleResolver` 判断这次抽牌是否允许
-
-例如：
-
-- `RoundManager` 管出牌主流程
-- `PlayRuleResolver` 判断这次出牌是否允许、费用怎么变、成功后附带什么规则副作用
-
-### 8.6 Rule 与 Core
-
-- `Core` 负责流程编排
-- `Rule` 负责给编排层提供规则判定结果
-
-因此：
-
-- `RoundManager` 不应该长期自己直接查 `NoDamageCardThisTurn`
-- `CardManager` 也不应该长期自己直接查 `NoDrawThisTurn`
-
-这些判断应该逐步迁入 `Rules`
-
----
-
-## 9. Rules 模块设计草案
-
-建议新增：
-
-- `Shared/BattleCore/Rules/`
-
-第一阶段先只做：
-
-- `Rules/Draw/`
-- `Rules/Play/`
-
-### 9.1 建议分层
-
-建议拆成三层：
-
-1. `DrawRuleResolver`
-- 判断这次抽牌是否允许
-
-2. `PlayRuleResolver`
-- 判断这次出牌是否允许
-- 判断这次是否命中某条出牌规则
-- 产出费用相关 directive
-- 产出成功后要提交的 directive
-
-3. `RoundManager / CardManager`
-- 在操作成功后提交规则副作用
-
-### 9.2 建议的数据结构
-
-建议引入：
-
-- `PlayOrigin`
-  - `PlayerHandPlay`
-  - `AutoCast`
-  - `TriggerCast`
-  - `SystemCast`
-
-- `PlayRuleResolution`
-  - `Allowed`
-  - `BlockReason`
-  - `AppliedRuleTags`
-  - `CostDirectives`
-  - `PostPlayDirectives`
-
-- `DrawRuleResolution`
-  - `Allowed`
-  - `BlockReason`
-
-- `CostDirective`
-  - `Add`
-  - `Subtract`
-  - `SetTo`
-  - `MinClamp`
-  - `MaxClamp`
-
-- `PostPlayDirective`
-  - `ForceConsumeAfterResolve`
-  - `ConsumeCorruptionCharge`
-
-### 9.3 腐化示例
-
-以 `腐化` 为例，理想流程应是：
-
-1. 回合开始  
-   - 从 `Corruption` Buff 读总值  
-   - 重置 `PlayerData.CorruptionFreePlaysRemainingThisRound`
-
-2. 玩家从手牌主动打牌  
-   - `PlayOrigin = PlayerHandPlay`
-
-3. `PlayRuleResolver` 判断  
-   - 玩家有 `Corruption` Buff
-   - 剩余次数 > 0
-   - 来源是 `PlayerHandPlay`
-   - 则命中腐化规则
-
-4. `CostResolver` 只处理费用  
-   - 看到 `SetTo(0)` 规则
-   - 返回 `ActualCost = 0`
-
-5. 出牌成功后  
-   - `RoundManager` 根据 `PostPlayDirectives`
-   - 扣腐化次数
-   - 设置 `forceConsumeAfterResolve`
-
-这样以后 `CostResolver` 就可以重新保持纯粹：
-
-- 只负责算耗能
-- 不负责决定腐化副作用何时提交
-
----
-
-## 10. 建议的迁移顺序
-
-如果继续整理当前架构，建议按这个顺序推进：
-
-1. 保持 `Costs` 只负责实际耗能计算
-2. 新增 `Rules/Draw/`、`Rules/Play/`
-3. 先把三条规则迁进去：
-   - `NoDrawThisTurn`
-   - `NoDamageCardThisTurn`
-   - `Corruption`
-4. 再根据复杂度决定是否补：
-   - `Rules/Resolve/`
-   - `Rules/Restrictions/`
-
-当前不建议：
-
-- 把 `Cost` 直接并入 `Modifiers`
-- 把 `Rules` 继续塞回 `RoundManager`
-
-原因很简单：
-
-- `Modifiers` 是结算值修正规则
-- `Costs` 是资源消耗计算
-- `Rules` 是操作合法性与副作用判定
-
-它们相关，但不应混成一个模块。
-
----
-
-## 11. 当前有效参考
+## 9. 当前有效参考
 
 - [SystemArchitecture_V2.md](SystemArchitecture_V2.md)
 - [ConfigSystem.md](ConfigSystem.md)
 - [CardSystem.md](../GameDesign/CardSystem.md)
 - [SettlementRules.md](../GameDesign/SettlementRules.md)
-
-这份文档主要补的是：
-
-- `Shared/` 顶层职责
-- `BattleCore` 子目录边界
-- `Rules` 模块设计方向

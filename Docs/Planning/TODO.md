@@ -36,7 +36,7 @@
 | `Foundation/TriggerTiming.cs` | 完整触发时机枚举（含 OnStatCardHeld）|
 | `Foundation/BuffUnit.cs` | Buff 实例（StackRule / RemainingRounds）|
 | `Foundation/CardZone.cs` | 卡牌区域枚举（Hand/Deck/Discard/StrategyZone/StatZone）|
-| `Foundation/SettleLayer` | 结算层枚举（Counter/Defense/Damage/Resource/BuffSpecial）|
+| `Foundation/SettlementLayer` | 结算层枚举（Counter/Defense/Damage/Resource/BuffSpecial）|
 | `Context/BattleContext.cs` | 唯一状态容器（所有管理器挂载于此）|
 | `Context/PlayerData.cs` | 玩家数据（HeroEntity + AllCards + DefenseSnapshot）|
 | `Context/LaneData.cs` | 分路数据（预留扩展）|

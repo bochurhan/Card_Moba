@@ -26,20 +26,20 @@ namespace CardMoba.Client.Data.ConfigData
             EffectType.UpgradeCardsInHand,
         };
 
-        private static readonly Dictionary<EffectType, SettleLayer> EffectLayerMap = new()
+        private static readonly Dictionary<EffectType, SettlementLayer> EffectLayerMap = new()
         {
-            { EffectType.Shield, SettleLayer.Defense },
-            { EffectType.Damage, SettleLayer.Damage },
-            { EffectType.Lifesteal, SettleLayer.Damage },
-            { EffectType.Pierce, SettleLayer.Damage },
-            { EffectType.Draw, SettleLayer.Resource },
-            { EffectType.GainEnergy, SettleLayer.Resource },
-            { EffectType.GenerateCard, SettleLayer.Resource },
-            { EffectType.MoveSelectedCardToDeckTop, SettleLayer.Resource },
-            { EffectType.ReturnSourceCardToHandAtRoundEnd, SettleLayer.Resource },
-            { EffectType.Heal, SettleLayer.BuffSpecial },
-            { EffectType.AddBuff, SettleLayer.BuffSpecial },
-            { EffectType.UpgradeCardsInHand, SettleLayer.BuffSpecial },
+            { EffectType.Shield, SettlementLayer.Defense },
+            { EffectType.Damage, SettlementLayer.Damage },
+            { EffectType.Lifesteal, SettlementLayer.Damage },
+            { EffectType.Pierce, SettlementLayer.Damage },
+            { EffectType.Draw, SettlementLayer.Resource },
+            { EffectType.GainEnergy, SettlementLayer.Resource },
+            { EffectType.GenerateCard, SettlementLayer.Resource },
+            { EffectType.MoveSelectedCardToDeckTop, SettlementLayer.Resource },
+            { EffectType.ReturnSourceCardToHandAtRoundEnd, SettlementLayer.Resource },
+            { EffectType.Heal, SettlementLayer.BuffSpecial },
+            { EffectType.AddBuff, SettlementLayer.BuffSpecial },
+            { EffectType.UpgradeCardsInHand, SettlementLayer.BuffSpecial },
         };
 
         public static List<EffectUnit> ConvertEffects(CardConfig card, string defaultTargetType = "Enemy")
@@ -71,7 +71,7 @@ namespace CardMoba.Client.Data.ConfigData
             string defaultTargetType)
         {
             string targetType = ResolveTargetType(effect.TargetOverride, defaultTargetType);
-            SettleLayer layer = ResolveLayer(effect.EffectType);
+            SettlementLayer layer = ResolveLayer(effect.EffectType);
             string effectId = repeatCount > 1
                 ? $"fx_{effectIndex:D2}_{repeatIndex:D2}"
                 : $"fx_{effectIndex:D2}";
@@ -172,11 +172,11 @@ namespace CardMoba.Client.Data.ConfigData
                 : defaultTargetType;
         }
 
-        private static SettleLayer ResolveLayer(EffectType effectType)
+        private static SettlementLayer ResolveLayer(EffectType effectType)
         {
             return EffectLayerMap.TryGetValue(effectType, out var layer)
                 ? layer
-                : SettleLayer.BuffSpecial;
+                : SettlementLayer.BuffSpecial;
         }
 
         private static Dictionary<string, string> BuildParams(CardEffect effect)

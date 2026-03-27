@@ -13,7 +13,7 @@
 主要来源：
 
 - `Shared/Protocol/Enums/`
-- `Shared/BattleCore/Foundation/TriggerTiming.cs`
+- `Shared/BattleCore/Foundation/Triggers/TriggerTiming.cs`
 
 常用枚举包括但不限于：
 
