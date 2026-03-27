@@ -20,6 +20,7 @@ namespace CardMoba.Client.Data.ConfigData
             EffectType.Draw,
             EffectType.GainEnergy,
             EffectType.GenerateCard,
+            EffectType.MoveSelectedCardToDeckTop,
             EffectType.Lifesteal,
             EffectType.ReturnSourceCardToHandAtRoundEnd,
             EffectType.UpgradeCardsInHand,
@@ -34,6 +35,7 @@ namespace CardMoba.Client.Data.ConfigData
             { EffectType.Draw, SettleLayer.Resource },
             { EffectType.GainEnergy, SettleLayer.Resource },
             { EffectType.GenerateCard, SettleLayer.Resource },
+            { EffectType.MoveSelectedCardToDeckTop, SettleLayer.Resource },
             { EffectType.ReturnSourceCardToHandAtRoundEnd, SettleLayer.Resource },
             { EffectType.Heal, SettleLayer.BuffSpecial },
             { EffectType.AddBuff, SettleLayer.BuffSpecial },
@@ -220,19 +222,19 @@ namespace CardMoba.Client.Data.ConfigData
 
         public static string CardTargetTypeToString(CardTargetType targetType)
         {
+            // 注意：Opponent == CurrentEnemy == 2，AllOpponents == AllEnemies == 5
+            // 不能在 switch 中重复列举同值枚举别名，会引发 CS8510 不可达模式错误。
             return targetType switch
             {
-                CardTargetType.None => "None",
-                CardTargetType.Self => "Self",
-                CardTargetType.CurrentEnemy => "Enemy",
-                CardTargetType.AnyEnemy => "Enemy",
-                CardTargetType.AnyAlly => "AllAllies",
-                CardTargetType.AllAllies => "AllAllies",
-                CardTargetType.AllEnemies => "AllEnemies",
-                CardTargetType.All => "All",
-                CardTargetType.Opponent => "Enemy",
-                CardTargetType.AllOpponents => "AllEnemies",
-                _ => "Enemy",
+                CardTargetType.None       => "None",
+                CardTargetType.Self       => "Self",
+                CardTargetType.CurrentEnemy => "Enemy",   // 覆盖 Opponent（同值=2）
+                CardTargetType.AnyEnemy   => "Enemy",
+                CardTargetType.AnyAlly    => "AllAllies",
+                CardTargetType.AllAllies  => "AllAllies",
+                CardTargetType.AllEnemies => "AllEnemies", // 覆盖 AllOpponents（同值=5）
+                CardTargetType.All        => "All",
+                _                         => "Enemy",
             };
         }
     }
