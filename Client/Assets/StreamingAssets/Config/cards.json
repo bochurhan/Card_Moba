@@ -214,7 +214,7 @@
       "energyCost": 1,
       "rarity": 3,
       "effects": [
-        { "effectType": 10, "value": 0, "valueExpression": "{{6 + self.shield}}", "repeatCount": 1, "duration": 0 }
+        { "effectType": 10, "value": 0, "valueExpression": "{{6 + snapshot.self.shield}}", "repeatCount": 1, "duration": 0 }
       ]
     },
     {
@@ -316,7 +316,7 @@
       "rarity": 1,
       "upgradedCardConfigId": "2012",
       "effects": [
-        { "effectType": 10, "value": 0, "valueExpression": "{{6 + sourceCard.instancePlayedCount * 5}}", "repeatCount": 1, "duration": 0 }
+        { "effectType": 10, "value": 0, "valueExpression": "{{6 + frozen.sourceCard.instancePlayedCount * 5}}", "repeatCount": 1, "duration": 0 }
       ]
     },
     {
@@ -332,7 +332,7 @@
       "energyCost": 1,
       "rarity": 1,
       "effects": [
-        { "effectType": 10, "value": 0, "valueExpression": "{{6 + sourceCard.instancePlayedCount * 6}}", "repeatCount": 1, "duration": 0 }
+        { "effectType": 10, "value": 0, "valueExpression": "{{6 + frozen.sourceCard.instancePlayedCount * 6}}", "repeatCount": 1, "duration": 0 }
       ]
     },
     {

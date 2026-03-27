@@ -405,6 +405,7 @@ namespace CardMoba.Client.GameLogic
                 {
                     PlayerId       = playerId,
                     CardInstanceId = battleCard.InstanceId,
+                    CommittedCost  = cost,
                     RuntimeParams  = runtimeParams ?? new Dictionary<string, string>(),
                 });
                 FlushLogs();
