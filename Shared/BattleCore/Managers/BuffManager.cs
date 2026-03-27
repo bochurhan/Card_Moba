@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using CardMoba.BattleCore.Context;
+using CardMoba.BattleCore.Definitions;
 using CardMoba.BattleCore.EventBus;
 using CardMoba.BattleCore.Foundation;
 using CardMoba.BattleCore.Modifiers;
@@ -16,10 +17,10 @@ namespace CardMoba.BattleCore.Managers
         private readonly Dictionary<string, List<BuffUnit>> _buffs
             = new Dictionary<string, List<BuffUnit>>();
 
-        private readonly Func<string, Buff.BuffConfig?> _configProvider;
+        private readonly Func<string, BuffConfig?> _configProvider;
         private int _idCounter;
 
-        public BuffManager(Func<string, Buff.BuffConfig?>? configProvider = null)
+        public BuffManager(Func<string, BuffConfig?>? configProvider = null)
         {
             _configProvider = configProvider ?? (_ => null);
         }
@@ -242,7 +243,7 @@ namespace CardMoba.BattleCore.Managers
         private BuffUnit CreateAndAdd(
             BattleContext ctx,
             List<BuffUnit> list,
-            Buff.BuffConfig config,
+            BuffConfig config,
             string targetEntityId,
             string sourcePlayerId,
             int value,
@@ -331,7 +332,7 @@ namespace CardMoba.BattleCore.Managers
                                 Type = EffectType.Pierce,
                                 TargetType = "Self",
                                 ValueExpression = buff.Value.ToString(),
-                                Layer = SettleLayer.Damage,
+                                Layer = SettlementLayer.Damage,
                                 Params = new Dictionary<string, string>
                                 {
                                     ["isDot"] = "true",
@@ -362,7 +363,7 @@ namespace CardMoba.BattleCore.Managers
                                 Type = EffectType.Heal,
                                 TargetType = "Self",
                                 ValueExpression = buff.Value.ToString(),
-                                Layer = SettleLayer.BuffSpecial,
+                                Layer = SettlementLayer.BuffSpecial,
                             },
                         },
                     });
@@ -389,7 +390,7 @@ namespace CardMoba.BattleCore.Managers
                                 Type = EffectType.Heal,
                                 TargetType = "Self",
                                 ValueExpression = $"{{{{trigCtx.value * {buff.Value} / 100}}}}",
-                                Layer = SettleLayer.BuffSpecial,
+                                Layer = SettlementLayer.BuffSpecial,
                                 Conditions = new List<string> { "trigCtx.value > 0" },
                             },
                         },
@@ -417,7 +418,7 @@ namespace CardMoba.BattleCore.Managers
                                 Type = EffectType.Damage,
                                 TargetType = "TriggerTarget",
                                 ValueExpression = $"{{{{trigCtx.value * {buff.Value} / 100}}}}",
-                                Layer = SettleLayer.Damage,
+                                Layer = SettlementLayer.Damage,
                                 Conditions = new List<string> { "trigCtx.value > 0" },
                                 Params = new Dictionary<string, string>
                                 {
@@ -514,7 +515,7 @@ namespace CardMoba.BattleCore.Managers
                                 Type = EffectType.AddBuff,
                                 TargetType = "Self",
                                 ValueExpression = buff.Value.ToString(),
-                                Layer = SettleLayer.BuffSpecial,
+                                Layer = SettlementLayer.BuffSpecial,
                                 Params = new Dictionary<string, string>
                                 {
                                     ["buffConfigId"] = "vulnerable",
@@ -546,7 +547,7 @@ namespace CardMoba.BattleCore.Managers
                                 Type = EffectType.AddBuff,
                                 TargetType = "Self",
                                 ValueExpression = buff.Value.ToString(),
-                                Layer = SettleLayer.BuffSpecial,
+                                Layer = SettlementLayer.BuffSpecial,
                                 Conditions = new List<string> { "trigCtx.value > 0" },
                                 Params = new Dictionary<string, string>
                                 {

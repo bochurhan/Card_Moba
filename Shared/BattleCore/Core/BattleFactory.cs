@@ -1,4 +1,4 @@
-
+﻿
 #pragma warning disable CS8632
 
 using System;
@@ -8,7 +8,9 @@ using CardMoba.BattleCore.Context;
 using CardMoba.BattleCore.Managers;
 using CardMoba.BattleCore.Modifiers;
 using CardMoba.BattleCore.EventBus;
-using CardMoba.BattleCore.Buff;
+using CardMoba.BattleCore.Definitions;
+using CardMoba.BattleCore.Rules.Draw;
+using CardMoba.BattleCore.Rules.Play;
 
 namespace CardMoba.BattleCore.Core
 {
@@ -123,6 +125,8 @@ namespace CardMoba.BattleCore.Core
             var buffManager          = new BuffManager(BuffConfigProvider);
             var cardManager          = new CardManager();
             var valueModifierManager = new ValueModifierManager();
+            var drawRuleResolver     = new DrawRuleResolver();
+            var playRuleResolver     = new PlayRuleResolver();
             var bus                  = eventBus ?? new NoOpEventBus();
 
             setupLog.Add($"[BattleFactory] 管理器创建完毕（battleId={battleId}, seed={randomSeed}）。");
@@ -136,6 +140,8 @@ namespace CardMoba.BattleCore.Core
                 cardManager,
                 buffManager,
                 valueModifierManager,
+                drawRuleResolver,
+                playRuleResolver,
                 CardDefinitionProvider);
 
             // ── Step 3：注册玩家数据 ──────────────────────────────

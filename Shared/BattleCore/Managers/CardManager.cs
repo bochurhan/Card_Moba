@@ -59,9 +59,10 @@ namespace CardMoba.BattleCore.Managers
             if (player == null)
                 return new List<BattleCard>();
 
-            if (ctx.BuffManager.HasBuffType(ctx, player.HeroEntity.EntityId, Protocol.Enums.BuffType.NoDrawThisTurn))
+            var drawRules = ctx.DrawRules.Resolve(ctx, playerId);
+            if (!drawRules.Allowed)
             {
-                ctx.RoundLog.Add($"[CardManager] {playerId} draw blocked by NoDrawThisTurn.");
+                ctx.RoundLog.Add($"[CardManager] {playerId} draw blocked: {drawRules.BlockReason}.");
                 return new List<BattleCard>();
             }
 

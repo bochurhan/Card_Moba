@@ -5,13 +5,14 @@ using System;
 using System.Collections.Generic;
 using FluentAssertions;
 using Xunit;
-using CardMoba.BattleCore.Buff;
 using CardMoba.BattleCore.Context;
 using CardMoba.BattleCore.Core;
 using CardMoba.BattleCore.Costs;
+using CardMoba.BattleCore.Definitions;
 using CardMoba.BattleCore.EventBus;
 using CardMoba.BattleCore.Foundation;
 using CardMoba.BattleCore.Handlers;
+using CardMoba.BattleCore.Rules.Play;
 using CardMoba.Protocol.Enums;
 
 namespace CardMoba.Tests
@@ -72,7 +73,7 @@ namespace CardMoba.Tests
                 Type = EffectType.Damage,
                 TargetType = targetType,
                 ValueExpression = value.ToString(),
-                Layer = SettleLayer.Damage,
+                Layer = SettlementLayer.Damage,
             };
 
         private static EffectUnit MakePierceEffect(int value, string targetType = "Enemy")
@@ -82,7 +83,7 @@ namespace CardMoba.Tests
                 Type = EffectType.Pierce,
                 TargetType = targetType,
                 ValueExpression = value.ToString(),
-                Layer = SettleLayer.Damage,
+                Layer = SettlementLayer.Damage,
             };
 
         private static EffectUnit MakeLifestealEffect(int percent)
@@ -92,7 +93,7 @@ namespace CardMoba.Tests
                 Type = EffectType.Lifesteal,
                 TargetType = "Self",
                 ValueExpression = percent.ToString(),
-                Layer = SettleLayer.Damage,
+                Layer = SettlementLayer.Damage,
             };
 
         private static EffectUnit MakeHealEffect(int value)
@@ -102,7 +103,7 @@ namespace CardMoba.Tests
                 Type = EffectType.Heal,
                 TargetType = "Self",
                 ValueExpression = value.ToString(),
-                Layer = SettleLayer.BuffSpecial,
+                Layer = SettlementLayer.BuffSpecial,
             };
 
         private static EffectUnit MakeShieldEffect(int value)
@@ -112,7 +113,7 @@ namespace CardMoba.Tests
                 Type = EffectType.Shield,
                 TargetType = "Self",
                 ValueExpression = value.ToString(),
-                Layer = SettleLayer.Defense,
+                Layer = SettlementLayer.Defense,
             };
 
         private static EffectUnit MakeGainEnergyEffect(int value)
@@ -122,7 +123,7 @@ namespace CardMoba.Tests
                 Type = EffectType.GainEnergy,
                 TargetType = "Self",
                 ValueExpression = value.ToString(),
-                Layer = SettleLayer.Resource,
+                Layer = SettlementLayer.Resource,
             };
 
         private static EffectUnit MakeUpgradeCardsInHandEffect(string projectionLifetime)
@@ -132,7 +133,7 @@ namespace CardMoba.Tests
                 Type = EffectType.UpgradeCardsInHand,
                 TargetType = "Self",
                 ValueExpression = "0",
-                Layer = SettleLayer.BuffSpecial,
+                Layer = SettlementLayer.BuffSpecial,
                 Params = new Dictionary<string, string>
                 {
                     ["projectionLifetime"] = projectionLifetime,
@@ -146,7 +147,7 @@ namespace CardMoba.Tests
                 Type = EffectType.AddBuff,
                 TargetType = targetType,
                 ValueExpression = value.ToString(),
-                Layer = SettleLayer.BuffSpecial,
+                Layer = SettlementLayer.BuffSpecial,
                 Params = new Dictionary<string, string>
                 {
                     ["buffConfigId"] = buffConfigId,
@@ -167,7 +168,7 @@ namespace CardMoba.Tests
                 Type = EffectType.GenerateCard,
                 TargetType = targetType,
                 ValueExpression = valueExpression,
-                Layer = SettleLayer.Resource,
+                Layer = SettlementLayer.Resource,
                 Params = new Dictionary<string, string>
                 {
                     ["configId"] = generatedConfigId,
@@ -184,7 +185,7 @@ namespace CardMoba.Tests
                 Type = EffectType.ReturnSourceCardToHandAtRoundEnd,
                 TargetType = "Self",
                 ValueExpression = "0",
-                Layer = SettleLayer.Resource,
+                Layer = SettlementLayer.Resource,
             };
 
         private static EffectUnit MakeMoveSelectedCardToDeckTopEffect()
@@ -194,7 +195,7 @@ namespace CardMoba.Tests
                 Type = EffectType.MoveSelectedCardToDeckTop,
                 TargetType = "Self",
                 ValueExpression = "0",
-                Layer = SettleLayer.Resource,
+                Layer = SettlementLayer.Resource,
             };
 
         private static BattleCard GiveHandCard(
@@ -645,7 +646,7 @@ namespace CardMoba.Tests
                         Type = EffectType.Shield,
                         TargetType = "Self",
                         ValueExpression = "{{trigCtx.value}}",
-                        Layer = SettleLayer.BuffSpecial,
+                        Layer = SettlementLayer.BuffSpecial,
                     },
                 },
             });
@@ -679,7 +680,7 @@ namespace CardMoba.Tests
                         Type = EffectType.Heal,
                         TargetType = "Self",
                         ValueExpression = "3",
-                        Layer = SettleLayer.BuffSpecial,
+                        Layer = SettlementLayer.BuffSpecial,
                         Conditions = new List<string> { "trigCtx.value > 0" },
                     },
                 },
@@ -711,7 +712,7 @@ namespace CardMoba.Tests
                         Type = EffectType.Shield,
                         TargetType = "Self",
                         ValueExpression = "{{trigCtx.extra.bonus}}",
-                        Layer = SettleLayer.BuffSpecial,
+                        Layer = SettlementLayer.BuffSpecial,
                     },
                 },
             });
@@ -748,7 +749,7 @@ namespace CardMoba.Tests
                         Type = EffectType.Shield,
                         TargetType = "Self",
                         ValueExpression = "3",
-                        Layer = SettleLayer.BuffSpecial,
+                        Layer = SettlementLayer.BuffSpecial,
                     },
                 },
             });
@@ -808,7 +809,7 @@ namespace CardMoba.Tests
                         Type = EffectType.Shield,
                         TargetType = "Self",
                         ValueExpression = "2",
-                        Layer = SettleLayer.BuffSpecial,
+                        Layer = SettlementLayer.BuffSpecial,
                     },
                 },
             });
@@ -944,7 +945,7 @@ namespace CardMoba.Tests
                         Type = EffectType.Shield,
                         TargetType = "Self",
                         ValueExpression = "2",
-                        Layer = SettleLayer.BuffSpecial,
+                        Layer = SettlementLayer.BuffSpecial,
                     },
                 },
             });
@@ -980,7 +981,7 @@ namespace CardMoba.Tests
                         Type = EffectType.Shield,
                         TargetType = "Self",
                         ValueExpression = "1",
-                        Layer = SettleLayer.BuffSpecial,
+                        Layer = SettlementLayer.BuffSpecial,
                     },
                 },
             });
@@ -998,7 +999,7 @@ namespace CardMoba.Tests
                         Type = EffectType.Shield,
                         TargetType = "Self",
                         ValueExpression = "2",
-                        Layer = SettleLayer.BuffSpecial,
+                        Layer = SettlementLayer.BuffSpecial,
                     },
                 },
             });
@@ -1016,7 +1017,7 @@ namespace CardMoba.Tests
                         Type = EffectType.Shield,
                         TargetType = "Self",
                         ValueExpression = "3",
-                        Layer = SettleLayer.BuffSpecial,
+                        Layer = SettlementLayer.BuffSpecial,
                     },
                 },
             });
@@ -1344,7 +1345,7 @@ namespace CardMoba.Tests
             var delayedVulnerable = new BuffConfig
             {
                 BuffId = "delayed_vulnerable_next_round",
-                BuffName = "下回合易伤",
+                BuffName = "�»غ�����",
                 BuffType = BuffType.DelayedVulnerableNextRound,
                 DefaultValue = 50,
                 DefaultDuration = 2,
@@ -1489,7 +1490,7 @@ namespace CardMoba.Tests
                 Type = EffectType.Damage,
                 TargetType = "Enemy",
                 ValueExpression = "{{6 + sourceCard.instancePlayedCount * 5}}",
-                Layer = SettleLayer.Damage,
+                Layer = SettlementLayer.Damage,
             };
 
             var definitions = CreateMutableCardDefinitions(
@@ -1521,7 +1522,7 @@ namespace CardMoba.Tests
                 Type = EffectType.Damage,
                 TargetType = "Enemy",
                 ValueExpression = "{{6 + sourceCard.instancePlayedCount * 5}}",
-                Layer = SettleLayer.Damage,
+                Layer = SettlementLayer.Damage,
             };
             var upgradedRampage = new EffectUnit
             {
@@ -1529,7 +1530,7 @@ namespace CardMoba.Tests
                 Type = EffectType.Damage,
                 TargetType = "Enemy",
                 ValueExpression = "{{6 + sourceCard.instancePlayedCount * 6}}",
-                Layer = SettleLayer.Damage,
+                Layer = SettlementLayer.Damage,
             };
 
             var definitions = CreateMutableCardDefinitions(
@@ -1651,15 +1652,16 @@ namespace CardMoba.Tests
             rm.BeginRound(ctx);
 
             var zeroCostCard = GiveHandCard(ctx, "P1", "zero_cost_instance", "zero_cost_card");
-            var cost = rm.ResolvePlayCost(ctx, "P1", zeroCostCard);
+            var playRules = rm.ResolvePlayRules(ctx, "P1", zeroCostCard);
+            var cost = rm.ResolvePlayCost(ctx, "P1", zeroCostCard, playRules);
 
             cost.BaseCost.Should().Be(0);
             cost.FinalCost.Should().Be(0);
-            cost.HitCorruption.Should().BeTrue();
-            cost.ConsumesCorruptionCharge.Should().BeTrue();
-            cost.ForceConsumeAfterResolve.Should().BeTrue();
+            playRules.HitCorruption.Should().BeTrue();
+            playRules.ConsumeCorruptionChargeOnSuccess.Should().BeTrue();
+            playRules.ForceConsumeAfterResolve.Should().BeTrue();
 
-            rm.CommitResolvedPlayCost(ctx, "P1", cost);
+            rm.CommitSuccessfulPlayRules(ctx, "P1", playRules);
             ctx.AllPlayers["P1"].CorruptionFreePlaysRemainingThisRound.Should().Be(1);
         }
 
@@ -1694,20 +1696,23 @@ namespace CardMoba.Tests
             var cardB = GiveHandCard(ctx, "P1", "corrupt_b", "expensive_b");
             var cardC = GiveHandCard(ctx, "P1", "corrupt_c", "expensive_c");
 
-            var costA = rm.ResolvePlayCost(ctx, "P1", cardA);
+            var rulesA = rm.ResolvePlayRules(ctx, "P1", cardA);
+            var costA = rm.ResolvePlayCost(ctx, "P1", cardA, rulesA);
             costA.FinalCost.Should().Be(0);
-            costA.HitCorruption.Should().BeTrue();
-            rm.CommitResolvedPlayCost(ctx, "P1", costA);
+            rulesA.HitCorruption.Should().BeTrue();
+            rm.CommitSuccessfulPlayRules(ctx, "P1", rulesA);
 
-            var costB = rm.ResolvePlayCost(ctx, "P1", cardB);
+            var rulesB = rm.ResolvePlayRules(ctx, "P1", cardB);
+            var costB = rm.ResolvePlayCost(ctx, "P1", cardB, rulesB);
             costB.FinalCost.Should().Be(0);
-            costB.HitCorruption.Should().BeTrue();
-            rm.CommitResolvedPlayCost(ctx, "P1", costB);
+            rulesB.HitCorruption.Should().BeTrue();
+            rm.CommitSuccessfulPlayRules(ctx, "P1", rulesB);
 
-            var costC = rm.ResolvePlayCost(ctx, "P1", cardC);
+            var rulesC = rm.ResolvePlayRules(ctx, "P1", cardC);
+            var costC = rm.ResolvePlayCost(ctx, "P1", cardC, rulesC);
             costC.BaseCost.Should().Be(1);
             costC.FinalCost.Should().Be(1);
-            costC.HitCorruption.Should().BeFalse();
+            rulesC.HitCorruption.Should().BeFalse();
         }
 
         [Fact]
@@ -1732,9 +1737,9 @@ namespace CardMoba.Tests
             rm.BeginRound(ctx);
             ctx.AllPlayers["P1"].CorruptionFreePlaysRemainingThisRound.Should().Be(2);
 
-            rm.CommitResolvedPlayCost(ctx, "P1", new PlayCostResolution
+            rm.CommitSuccessfulPlayRules(ctx, "P1", new PlayRuleResolution
             {
-                ConsumesCorruptionCharge = true,
+                ConsumeCorruptionChargeOnSuccess = true,
                 HitCorruption = true,
                 ForceConsumeAfterResolve = true,
             });
@@ -1910,7 +1915,7 @@ namespace CardMoba.Tests
                 Type = EffectType.Damage,
                 TargetType = "Enemy",
                 ValueExpression = "{{6 + frozen.sourceCard.instancePlayedCount * 5}}",
-                Layer = SettleLayer.Damage,
+                Layer = SettlementLayer.Damage,
             };
 
             var definitions = CreateMutableCardDefinitions(
@@ -1954,7 +1959,7 @@ namespace CardMoba.Tests
                 Type = EffectType.Damage,
                 TargetType = "Enemy",
                 ValueExpression = "{{6 + snapshot.self.shield}}",
-                Layer = SettleLayer.Damage,
+                Layer = SettlementLayer.Damage,
             };
 
             var definitions = CreateMutableCardDefinitions(
@@ -1979,3 +1984,7 @@ namespace CardMoba.Tests
         }
     }
 }
+
+
+
+

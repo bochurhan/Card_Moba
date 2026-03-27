@@ -6,6 +6,7 @@ using CardMoba.BattleCore.Context;
 using CardMoba.BattleCore.EventBus;
 using CardMoba.BattleCore.Foundation;
 using CardMoba.BattleCore.Handlers;
+using CardMoba.Protocol.Enums;
 
 namespace CardMoba.BattleCore.Core
 {
@@ -87,7 +88,7 @@ namespace CardMoba.BattleCore.Core
             DrainPendingQueue(ctx);
 
             ctx.RoundLog.Add("[SettlementEngine] Layer 1：防御/修正结算。");
-            ResolveLayer(ctx, planCards, SettleLayer.Defense);
+            ResolveLayer(ctx, planCards, SettlementLayer.Defense);
             DrainPendingQueue(ctx);
 
             ctx.RoundLog.Add("[SettlementEngine] Pre-Layer 2：拍防御快照。");
@@ -98,18 +99,18 @@ namespace CardMoba.BattleCore.Core
             ClearDefenseSnapshots(ctx);
 
             ctx.RoundLog.Add("[SettlementEngine] Layer 3：资源结算。");
-            ResolveLayer(ctx, planCards, SettleLayer.Resource);
+            ResolveLayer(ctx, planCards, SettlementLayer.Resource);
             DrainPendingQueue(ctx);
 
             ctx.RoundLog.Add("[SettlementEngine] Layer 4：Buff/特殊结算。");
-            ResolveLayer(ctx, planCards, SettleLayer.BuffSpecial);
+            ResolveLayer(ctx, planCards, SettlementLayer.BuffSpecial);
             DrainPendingQueue(ctx);
         }
 
         private void ResolveLayer0_Counter(BattleContext ctx, List<PendingPlanSnapshot> planCards)
         {
             var counterCards = planCards
-                .Where(c => !c.IsCountered && c.Effects.Any(e => e.Layer == SettleLayer.Counter))
+                .Where(c => !c.IsCountered && c.Effects.Any(e => e.Layer == SettlementLayer.Counter))
                 .OrderBy(c => c.SubmitOrder)
                 .ToList();
 
@@ -119,7 +120,7 @@ namespace CardMoba.BattleCore.Core
                 if (playerData == null) continue;
 
                 var source = playerData.HeroEntity;
-                foreach (var effect in planCard.Effects.Where(e => e.Layer == SettleLayer.Counter))
+                foreach (var effect in planCard.Effects.Where(e => e.Layer == SettlementLayer.Counter))
                 {
                     var targets = _targetResolver.Resolve(ctx, effect.TargetType, source);
                     var result = _handlerPool.Execute(ctx, effect, source, targets, planCard.PriorResults, null);
@@ -131,7 +132,7 @@ namespace CardMoba.BattleCore.Core
         private void ResolveLayer2_Damage(BattleContext ctx, List<PendingPlanSnapshot> planCards)
         {
             var damageCards = planCards
-                .Where(c => !c.IsCountered && c.Effects.Any(e => e.Layer == SettleLayer.Damage))
+                .Where(c => !c.IsCountered && c.Effects.Any(e => e.Layer == SettlementLayer.Damage))
                 .OrderBy(c => c.SubmitOrder)
                 .ToList();
 
@@ -143,7 +144,7 @@ namespace CardMoba.BattleCore.Core
                 var source = playerData.HeroEntity;
                 var priorResults = planCard.PriorResults;
 
-                foreach (var effect in planCard.Effects.Where(e => e.Layer == SettleLayer.Damage))
+                foreach (var effect in planCard.Effects.Where(e => e.Layer == SettlementLayer.Damage))
                 {
                     var targets = _targetResolver.Resolve(ctx, effect.TargetType, source);
                     var result = _handlerPool.Execute(ctx, effect, source, targets, priorResults, null);
@@ -154,7 +155,7 @@ namespace CardMoba.BattleCore.Core
             }
         }
 
-        private void ResolveLayer(BattleContext ctx, List<PendingPlanSnapshot> planCards, SettleLayer layer)
+        private void ResolveLayer(BattleContext ctx, List<PendingPlanSnapshot> planCards, SettlementLayer layer)
         {
             var layerCards = planCards
                 .Where(c => !c.IsCountered && c.Effects.Any(e => e.Layer == layer))

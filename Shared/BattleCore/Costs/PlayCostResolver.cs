@@ -2,37 +2,25 @@
 
 using CardMoba.BattleCore.Context;
 using CardMoba.BattleCore.Foundation;
-using CardMoba.Protocol.Enums;
+using CardMoba.BattleCore.Rules.Play;
 
 namespace CardMoba.BattleCore.Costs
 {
     /// <summary>
-    /// ç»Ÿä¸€å‡ºç‰Œè´¹ç”¨è§£æå™¨ã€‚
-    /// è´Ÿè´£è¯»å–å½“å‰æœ‰æ•ˆé…ç½®ã€è§„åˆ™å‹ Buff ä¸ç©å®¶å›åˆæ€ï¼Œ
-    /// è®¡ç®—æœ€ç»ˆè´¹ç”¨ä»¥åŠæ˜¯å¦å‘½ä¸­é¢å¤–è§„åˆ™å‰¯ä½œç”¨ï¼ˆä¾‹å¦‚è…åŒ–åçš„å¼ºåˆ¶ Consumeï¼‰ã€‚
+    /// Í³Ò»³öÅÆ·ÑÓÃ½âÎöÆ÷¡£
+    /// Ö»¸ºÔğ¶ÁÈ¡µ±Ç°ÓĞĞ§ÅäÖÃÓë¹æÔò²ã¸ø³öµÄ·ÑÓÃÖ¸Áî£¬¼ÆËã×îÖÕ·ÑÓÃ¡£
     /// </summary>
     public sealed class PlayCostResolver
     {
         public PlayCostResolution Resolve(
             BattleContext ctx,
             string playerId,
-            BattleCard card)
+            BattleCard card,
+            PlayRuleResolution playRules)
         {
-            var player = ctx.GetPlayer(playerId);
-            if (player == null)
-                return new PlayCostResolution();
-
             var definition = ctx.GetEffectiveCardDefinition(card);
             int baseCost = definition?.EnergyCost ?? 0;
-            int finalCost = baseCost;
-            bool hitCorruption = false;
-
-            if (player.CorruptionFreePlaysRemainingThisRound > 0
-                && ctx.BuffManager.HasBuffType(ctx, player.HeroEntity.EntityId, BuffType.Corruption))
-            {
-                finalCost = 0;
-                hitCorruption = true;
-            }
+            int finalCost = playRules.CostSetTo ?? baseCost;
 
             if (finalCost < 0)
                 finalCost = 0;
@@ -41,48 +29,7 @@ namespace CardMoba.BattleCore.Costs
             {
                 BaseCost = baseCost,
                 FinalCost = finalCost,
-                HitCorruption = hitCorruption,
-                ConsumesCorruptionCharge = hitCorruption,
-                ForceConsumeAfterResolve = hitCorruption,
             };
-        }
-
-        public void Commit(
-            BattleContext ctx,
-            string playerId,
-            PlayCostResolution resolution)
-        {
-            var player = ctx.GetPlayer(playerId);
-            if (player == null)
-                return;
-
-            if (resolution.ConsumesCorruptionCharge && player.CorruptionFreePlaysRemainingThisRound > 0)
-            {
-                player.CorruptionFreePlaysRemainingThisRound--;
-                ctx.RoundLog.Add(
-                    $"[PlayCostResolver] {playerId} æ¶ˆè€—1æ¬¡è…åŒ–åé¢ï¼Œå‰©ä½™ {player.CorruptionFreePlaysRemainingThisRound} æ¬¡ã€‚");
-            }
-        }
-
-        public void ResetTurnRuleState(BattleContext ctx)
-        {
-            foreach (var player in ctx.AllPlayers.Values)
-            {
-                int corruptionValue = 0;
-                var buffs = ctx.BuffManager.GetBuffs(player.HeroEntity.EntityId);
-                foreach (var buff in buffs)
-                {
-                    if (buff.BuffType == BuffType.Corruption)
-                        corruptionValue += buff.Value;
-                }
-
-                player.CorruptionFreePlaysRemainingThisRound = corruptionValue;
-                if (corruptionValue > 0)
-                {
-                    ctx.RoundLog.Add(
-                        $"[PlayCostResolver] {player.PlayerId} ç¬¬ {ctx.CurrentRound} å›åˆè…åŒ–åé¢é‡ç½®ä¸º {corruptionValue}ã€‚");
-                }
-            }
         }
     }
 }

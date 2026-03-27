@@ -1,9 +1,12 @@
-#pragma warning disable CS8632
+﻿#pragma warning disable CS8632
 
 using System.Collections.Generic;
 using CardMoba.BattleCore.EventBus;
+using CardMoba.BattleCore.Definitions;
 using CardMoba.BattleCore.Foundation;
 using CardMoba.BattleCore.Modifiers;
+using CardMoba.BattleCore.Rules.Draw;
+using CardMoba.BattleCore.Rules.Play;
 
 namespace CardMoba.BattleCore.Context
 {
@@ -53,7 +56,6 @@ namespace CardMoba.BattleCore.Context
             return null;
         }
 
-        public Dictionary<string, LaneData> Lanes { get; } = new Dictionary<string, LaneData>();
         public PendingEffectQueue PendingQueue { get; } = new PendingEffectQueue();
         public List<PendingPlanSnapshot> PendingPlanSnapshots { get; } = new List<PendingPlanSnapshot>();
         public Random.SeededRandom Random { get; }
@@ -63,6 +65,8 @@ namespace CardMoba.BattleCore.Context
         public Managers.ICardManager CardManager { get; }
         public Managers.IBuffManager BuffManager { get; }
         public IValueModifierManager ValueModifierManager { get; }
+        public DrawRuleResolver DrawRules { get; }
+        public PlayRuleResolver PlayRules { get; }
 
         public System.Func<string, BattleCardDefinition?>? CardDefinitionProvider { get; }
 
@@ -110,6 +114,8 @@ namespace CardMoba.BattleCore.Context
             Managers.ICardManager cardManager,
             Managers.IBuffManager buffManager,
             IValueModifierManager valueModifierManager,
+            DrawRuleResolver drawRules,
+            PlayRuleResolver playRules,
             System.Func<string, BattleCardDefinition?>? cardDefinitionProvider = null)
         {
             BattleId = battleId;
@@ -119,6 +125,8 @@ namespace CardMoba.BattleCore.Context
             CardManager = cardManager;
             BuffManager = buffManager;
             ValueModifierManager = valueModifierManager;
+            DrawRules = drawRules;
+            PlayRules = playRules;
             CardDefinitionProvider = cardDefinitionProvider;
         }
     }
