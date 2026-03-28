@@ -962,7 +962,7 @@ namespace CardMoba.Client.Editor.CardEditor
                         };
                         if (Enum.IsDefined(typeof(EffectType), e.effectType))
                             eff.EffectType = (EffectType)e.effectType;
-                        if (Enum.TryParse<CardTargetType>(e.targetOverride, true, out var to))
+                        if (CardTargetTypeParser.TryParse(e.targetOverride, out var to))
                             eff.TargetOverride = to;
 
                         if (e.effectConditions != null)

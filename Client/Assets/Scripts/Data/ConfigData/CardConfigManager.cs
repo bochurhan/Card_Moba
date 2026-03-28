@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using CardMoba.Client.Data.ConfigData.JsonModels;
@@ -277,7 +277,7 @@ namespace CardMoba.Client.Data.ConfigData
             };
 
             if (!string.IsNullOrWhiteSpace(data.targetOverride))
-                effect.TargetOverride = ParseEnum(data.targetOverride, CardTargetType.Self);
+                effect.TargetOverride = ParseCardTargetOverride(data.targetOverride);
 
             if (data.effectConditions != null)
             {
@@ -340,6 +340,15 @@ namespace CardMoba.Client.Data.ConfigData
 
             Debug.LogWarning($"[CardConfigManager] 无法解析枚举 {typeof(T).Name}: {value}，将使用默认值 {defaultValue}");
             return defaultValue;
+        }
+
+        private CardTargetType ParseCardTargetOverride(string value)
+        {
+            if (CardTargetTypeParser.TryParse(value, out var result))
+                return result;
+
+            Debug.LogWarning($"[CardConfigManager] 无法解析目标覆盖 CardTargetType: {value}，将使用默认值 Self");
+            return CardTargetType.Self;
         }
 
         private static T ParseEnumStatic<T>(string value, T defaultValue) where T : struct
