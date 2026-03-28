@@ -1,28 +1,23 @@
 #if UNITY_EDITOR
+using TMPro;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.UI;
-using UnityEditor;
-using TMPro;
 
 namespace CardMoba.Client.Editor.Tools
 {
     /// <summary>
-    /// 一键生成战斗UI布局的编辑器工具。
-    /// 
-    /// 使用方式：
-    ///   Unity 菜单栏 → CardMoba Tools → 生成战斗UI
-    ///   会自动在当前场景中创建完整的战斗UI结构并绑定到 BattleUIManager。
+    /// 一键生成战斗 UI 布局的编辑器工具。
     /// </summary>
     public class BattleUIBuilder : EditorWindow
     {
         [MenuItem("CardMoba Tools/创建中文动态字体")]
         public static void CreateDynamicChineseFont()
         {
-            // 查找项目中的中文字体文件
             string[] fontGuids = AssetDatabase.FindAssets("msyh t:Font", new[] { "Assets/Resources/Fonts" });
             if (fontGuids.Length == 0)
             {
-                Debug.LogError("[BattleUIBuilder] 找不到 msyh 字体文件！请确认 Assets/Resources/Fonts/ 下有 msyh.ttc");
+                Debug.LogError("[BattleUIBuilder] 找不到 msyh 字体文件，请确认 Assets/Resources/Fonts/ 下有 msyh.ttc。");
                 return;
             }
 
@@ -30,32 +25,29 @@ namespace CardMoba.Client.Editor.Tools
             Font sourceFont = AssetDatabase.LoadAssetAtPath<Font>(fontPath);
             if (sourceFont == null)
             {
-                Debug.LogError($"[BattleUIBuilder] 无法加载字体: {fontPath}");
+                Debug.LogError($"[BattleUIBuilder] 无法加载字体：{fontPath}");
                 return;
             }
 
-            // 创建动态 TMP Font Asset
             TMP_FontAsset fontAsset = TMP_FontAsset.CreateFontAsset(
                 sourceFont,
-                90,       // sampling point size
-                9,        // padding
+                90,
+                9,
                 UnityEngine.TextCore.LowLevel.GlyphRenderMode.SDFAA,
-                1024,     // atlas width
-                1024      // atlas height
-            );
+                1024,
+                1024);
             fontAsset.atlasPopulationMode = AtlasPopulationMode.Dynamic;
             fontAsset.name = "ChineseFont_Dynamic SDF";
 
-            // 保存
-            string savePath = "Assets/Resources/Fonts/ChineseFont_Dynamic SDF.asset";
+            const string savePath = "Assets/Resources/Fonts/ChineseFont_Dynamic SDF.asset";
             AssetDatabase.CreateAsset(fontAsset, savePath);
 
-            // 保存材质和 Atlas 纹理
             if (fontAsset.material != null)
             {
                 fontAsset.material.name = fontAsset.name + " Material";
                 AssetDatabase.AddObjectToAsset(fontAsset.material, fontAsset);
             }
+
             if (fontAsset.atlasTexture != null)
             {
                 fontAsset.atlasTexture.name = fontAsset.name + " Atlas";
@@ -65,22 +57,20 @@ namespace CardMoba.Client.Editor.Tools
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
-            // 设置为 TMP 默认字体
             TMP_Settings tmpSettings = Resources.Load<TMP_Settings>("TMP Settings");
             if (tmpSettings != null)
             {
-                SerializedObject settingsSO = new SerializedObject(tmpSettings);
+                var settingsSO = new SerializedObject(tmpSettings);
                 SerializedProperty defaultFontProp = settingsSO.FindProperty("m_defaultFontAsset");
                 if (defaultFontProp != null)
                 {
                     defaultFontProp.objectReferenceValue = fontAsset;
                     settingsSO.ApplyModifiedProperties();
-                    Debug.Log("[BattleUIBuilder] 已设置为 TMP 默认字体!");
+                    Debug.Log("[BattleUIBuilder] 已设置为 TMP 默认字体。");
                 }
             }
 
-            Debug.Log($"[BattleUIBuilder] 动态中文字体已创建: {savePath}");
-            Debug.Log("[BattleUIBuilder] 动态字体会在运行时按需渲染字符，无需预生成字符集!");
+            Debug.Log($"[BattleUIBuilder] 动态中文字体已创建：{savePath}");
             EditorUtility.FocusProjectWindow();
             Selection.activeObject = fontAsset;
         }
@@ -88,165 +78,242 @@ namespace CardMoba.Client.Editor.Tools
         [MenuItem("CardMoba Tools/生成战斗UI")]
         public static void BuildBattleUI()
         {
-            // ── 0. 确保场景中有 EventSystem ──
             if (Object.FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
             {
-                GameObject esGo = new GameObject("EventSystem");
-                esGo.AddComponent<UnityEngine.EventSystems.EventSystem>();
-                esGo.AddComponent<UnityEngine.EventSystems.StandaloneInputModule>();
-                Debug.Log("[BattleUIBuilder] 已自动创建 EventSystem");
+                var eventSystemObject = new GameObject("EventSystem");
+                eventSystemObject.AddComponent<UnityEngine.EventSystems.EventSystem>();
+                eventSystemObject.AddComponent<UnityEngine.EventSystems.StandaloneInputModule>();
+                Debug.Log("[BattleUIBuilder] 已自动创建 EventSystem。");
             }
 
-            // ── 1. 创建 Canvas ──
-            GameObject canvasObj = new GameObject("BattleCanvas");
-            Canvas canvas = canvasObj.AddComponent<Canvas>();
+            GameObject canvasObject = new GameObject("BattleCanvas");
+            Canvas canvas = canvasObject.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 0;
 
-            CanvasScaler scaler = canvasObj.AddComponent<CanvasScaler>();
+            CanvasScaler scaler = canvasObject.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1920, 1080);
             scaler.matchWidthOrHeight = 0.5f;
 
-            canvasObj.AddComponent<GraphicRaycaster>();
+            canvasObject.AddComponent<GraphicRaycaster>();
 
-            // 挂载 BattleUIManager
-            var uiManager = canvasObj.AddComponent<Presentation.Battle.BattleUIManager>();
+            var uiManager = canvasObject.AddComponent<CardMoba.Client.Presentation.Battle.BattleUIManager>();
+            var roundTimerUI = canvasObject.AddComponent<CardMoba.Client.Presentation.UI.Components.RoundTimerUI>();
 
-            // ── 添加 RoundTimerUI 组件 ──
-            var roundTimerUI = canvasObj.AddComponent<CardMoba.Client.Presentation.UI.Components.RoundTimerUI>();
+            GameObject background = CreateImage(
+                canvasObject.transform,
+                "Background",
+                Color.black,
+                Vector2.zero,
+                new Vector2(1920, 1080));
+            SetAnchors(background, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
 
-            // ── 2. 背景 ──
-            GameObject bg = CreateImage(canvasObj.transform, "Background",
-                Color.black, Vector2.zero, new Vector2(1920, 1080));
-            SetAnchors(bg, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero); // 全屏拉伸
+            GameObject enemyPanel = CreateImage(
+                canvasObject.transform,
+                "EnemyInfoPanel",
+                new Color(0.25f, 0.1f, 0.1f, 0.85f),
+                Vector2.zero,
+                Vector2.zero);
+            SetAnchorsStretchTop(enemyPanel, 0f, 0f, 0f, -100f);
 
-            // ══════════════════════════════════════
-            // 3. 对手信息面板（屏幕顶部）
-            // ══════════════════════════════════════
-            GameObject enemyPanel = CreateImage(canvasObj.transform, "EnemyInfoPanel",
-                new Color(0.25f, 0.1f, 0.1f, 0.85f), Vector2.zero, Vector2.zero);
-            SetAnchorsStretchTop(enemyPanel, 0, 0, 0, -100); // 顶部拉伸，高100
-
-            // 对手名字
-            var enemyNameText = CreateTMPText(enemyPanel.transform, "EnemyNameText",
-                "对手", 24, new Color(1f, 0.4f, 0.4f),
-                new Vector2(20, -10), new Vector2(200, 40), TextAlignmentOptions.Left);
+            GameObject enemyNameText = CreateTMPText(
+                enemyPanel.transform,
+                "EnemyNameText",
+                "对手",
+                24,
+                new Color(1f, 0.4f, 0.4f),
+                new Vector2(20f, -10f),
+                new Vector2(200f, 40f),
+                TextAlignmentOptions.Left);
             SetAnchorsTopLeft(enemyNameText);
 
-            // 对手HP文字
-            var enemyHpText = CreateTMPText(enemyPanel.transform, "EnemyHpText",
-                "HP: 30/30", 22, new Color(1f, 0.9f, 0.9f),
-                new Vector2(240, -10), new Vector2(200, 40), TextAlignmentOptions.Left);
+            GameObject enemyHpText = CreateTMPText(
+                enemyPanel.transform,
+                "EnemyHpText",
+                "HP: 30/30",
+                22,
+                new Color(1f, 0.9f, 0.9f),
+                new Vector2(240f, -10f),
+                new Vector2(200f, 40f),
+                TextAlignmentOptions.Left);
             SetAnchorsTopLeft(enemyHpText);
 
-            // 对手HP条
-            GameObject enemyHpBar = CreateSlider(enemyPanel.transform, "EnemyHpBar",
-                new Color(0.8f, 0.2f, 0.2f), new Color(0.3f, 0.1f, 0.1f),
-                new Vector2(240, -50), new Vector2(400, 25));
+            GameObject enemyHpBar = CreateSlider(
+                enemyPanel.transform,
+                "EnemyHpBar",
+                new Color(0.8f, 0.2f, 0.2f),
+                new Color(0.3f, 0.1f, 0.1f),
+                new Vector2(240f, -50f),
+                new Vector2(400f, 25f));
             SetAnchorsTopLeft(enemyHpBar);
 
-            // 对手能量
-            var enemyEnergyText = CreateTMPText(enemyPanel.transform, "EnemyEnergyText",
-                "能量: 3/3", 20, new Color(1f, 0.95f, 0.4f),
-                new Vector2(680, -10), new Vector2(150, 40), TextAlignmentOptions.Left);
+            GameObject enemyEnergyText = CreateTMPText(
+                enemyPanel.transform,
+                "EnemyEnergyText",
+                "能量: 3/3",
+                20,
+                new Color(1f, 0.95f, 0.4f),
+                new Vector2(680f, -10f),
+                new Vector2(150f, 40f),
+                TextAlignmentOptions.Left);
             SetAnchorsTopLeft(enemyEnergyText);
 
-            // 对手护盾
-            var enemyShieldText = CreateTMPText(enemyPanel.transform, "EnemyShieldText",
-                "", 20, new Color(0.5f, 0.85f, 1f),
-                new Vector2(680, -50), new Vector2(150, 40), TextAlignmentOptions.Left);
+            GameObject enemyShieldText = CreateTMPText(
+                enemyPanel.transform,
+                "EnemyShieldText",
+                string.Empty,
+                20,
+                new Color(0.5f, 0.85f, 1f),
+                new Vector2(680f, -50f),
+                new Vector2(150f, 40f),
+                TextAlignmentOptions.Left);
             SetAnchorsTopLeft(enemyShieldText);
 
-            // 对手牌库信息
-            var enemyDeckInfoText = CreateTMPText(enemyPanel.transform, "EnemyDeckInfoText",
-                "牌库:10 弃牌:0", 16, new Color(0.85f, 0.85f, 0.85f),
-                new Vector2(860, -10), new Vector2(200, 40), TextAlignmentOptions.Left);
+            GameObject enemyDeckInfoText = CreateTMPText(
+                enemyPanel.transform,
+                "EnemyDeckInfoText",
+                "手牌:5  牌库:10  弃牌:0",
+                16,
+                new Color(0.85f, 0.85f, 0.85f),
+                new Vector2(860f, -10f),
+                new Vector2(220f, 52f),
+                TextAlignmentOptions.Left);
             SetAnchorsTopLeft(enemyDeckInfoText);
 
-            // ══════════════════════════════════════
-            // 4. 回合/阶段信息（顶部中间偏下）
-            // ══════════════════════════════════════
-            var roundText = CreateTMPText(canvasObj.transform, "RoundText",
-                "第 1 回合", 28, Color.white,
-                new Vector2(0, -120), new Vector2(300, 40), TextAlignmentOptions.Center);
+            GameObject roundText = CreateTMPText(
+                canvasObject.transform,
+                "RoundText",
+                "第 1 回合",
+                28,
+                Color.white,
+                new Vector2(0f, -120f),
+                new Vector2(300f, 40f),
+                TextAlignmentOptions.Center);
             SetAnchorsTopCenter(roundText);
 
-            var phaseText = CreateTMPText(canvasObj.transform, "PhaseText",
-                "你的操作期", 22, new Color(1f, 0.9f, 0.4f),
-                new Vector2(0, -160), new Vector2(400, 36), TextAlignmentOptions.Center);
+            GameObject phaseText = CreateTMPText(
+                canvasObject.transform,
+                "PhaseText",
+                "你的操作期",
+                22,
+                new Color(1f, 0.9f, 0.4f),
+                new Vector2(0f, -160f),
+                new Vector2(400f, 36f),
+                TextAlignmentOptions.Center);
             SetAnchorsTopCenter(phaseText);
 
-            // ══════════════════════════════════════
-            // 5. 日志面板（屏幕中间）
-            // ══════════════════════════════════════
-            GameObject logScrollView = CreateScrollView(canvasObj.transform, "LogScrollView",
-                new Vector2(0, 40), new Vector2(800, 350));
+            GameObject logScrollView = CreateScrollView(
+                canvasObject.transform,
+                "LogScrollView",
+                new Vector2(0f, 40f),
+                new Vector2(800f, 350f));
             SetAnchorsMiddleCenter(logScrollView);
 
-            // 获取 LogText（在 ScrollView 的 Content 下）
             Transform logContent = logScrollView.transform.Find("Viewport/Content");
-            var logText = CreateTMPText(logContent, "LogText",
-                "", 16, new Color(1f, 1f, 0.9f),
-                Vector2.zero, new Vector2(780, 30), TextAlignmentOptions.TopLeft);
+            GameObject logText = CreateTMPText(
+                logContent,
+                "LogText",
+                string.Empty,
+                16,
+                new Color(1f, 1f, 0.9f),
+                Vector2.zero,
+                new Vector2(780f, 30f),
+                TextAlignmentOptions.TopLeft);
             RectTransform logTextRect = logText.GetComponent<RectTransform>();
-            logTextRect.anchorMin = new Vector2(0, 1);
-            logTextRect.anchorMax = new Vector2(1, 1);
-            logTextRect.pivot = new Vector2(0.5f, 1);
-            logTextRect.offsetMin = new Vector2(10, 0);
-            logTextRect.offsetMax = new Vector2(-10, 0);
-            logText.GetComponent<TextMeshProUGUI>().richText = true;
-            logText.GetComponent<TextMeshProUGUI>().overflowMode = TextOverflowModes.Overflow;
+            logTextRect.anchorMin = new Vector2(0f, 1f);
+            logTextRect.anchorMax = new Vector2(1f, 1f);
+            logTextRect.pivot = new Vector2(0.5f, 1f);
+            logTextRect.offsetMin = new Vector2(10f, 0f);
+            logTextRect.offsetMax = new Vector2(-10f, 0f);
 
-            // Content 加 ContentSizeFitter
+            TextMeshProUGUI logTextComponent = logText.GetComponent<TextMeshProUGUI>();
+            logTextComponent.richText = true;
+            logTextComponent.overflowMode = TextOverflowModes.Overflow;
+
             ContentSizeFitter logFitter = logContent.gameObject.AddComponent<ContentSizeFitter>();
             logFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-            // ══════════════════════════════════════
-            // 6. 我方信息面板（手牌上方）
-            // ══════════════════════════════════════
-            GameObject myPanel = CreateImage(canvasObj.transform, "MyInfoPanel",
-                new Color(0.1f, 0.12f, 0.25f, 0.85f), Vector2.zero, Vector2.zero);
-            SetAnchorsStretchBottom(myPanel, 180, 0, 0, 80); // 底部180起，高80
+            GameObject myPanel = CreateImage(
+                canvasObject.transform,
+                "MyInfoPanel",
+                new Color(0.1f, 0.12f, 0.25f, 0.85f),
+                Vector2.zero,
+                Vector2.zero);
+            SetAnchorsStretchBottom(myPanel, 180f, 0f, 0f, 80f);
 
-            var myNameText = CreateTMPText(myPanel.transform, "MyNameText",
-                "玩家1", 24, new Color(0.4f, 0.9f, 1f),
-                new Vector2(20, -10), new Vector2(200, 40), TextAlignmentOptions.Left);
+            GameObject myNameText = CreateTMPText(
+                myPanel.transform,
+                "MyNameText",
+                "你",
+                24,
+                new Color(0.4f, 0.9f, 1f),
+                new Vector2(20f, -10f),
+                new Vector2(200f, 40f),
+                TextAlignmentOptions.Left);
             SetAnchorsTopLeft(myNameText);
 
-            var myHpText = CreateTMPText(myPanel.transform, "MyHpText",
-                "HP: 30/30", 22, new Color(0.9f, 1f, 0.9f),
-                new Vector2(240, -10), new Vector2(200, 40), TextAlignmentOptions.Left);
+            GameObject myHpText = CreateTMPText(
+                myPanel.transform,
+                "MyHpText",
+                "HP: 30/30",
+                22,
+                new Color(0.9f, 1f, 0.9f),
+                new Vector2(240f, -10f),
+                new Vector2(200f, 40f),
+                TextAlignmentOptions.Left);
             SetAnchorsTopLeft(myHpText);
 
-            GameObject myHpBar = CreateSlider(myPanel.transform, "MyHpBar",
-                new Color(0.2f, 0.7f, 0.3f), new Color(0.1f, 0.2f, 0.1f),
-                new Vector2(240, -50), new Vector2(400, 25));
+            GameObject myHpBar = CreateSlider(
+                myPanel.transform,
+                "MyHpBar",
+                new Color(0.2f, 0.7f, 0.3f),
+                new Color(0.1f, 0.2f, 0.1f),
+                new Vector2(240f, -50f),
+                new Vector2(400f, 25f));
             SetAnchorsTopLeft(myHpBar);
 
-            var myEnergyText = CreateTMPText(myPanel.transform, "MyEnergyText",
-                "能量: 3/3", 20, new Color(1f, 0.95f, 0.4f),
-                new Vector2(680, -10), new Vector2(150, 40), TextAlignmentOptions.Left);
+            GameObject myEnergyText = CreateTMPText(
+                myPanel.transform,
+                "MyEnergyText",
+                "能量: 3/3",
+                20,
+                new Color(1f, 0.95f, 0.4f),
+                new Vector2(680f, -10f),
+                new Vector2(150f, 40f),
+                TextAlignmentOptions.Left);
             SetAnchorsTopLeft(myEnergyText);
 
-            var myShieldText = CreateTMPText(myPanel.transform, "MyShieldText",
-                "", 20, new Color(0.5f, 0.85f, 1f),
-                new Vector2(680, -50), new Vector2(150, 40), TextAlignmentOptions.Left);
+            GameObject myShieldText = CreateTMPText(
+                myPanel.transform,
+                "MyShieldText",
+                string.Empty,
+                20,
+                new Color(0.5f, 0.85f, 1f),
+                new Vector2(680f, -50f),
+                new Vector2(150f, 40f),
+                TextAlignmentOptions.Left);
             SetAnchorsTopLeft(myShieldText);
 
-            var myDeckInfoText = CreateTMPText(myPanel.transform, "MyDeckInfoText",
-                "牌库:10 弃牌:0", 16, new Color(0.85f, 0.85f, 0.85f),
-                new Vector2(860, -10), new Vector2(200, 40), TextAlignmentOptions.Left);
+            GameObject myDeckInfoText = CreateTMPText(
+                myPanel.transform,
+                "MyDeckInfoText",
+                "手牌:5  牌库:10  弃牌:0",
+                16,
+                new Color(0.85f, 0.85f, 0.85f),
+                new Vector2(860f, -10f),
+                new Vector2(220f, 52f),
+                TextAlignmentOptions.Left);
             SetAnchorsTopLeft(myDeckInfoText);
 
-            // ══════════════════════════════════════
-            // 7. 手牌区域（屏幕底部）
-            // ══════════════════════════════════════
-            GameObject handPanel = CreateImage(canvasObj.transform, "HandPanel",
-                new Color(0.12f, 0.12f, 0.15f, 0.9f), Vector2.zero, Vector2.zero);
-            SetAnchorsStretchBottom(handPanel, 0, 0, 0, 180); // 底部，高180
+            GameObject handPanel = CreateImage(
+                canvasObject.transform,
+                "HandPanel",
+                new Color(0.12f, 0.12f, 0.15f, 0.9f),
+                Vector2.zero,
+                Vector2.zero);
+            SetAnchorsStretchBottom(handPanel, 0f, 0f, 0f, 180f);
 
-            // HandContainer（水平布局）
             GameObject handContainer = new GameObject("HandContainer");
             handContainer.transform.SetParent(handPanel.transform, false);
             RectTransform handRect = handContainer.AddComponent<RectTransform>();
@@ -255,207 +322,216 @@ namespace CardMoba.Client.Editor.Tools
             handRect.offsetMin = Vector2.zero;
             handRect.offsetMax = Vector2.zero;
 
-            HorizontalLayoutGroup hlg = handContainer.AddComponent<HorizontalLayoutGroup>();
-            hlg.spacing = 8;
-            hlg.childAlignment = TextAnchor.MiddleCenter;
-            hlg.childControlWidth = true;
-            hlg.childControlHeight = true;
-            hlg.childForceExpandWidth = false;
-            hlg.childForceExpandHeight = true;
+            HorizontalLayoutGroup handLayout = handContainer.AddComponent<HorizontalLayoutGroup>();
+            handLayout.spacing = 8f;
+            handLayout.childAlignment = TextAnchor.MiddleCenter;
+            handLayout.childControlWidth = true;
+            handLayout.childControlHeight = true;
+            handLayout.childForceExpandWidth = false;
+            handLayout.childForceExpandHeight = true;
 
-            // ══════════════════════════════════════
-            // 8. 结束回合按钮（手牌右侧）
-            // ══════════════════════════════════════
-            GameObject endTurnBtn = CreateButton(handPanel.transform, "EndTurnButton",
-                "结束回合", new Color(0.8f, 0.3f, 0.2f),
-                new Vector2(-80, 0), new Vector2(140, 60));
-            RectTransform endBtnRect = endTurnBtn.GetComponent<RectTransform>();
-            endBtnRect.anchorMin = new Vector2(1, 0.5f);
-            endBtnRect.anchorMax = new Vector2(1, 0.5f);
-            endBtnRect.pivot = new Vector2(1, 0.5f);
-            endBtnRect.anchoredPosition = new Vector2(-20, 0);
-            var endTurnBtnText = endTurnBtn.GetComponentInChildren<TextMeshProUGUI>();
+            GameObject endTurnButton = CreateButton(
+                handPanel.transform,
+                "EndTurnButton",
+                "结束回合",
+                new Color(0.8f, 0.3f, 0.2f),
+                new Vector2(-80f, 0f),
+                new Vector2(140f, 60f));
+            RectTransform endTurnButtonRect = endTurnButton.GetComponent<RectTransform>();
+            endTurnButtonRect.anchorMin = new Vector2(1f, 0.5f);
+            endTurnButtonRect.anchorMax = new Vector2(1f, 0.5f);
+            endTurnButtonRect.pivot = new Vector2(1f, 0.5f);
+            endTurnButtonRect.anchoredPosition = new Vector2(-20f, 0f);
+            TextMeshProUGUI endTurnButtonText = endTurnButton.GetComponentInChildren<TextMeshProUGUI>();
 
-            // ══════════════════════════════════════
-            // 9. 游戏结束面板（居中覆盖，默认隐藏）
-            // ══════════════════════════════════════
-            GameObject gameOverPanel = CreateImage(canvasObj.transform, "GameOverPanel",
-                new Color(0, 0, 0, 0.8f), Vector2.zero, Vector2.zero);
+            GameObject gameOverPanel = CreateImage(
+                canvasObject.transform,
+                "GameOverPanel",
+                new Color(0f, 0f, 0f, 0.8f),
+                Vector2.zero,
+                Vector2.zero);
             SetAnchors(gameOverPanel, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
 
-            var gameOverText = CreateTMPText(gameOverPanel.transform, "GameOverText",
-                "游戏结束", 48, Color.white,
-                new Vector2(0, 40), new Vector2(500, 80), TextAlignmentOptions.Center);
+            GameObject gameOverText = CreateTMPText(
+                gameOverPanel.transform,
+                "GameOverText",
+                "游戏结束",
+                48,
+                Color.white,
+                new Vector2(0f, 40f),
+                new Vector2(500f, 80f),
+                TextAlignmentOptions.Center);
             SetAnchorsMiddleCenter(gameOverText);
 
-            GameObject restartBtn = CreateButton(gameOverPanel.transform, "RestartButton",
-                "再来一局", new Color(0.2f, 0.6f, 0.3f),
-                new Vector2(0, -60), new Vector2(200, 60));
-            SetAnchorsMiddleCenter(restartBtn);
+            GameObject restartButton = CreateButton(
+                gameOverPanel.transform,
+                "RestartButton",
+                "再来一局",
+                new Color(0.2f, 0.6f, 0.3f),
+                new Vector2(0f, -60f),
+                new Vector2(200f, 60f));
+            SetAnchorsMiddleCenter(restartButton);
 
             gameOverPanel.SetActive(false);
 
-            // ══════════════════════════════════════
-            // 10. 创建卡牌 Prefab
-            // ══════════════════════════════════════
             GameObject cardPrefab = CreateCardPrefab();
 
-            // ══════════════════════════════════════
-            // 11. 绑定引用到 BattleUIManager
-            // ══════════════════════════════════════
-            SerializedObject so = new SerializedObject(uiManager);
+            SerializedObject serializedUIManager = new SerializedObject(uiManager);
 
-            // 我方面板
-            so.FindProperty("_myNameText").objectReferenceValue = myNameText.GetComponent<TextMeshProUGUI>();
-            so.FindProperty("_myHpText").objectReferenceValue = myHpText.GetComponent<TextMeshProUGUI>();
-            so.FindProperty("_myHpBar").objectReferenceValue = myHpBar.GetComponent<Slider>();
-            so.FindProperty("_myEnergyText").objectReferenceValue = myEnergyText.GetComponent<TextMeshProUGUI>();
-            so.FindProperty("_myShieldText").objectReferenceValue = myShieldText.GetComponent<TextMeshProUGUI>();
-            so.FindProperty("_myDeckInfoText").objectReferenceValue = myDeckInfoText.GetComponent<TextMeshProUGUI>();
+            serializedUIManager.FindProperty("_myNameText").objectReferenceValue = myNameText.GetComponent<TextMeshProUGUI>();
+            serializedUIManager.FindProperty("_myHpText").objectReferenceValue = myHpText.GetComponent<TextMeshProUGUI>();
+            serializedUIManager.FindProperty("_myHpBar").objectReferenceValue = myHpBar.GetComponent<Slider>();
+            serializedUIManager.FindProperty("_myEnergyText").objectReferenceValue = myEnergyText.GetComponent<TextMeshProUGUI>();
+            serializedUIManager.FindProperty("_myShieldText").objectReferenceValue = myShieldText.GetComponent<TextMeshProUGUI>();
+            serializedUIManager.FindProperty("_myDeckInfoText").objectReferenceValue = myDeckInfoText.GetComponent<TextMeshProUGUI>();
 
-            // 对手面板
-            so.FindProperty("_enemyNameText").objectReferenceValue = enemyNameText.GetComponent<TextMeshProUGUI>();
-            so.FindProperty("_enemyHpText").objectReferenceValue = enemyHpText.GetComponent<TextMeshProUGUI>();
-            so.FindProperty("_enemyHpBar").objectReferenceValue = enemyHpBar.GetComponent<Slider>();
-            so.FindProperty("_enemyEnergyText").objectReferenceValue = enemyEnergyText.GetComponent<TextMeshProUGUI>();
-            so.FindProperty("_enemyShieldText").objectReferenceValue = enemyShieldText.GetComponent<TextMeshProUGUI>();
-            so.FindProperty("_enemyDeckInfoText").objectReferenceValue = enemyDeckInfoText.GetComponent<TextMeshProUGUI>();
+            serializedUIManager.FindProperty("_enemyNameText").objectReferenceValue = enemyNameText.GetComponent<TextMeshProUGUI>();
+            serializedUIManager.FindProperty("_enemyHpText").objectReferenceValue = enemyHpText.GetComponent<TextMeshProUGUI>();
+            serializedUIManager.FindProperty("_enemyHpBar").objectReferenceValue = enemyHpBar.GetComponent<Slider>();
+            serializedUIManager.FindProperty("_enemyEnergyText").objectReferenceValue = enemyEnergyText.GetComponent<TextMeshProUGUI>();
+            serializedUIManager.FindProperty("_enemyShieldText").objectReferenceValue = enemyShieldText.GetComponent<TextMeshProUGUI>();
+            serializedUIManager.FindProperty("_enemyDeckInfoText").objectReferenceValue = enemyDeckInfoText.GetComponent<TextMeshProUGUI>();
 
-            // 手牌区域
-            so.FindProperty("_handContainer").objectReferenceValue = handContainer.transform;
-            so.FindProperty("_cardPrefab").objectReferenceValue = cardPrefab;
+            serializedUIManager.FindProperty("_handContainer").objectReferenceValue = handContainer.transform;
+            serializedUIManager.FindProperty("_cardPrefab").objectReferenceValue = cardPrefab;
 
-            // 操作按钮
-            so.FindProperty("_endTurnButton").objectReferenceValue = endTurnBtn.GetComponent<Button>();
-            so.FindProperty("_endTurnButtonText").objectReferenceValue = endTurnBtnText;
+            serializedUIManager.FindProperty("_endTurnButton").objectReferenceValue = endTurnButton.GetComponent<Button>();
+            serializedUIManager.FindProperty("_endTurnButtonText").objectReferenceValue = endTurnButtonText;
 
-            // 战斗信息
-            so.FindProperty("_phaseText").objectReferenceValue = phaseText.GetComponent<TextMeshProUGUI>();
-            so.FindProperty("_roundText").objectReferenceValue = roundText.GetComponent<TextMeshProUGUI>();
-            so.FindProperty("_logScrollRect").objectReferenceValue = logScrollView.GetComponent<ScrollRect>();
-            so.FindProperty("_logText").objectReferenceValue = logText.GetComponent<TextMeshProUGUI>();
+            serializedUIManager.FindProperty("_phaseText").objectReferenceValue = phaseText.GetComponent<TextMeshProUGUI>();
+            serializedUIManager.FindProperty("_roundText").objectReferenceValue = roundText.GetComponent<TextMeshProUGUI>();
+            serializedUIManager.FindProperty("_logScrollRect").objectReferenceValue = logScrollView.GetComponent<ScrollRect>();
+            serializedUIManager.FindProperty("_logText").objectReferenceValue = logTextComponent;
 
-            // 游戏结束面板
-            so.FindProperty("_gameOverPanel").objectReferenceValue = gameOverPanel;
-            so.FindProperty("_gameOverText").objectReferenceValue = gameOverText.GetComponent<TextMeshProUGUI>();
-            so.FindProperty("_restartButton").objectReferenceValue = restartBtn.GetComponent<Button>();
+            serializedUIManager.FindProperty("_gameOverPanel").objectReferenceValue = gameOverPanel;
+            serializedUIManager.FindProperty("_gameOverText").objectReferenceValue = gameOverText.GetComponent<TextMeshProUGUI>();
+            serializedUIManager.FindProperty("_restartButton").objectReferenceValue = restartButton.GetComponent<Button>();
+            serializedUIManager.FindProperty("_roundTimerUI").objectReferenceValue = roundTimerUI;
 
-            // 计时器 UI
-            so.FindProperty("_roundTimerUI").objectReferenceValue = roundTimerUI;
+            serializedUIManager.ApplyModifiedProperties();
 
-            so.ApplyModifiedProperties();
-
-            // 选中新创建的 Canvas
-            Selection.activeGameObject = canvasObj;
-
-            Debug.Log("[BattleUIBuilder] 战斗UI生成完毕！请确保已导入中文TMP字体。按 Ctrl+S 保存场景。");
+            Selection.activeGameObject = canvasObject;
+            Debug.Log("[BattleUIBuilder] 战斗 UI 已生成，请保存场景。");
         }
 
-        // ══════════════════════════════════════
-        // 卡牌 Prefab 创建
-        // ══════════════════════════════════════
-
         /// <summary>
-        /// 创建卡牌Prefab并保存到Assets/Resources/Prefabs/
+        /// 创建卡牌模板 Prefab，并保存到 Assets/Resources/Prefabs。
         /// </summary>
         private static GameObject CreateCardPrefab()
         {
-            // 确保目录存在
             if (!AssetDatabase.IsValidFolder("Assets/Resources"))
                 AssetDatabase.CreateFolder("Assets", "Resources");
             if (!AssetDatabase.IsValidFolder("Assets/Resources/Prefabs"))
                 AssetDatabase.CreateFolder("Assets/Resources", "Prefabs");
 
-            // 创建卡牌根物体
             GameObject card = new GameObject("CardTemplate");
             RectTransform cardRect = card.AddComponent<RectTransform>();
-            cardRect.sizeDelta = new Vector2(120, 160);
+            cardRect.sizeDelta = new Vector2(120f, 160f);
 
-            // 背景 Image + Button
-            Image cardBg = card.AddComponent<Image>();
-            cardBg.color = new Color(0.85f, 0.55f, 0.25f);
+            Image cardBackground = card.AddComponent<Image>();
+            cardBackground.color = new Color(0.85f, 0.55f, 0.25f);
 
-            Button cardBtn = card.AddComponent<Button>();
-            ColorBlock colors = cardBtn.colors;
+            Button cardButton = card.AddComponent<Button>();
+            ColorBlock colors = cardButton.colors;
             colors.highlightedColor = new Color(1f, 1f, 0.7f);
             colors.pressedColor = new Color(0.7f, 0.7f, 0.5f);
-            cardBtn.colors = colors;
+            cardButton.colors = colors;
 
-            // LayoutElement（让 HorizontalLayoutGroup 控制大小）
-            LayoutElement le = card.AddComponent<LayoutElement>();
-            le.preferredWidth = 120;
-            le.preferredHeight = 160;
+            LayoutElement layout = card.AddComponent<LayoutElement>();
+            layout.preferredWidth = 120f;
+            layout.preferredHeight = 160f;
 
-            // 费用文字（左上角）
-            GameObject costObj = CreateTMPText(card.transform, "CostText",
-                "1", 22, Color.white,
-                new Vector2(8, -5), new Vector2(30, 30), TextAlignmentOptions.Center);
-            RectTransform costRect = costObj.GetComponent<RectTransform>();
-            costRect.anchorMin = new Vector2(0, 1);
-            costRect.anchorMax = new Vector2(0, 1);
-            costRect.pivot = new Vector2(0, 1);
-            costRect.anchoredPosition = new Vector2(5, -5);
+            GameObject costText = CreateTMPText(
+                card.transform,
+                "CostText",
+                "1",
+                22,
+                Color.white,
+                new Vector2(8f, -5f),
+                new Vector2(30f, 30f),
+                TextAlignmentOptions.Center);
+            RectTransform costRect = costText.GetComponent<RectTransform>();
+            costRect.anchorMin = new Vector2(0f, 1f);
+            costRect.anchorMax = new Vector2(0f, 1f);
+            costRect.pivot = new Vector2(0f, 1f);
+            costRect.anchoredPosition = new Vector2(5f, -5f);
 
-            // 卡牌名称（上部居中）
-            GameObject nameObj = CreateTMPText(card.transform, "CardNameText",
-                "卡牌名", 16, Color.white,
-                new Vector2(0, -35), new Vector2(110, 30), TextAlignmentOptions.Center);
-            RectTransform nameRect = nameObj.GetComponent<RectTransform>();
-            nameRect.anchorMin = new Vector2(0.5f, 1);
-            nameRect.anchorMax = new Vector2(0.5f, 1);
-            nameRect.pivot = new Vector2(0.5f, 1);
-            nameRect.anchoredPosition = new Vector2(0, -30);
+            GameObject nameText = CreateTMPText(
+                card.transform,
+                "CardNameText",
+                "卡牌名称",
+                16,
+                Color.white,
+                new Vector2(0f, -35f),
+                new Vector2(110f, 30f),
+                TextAlignmentOptions.Center);
+            RectTransform nameRect = nameText.GetComponent<RectTransform>();
+            nameRect.anchorMin = new Vector2(0.5f, 1f);
+            nameRect.anchorMax = new Vector2(0.5f, 1f);
+            nameRect.pivot = new Vector2(0.5f, 1f);
+            nameRect.anchoredPosition = new Vector2(0f, -30f);
 
-            // 轨道类型标签（中部）
-            GameObject trackObj = CreateTMPText(card.transform, "TrackText",
-                "【瞬策】", 13, new Color(1f, 0.9f, 0.6f),
-                new Vector2(0, -65), new Vector2(110, 24), TextAlignmentOptions.Center);
-            RectTransform trackRect = trackObj.GetComponent<RectTransform>();
-            trackRect.anchorMin = new Vector2(0.5f, 1);
-            trackRect.anchorMax = new Vector2(0.5f, 1);
-            trackRect.pivot = new Vector2(0.5f, 1);
-            trackRect.anchoredPosition = new Vector2(0, -62);
+            GameObject trackText = CreateTMPText(
+                card.transform,
+                "TrackText",
+                "【瞬策】",
+                13,
+                new Color(1f, 0.9f, 0.6f),
+                new Vector2(0f, -65f),
+                new Vector2(110f, 24f),
+                TextAlignmentOptions.Center);
+            RectTransform trackRect = trackText.GetComponent<RectTransform>();
+            trackRect.anchorMin = new Vector2(0.5f, 1f);
+            trackRect.anchorMax = new Vector2(0.5f, 1f);
+            trackRect.pivot = new Vector2(0.5f, 1f);
+            trackRect.anchoredPosition = new Vector2(0f, -62f);
 
-            // 效果描述（下部）
-            GameObject descObj = CreateTMPText(card.transform, "DescriptionText",
-                "效果描述", 12, new Color(0.9f, 0.9f, 0.9f),
-                new Vector2(0, -90), new Vector2(105, 60), TextAlignmentOptions.Center);
-            RectTransform descRect = descObj.GetComponent<RectTransform>();
-            descRect.anchorMin = new Vector2(0.5f, 1);
-            descRect.anchorMax = new Vector2(0.5f, 1);
-            descRect.pivot = new Vector2(0.5f, 1);
-            descRect.anchoredPosition = new Vector2(0, -90);
-            descObj.GetComponent<TextMeshProUGUI>().enableWordWrapping = true;
+            GameObject descText = CreateTMPText(
+                card.transform,
+                "DescriptionText",
+                "效果描述",
+                12,
+                new Color(0.9f, 0.9f, 0.9f),
+                new Vector2(0f, -90f),
+                new Vector2(105f, 60f),
+                TextAlignmentOptions.Center);
+            RectTransform descRect = descText.GetComponent<RectTransform>();
+            descRect.anchorMin = new Vector2(0.5f, 1f);
+            descRect.anchorMax = new Vector2(0.5f, 1f);
+            descRect.pivot = new Vector2(0.5f, 1f);
+            descRect.anchoredPosition = new Vector2(0f, -90f);
+            descText.GetComponent<TextMeshProUGUI>().enableWordWrapping = true;
 
-            // 保存为 Prefab
-            string prefabPath = "Assets/Resources/Prefabs/CardTemplate.prefab";
+            const string prefabPath = "Assets/Resources/Prefabs/CardTemplate.prefab";
             GameObject prefab = PrefabUtility.SaveAsPrefabAsset(card, prefabPath);
             Object.DestroyImmediate(card);
 
-            Debug.Log($"[BattleUIBuilder] 卡牌Prefab已保存至: {prefabPath}");
+            Debug.Log($"[BattleUIBuilder] 卡牌 Prefab 已保存至：{prefabPath}");
             return prefab;
         }
 
-        // ══════════════════════════════════════
-        // UI 创建辅助方法
-        // ══════════════════════════════════════
-
-        private static GameObject CreateImage(Transform parent, string name, Color color,
-            Vector2 anchoredPos, Vector2 size)
+        private static GameObject CreateImage(Transform parent, string name, Color color, Vector2 anchoredPos, Vector2 size)
         {
             GameObject obj = new GameObject(name);
             obj.transform.SetParent(parent, false);
             RectTransform rect = obj.AddComponent<RectTransform>();
             rect.anchoredPosition = anchoredPos;
             rect.sizeDelta = size;
-            Image img = obj.AddComponent<Image>();
-            img.color = color;
+
+            Image image = obj.AddComponent<Image>();
+            image.color = color;
             return obj;
         }
 
-        private static GameObject CreateTMPText(Transform parent, string name,
-            string text, int fontSize, Color color,
-            Vector2 anchoredPos, Vector2 size, TextAlignmentOptions alignment)
+        private static GameObject CreateTMPText(
+            Transform parent,
+            string name,
+            string text,
+            int fontSize,
+            Color color,
+            Vector2 anchoredPos,
+            Vector2 size,
+            TextAlignmentOptions alignment)
         {
             GameObject obj = new GameObject(name);
             obj.transform.SetParent(parent, false);
@@ -469,128 +545,119 @@ namespace CardMoba.Client.Editor.Tools
             tmp.color = color;
             tmp.alignment = alignment;
             tmp.richText = true;
-            tmp.raycastTarget = false; // ← 关闭 RaycastTarget，防止文字遮挡父级 Button 的点击
-
+            tmp.raycastTarget = false;
             return obj;
         }
 
-        private static GameObject CreateSlider(Transform parent, string name,
-            Color fillColor, Color bgColor,
-            Vector2 anchoredPos, Vector2 size)
+        private static GameObject CreateSlider(
+            Transform parent,
+            string name,
+            Color fillColor,
+            Color backgroundColor,
+            Vector2 anchoredPos,
+            Vector2 size)
         {
-            // 用默认的 Slider 创建流程
-            GameObject sliderObj = new GameObject(name);
-            sliderObj.transform.SetParent(parent, false);
-            RectTransform sliderRect = sliderObj.AddComponent<RectTransform>();
+            GameObject sliderObject = new GameObject(name);
+            sliderObject.transform.SetParent(parent, false);
+            RectTransform sliderRect = sliderObject.AddComponent<RectTransform>();
             sliderRect.anchoredPosition = anchoredPos;
             sliderRect.sizeDelta = size;
 
-            Slider slider = sliderObj.AddComponent<Slider>();
-            slider.minValue = 0;
-            slider.maxValue = 30;
-            slider.value = 30;
-            slider.interactable = false; // 只用于显示，不可拖拽
+            Slider slider = sliderObject.AddComponent<Slider>();
+            slider.minValue = 0f;
+            slider.maxValue = 30f;
+            slider.value = 30f;
+            slider.interactable = false;
 
-            // Background
-            GameObject bgObj = CreateImage(sliderObj.transform, "Background", bgColor, Vector2.zero, Vector2.zero);
-            SetAnchors(bgObj, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+            GameObject background = CreateImage(sliderObject.transform, "Background", backgroundColor, Vector2.zero, Vector2.zero);
+            SetAnchors(background, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
 
-            // Fill Area
             GameObject fillArea = new GameObject("Fill Area");
-            fillArea.transform.SetParent(sliderObj.transform, false);
+            fillArea.transform.SetParent(sliderObject.transform, false);
             RectTransform fillAreaRect = fillArea.AddComponent<RectTransform>();
             fillAreaRect.anchorMin = Vector2.zero;
             fillAreaRect.anchorMax = Vector2.one;
             fillAreaRect.offsetMin = Vector2.zero;
             fillAreaRect.offsetMax = Vector2.zero;
 
-            GameObject fillObj = CreateImage(fillArea.transform, "Fill", fillColor, Vector2.zero, Vector2.zero);
-            SetAnchors(fillObj, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
+            GameObject fill = CreateImage(fillArea.transform, "Fill", fillColor, Vector2.zero, Vector2.zero);
+            SetAnchors(fill, Vector2.zero, Vector2.one, Vector2.zero, Vector2.zero);
 
-            slider.fillRect = fillObj.GetComponent<RectTransform>();
-
-            return sliderObj;
+            slider.fillRect = fill.GetComponent<RectTransform>();
+            return sliderObject;
         }
 
-        private static GameObject CreateButton(Transform parent, string name,
-            string label, Color bgColor,
-            Vector2 anchoredPos, Vector2 size)
+        private static GameObject CreateButton(
+            Transform parent,
+            string name,
+            string label,
+            Color backgroundColor,
+            Vector2 anchoredPos,
+            Vector2 size)
         {
-            GameObject btnObj = new GameObject(name);
-            btnObj.transform.SetParent(parent, false);
-            RectTransform btnRect = btnObj.AddComponent<RectTransform>();
-            btnRect.anchoredPosition = anchoredPos;
-            btnRect.sizeDelta = size;
+            GameObject buttonObject = new GameObject(name);
+            buttonObject.transform.SetParent(parent, false);
+            RectTransform buttonRect = buttonObject.AddComponent<RectTransform>();
+            buttonRect.anchoredPosition = anchoredPos;
+            buttonRect.sizeDelta = size;
 
-            Image btnImg = btnObj.AddComponent<Image>();
-            btnImg.color = bgColor;
+            Image buttonImage = buttonObject.AddComponent<Image>();
+            buttonImage.color = backgroundColor;
 
-            Button btn = btnObj.AddComponent<Button>();
-            ColorBlock colors = btn.colors;
-            colors.highlightedColor = bgColor * 1.2f;
-            colors.pressedColor = bgColor * 0.8f;
-            btn.colors = colors;
+            Button button = buttonObject.AddComponent<Button>();
+            ColorBlock colors = button.colors;
+            colors.highlightedColor = backgroundColor * 1.2f;
+            colors.pressedColor = backgroundColor * 0.8f;
+            button.colors = colors;
 
-            // 按钮文字
-            CreateTMPText(btnObj.transform, "ButtonText", label, 20, Color.white,
-                Vector2.zero, size, TextAlignmentOptions.Center);
-
-            return btnObj;
+            CreateTMPText(buttonObject.transform, "ButtonText", label, 20, Color.white, Vector2.zero, size, TextAlignmentOptions.Center);
+            return buttonObject;
         }
 
-        private static GameObject CreateScrollView(Transform parent, string name,
-            Vector2 anchoredPos, Vector2 size)
+        private static GameObject CreateScrollView(Transform parent, string name, Vector2 anchoredPos, Vector2 size)
         {
-            GameObject scrollObj = new GameObject(name);
-            scrollObj.transform.SetParent(parent, false);
-            RectTransform scrollRect = scrollObj.AddComponent<RectTransform>();
+            GameObject scrollObject = new GameObject(name);
+            scrollObject.transform.SetParent(parent, false);
+            RectTransform scrollRect = scrollObject.AddComponent<RectTransform>();
             scrollRect.anchoredPosition = anchoredPos;
             scrollRect.sizeDelta = size;
 
-            Image scrollBg = scrollObj.AddComponent<Image>();
-            scrollBg.color = new Color(0.08f, 0.08f, 0.12f, 0.85f);
+            Image background = scrollObject.AddComponent<Image>();
+            background.color = new Color(0.08f, 0.08f, 0.12f, 0.85f);
 
-            ScrollRect sr = scrollObj.AddComponent<ScrollRect>();
-            sr.horizontal = false;
-            sr.vertical = true;
-            sr.movementType = ScrollRect.MovementType.Clamped;
+            ScrollRect scroll = scrollObject.AddComponent<ScrollRect>();
+            scroll.horizontal = false;
+            scroll.vertical = true;
+            scroll.movementType = ScrollRect.MovementType.Clamped;
 
-            // Viewport
             GameObject viewport = new GameObject("Viewport");
-            viewport.transform.SetParent(scrollObj.transform, false);
-            RectTransform vpRect = viewport.AddComponent<RectTransform>();
-            vpRect.anchorMin = Vector2.zero;
-            vpRect.anchorMax = Vector2.one;
-            vpRect.offsetMin = new Vector2(5, 5);
-            vpRect.offsetMax = new Vector2(-5, -5);
+            viewport.transform.SetParent(scrollObject.transform, false);
+            RectTransform viewportRect = viewport.AddComponent<RectTransform>();
+            viewportRect.anchorMin = Vector2.zero;
+            viewportRect.anchorMax = Vector2.one;
+            viewportRect.offsetMin = new Vector2(5f, 5f);
+            viewportRect.offsetMax = new Vector2(-5f, -5f);
 
-            Image vpImage = viewport.AddComponent<Image>();
-            vpImage.color = Color.white;
-            Mask vpMask = viewport.AddComponent<Mask>();
-            vpMask.showMaskGraphic = false;
+            Image viewportImage = viewport.AddComponent<Image>();
+            viewportImage.color = Color.white;
+            Mask viewportMask = viewport.AddComponent<Mask>();
+            viewportMask.showMaskGraphic = false;
 
-            // Content
             GameObject content = new GameObject("Content");
             content.transform.SetParent(viewport.transform, false);
             RectTransform contentRect = content.AddComponent<RectTransform>();
-            contentRect.anchorMin = new Vector2(0, 1);
-            contentRect.anchorMax = new Vector2(1, 1);
-            contentRect.pivot = new Vector2(0.5f, 1);
-            contentRect.offsetMin = new Vector2(0, 0);
-            contentRect.offsetMax = new Vector2(0, 0);
+            contentRect.anchorMin = new Vector2(0f, 1f);
+            contentRect.anchorMax = new Vector2(1f, 1f);
+            contentRect.pivot = new Vector2(0.5f, 1f);
+            contentRect.offsetMin = Vector2.zero;
+            contentRect.offsetMax = Vector2.zero;
 
-            sr.viewport = vpRect;
-            sr.content = contentRect;
-
-            return scrollObj;
+            scroll.viewport = viewportRect;
+            scroll.content = contentRect;
+            return scrollObject;
         }
 
-        // ══════════════════════════════════════
-        // 锚点设置辅助方法
-        // ══════════════════════════════════════
-
-        private static void SetAnchors(GameObject obj, Vector2 anchorMin, Vector2 anchorMax,
-            Vector2 offsetMin, Vector2 offsetMax)
+        private static void SetAnchors(GameObject obj, Vector2 anchorMin, Vector2 anchorMax, Vector2 offsetMin, Vector2 offsetMax)
         {
             RectTransform rect = obj.GetComponent<RectTransform>();
             rect.anchorMin = anchorMin;
@@ -599,24 +666,22 @@ namespace CardMoba.Client.Editor.Tools
             rect.offsetMax = offsetMax;
         }
 
-        /// <summary>顶部拉伸：左右撑满，从顶部往下指定高度</summary>
         private static void SetAnchorsStretchTop(GameObject obj, float left, float right, float top, float bottom)
         {
             RectTransform rect = obj.GetComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0, 1);
-            rect.anchorMax = new Vector2(1, 1);
-            rect.pivot = new Vector2(0.5f, 1);
-            rect.offsetMin = new Vector2(left, bottom);   // bottom 为负值代表高度
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.offsetMin = new Vector2(left, bottom);
             rect.offsetMax = new Vector2(-right, -top);
         }
 
-        /// <summary>底部拉伸：左右撑满，从底部往上指定高度</summary>
         private static void SetAnchorsStretchBottom(GameObject obj, float bottom, float left, float right, float height)
         {
             RectTransform rect = obj.GetComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0, 0);
-            rect.anchorMax = new Vector2(1, 0);
-            rect.pivot = new Vector2(0.5f, 0);
+            rect.anchorMin = new Vector2(0f, 0f);
+            rect.anchorMax = new Vector2(1f, 0f);
+            rect.pivot = new Vector2(0.5f, 0f);
             rect.offsetMin = new Vector2(left, bottom);
             rect.offsetMax = new Vector2(-right, bottom + height);
         }
@@ -624,17 +689,17 @@ namespace CardMoba.Client.Editor.Tools
         private static void SetAnchorsTopLeft(GameObject obj)
         {
             RectTransform rect = obj.GetComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0, 1);
-            rect.anchorMax = new Vector2(0, 1);
-            rect.pivot = new Vector2(0, 1);
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = new Vector2(0f, 1f);
+            rect.pivot = new Vector2(0f, 1f);
         }
 
         private static void SetAnchorsTopCenter(GameObject obj)
         {
             RectTransform rect = obj.GetComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0.5f, 1);
-            rect.anchorMax = new Vector2(0.5f, 1);
-            rect.pivot = new Vector2(0.5f, 1);
+            rect.anchorMin = new Vector2(0.5f, 1f);
+            rect.anchorMax = new Vector2(0.5f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
         }
 
         private static void SetAnchorsMiddleCenter(GameObject obj)

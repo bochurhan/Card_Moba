@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using System;
@@ -35,6 +35,7 @@ namespace CardMoba.Client.Presentation.Battle
         [SerializeField] private TextMeshProUGUI _myNameText;
         [SerializeField] private TextMeshProUGUI _myHpText;
         [SerializeField] private Slider          _myHpBar;
+        [SerializeField] private TextMeshProUGUI _myEnergyText;
         [SerializeField] private TextMeshProUGUI _myShieldText;
         [SerializeField] private TextMeshProUGUI _myDeckInfoText;
 
@@ -42,6 +43,7 @@ namespace CardMoba.Client.Presentation.Battle
         [SerializeField] private TextMeshProUGUI _enemyNameText;
         [SerializeField] private TextMeshProUGUI _enemyHpText;
         [SerializeField] private Slider          _enemyHpBar;
+        [SerializeField] private TextMeshProUGUI _enemyEnergyText;
         [SerializeField] private TextMeshProUGUI _enemyShieldText;
         [SerializeField] private TextMeshProUGUI _enemyDeckInfoText;
 
@@ -97,6 +99,7 @@ namespace CardMoba.Client.Presentation.Battle
 
         private void Awake()
         {
+            EnsureOptionalBindings();
             EnsureEventSystem();
             EnsureGraphicRaycaster();
 
@@ -120,6 +123,32 @@ namespace CardMoba.Client.Presentation.Battle
             if (_debugStatusButton != null) _debugStatusButton.onClick.AddListener(OnDebugStatusClicked);
 
             if (_gameOverPanel != null) _gameOverPanel.SetActive(false);
+        }
+
+        private void EnsureOptionalBindings()
+        {
+            if (_myEnergyText == null)
+                _myEnergyText = FindTextInChildren("MyEnergyText");
+
+            if (_enemyEnergyText == null)
+                _enemyEnergyText = FindTextInChildren("EnemyEnergyText");
+        }
+
+        private TextMeshProUGUI FindTextInChildren(string objectName)
+        {
+            Transform child = transform.Find(objectName);
+            if (child == null)
+            {
+                foreach (var tmp in GetComponentsInChildren<TextMeshProUGUI>(true))
+                {
+                    if (tmp.name == objectName)
+                        return tmp;
+                }
+
+                return null;
+            }
+
+            return child.GetComponent<TextMeshProUGUI>();
         }
 
         private void Start() => StartNewBattle();
@@ -196,12 +225,14 @@ namespace CardMoba.Client.Presentation.Battle
             var nameText    = isHuman ? _myNameText    : _enemyNameText;
             var hpText      = isHuman ? _myHpText      : _enemyHpText;
             var hpBar       = isHuman ? _myHpBar       : _enemyHpBar;
+            var energyText  = isHuman ? _myEnergyText  : _enemyEnergyText;
             var shieldText  = isHuman ? _myShieldText  : _enemyShieldText;
             var deckInfoTxt = isHuman ? _myDeckInfoText : _enemyDeckInfoText;
 
             if (nameText   != null) nameText.text   = isHuman ? "你" : "对手";
             if (hpText     != null) hpText.text     = $"HP: {hero.Hp}/{hero.MaxHp}";
             if (hpBar      != null) { hpBar.maxValue = hero.MaxHp; hpBar.value = hero.Hp; }
+            if (energyText != null) energyText.text = $"能量: {player.Energy}/{player.MaxEnergy}";
             if (shieldText != null) shieldText.text = hero.Shield > 0 ? $"护盾: {hero.Shield}" : string.Empty;
 
             if (deckInfoTxt != null)
