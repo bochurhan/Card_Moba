@@ -1,4 +1,4 @@
-namespace CardMoba.Protocol.Enums
+﻿namespace CardMoba.Protocol.Enums
 {
     /// <summary>
     /// 卡牌效果类型。

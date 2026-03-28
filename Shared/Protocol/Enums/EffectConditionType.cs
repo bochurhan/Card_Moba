@@ -1,4 +1,4 @@
-namespace CardMoba.Protocol.Enums
+﻿namespace CardMoba.Protocol.Enums
 {
     /// <summary>
     /// 效果条件类型 —— CardEffect.EffectConditions 中可检查的运行时状态。

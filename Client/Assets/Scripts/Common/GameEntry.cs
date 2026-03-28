@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using CardMoba.Client.Data.ConfigData;
 
 namespace CardMoba.Client.Common

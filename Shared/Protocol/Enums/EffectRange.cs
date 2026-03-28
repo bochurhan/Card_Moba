@@ -1,4 +1,4 @@
-namespace CardMoba.Protocol.Enums
+﻿namespace CardMoba.Protocol.Enums
 {
     /// <summary>
     /// 效果生效范围 —— 决定卡牌效果可以作用于哪些目标。

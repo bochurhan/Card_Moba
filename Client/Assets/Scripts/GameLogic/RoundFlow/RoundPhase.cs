@@ -1,4 +1,4 @@
-namespace CardMoba.Client.GameLogic.RoundFlow
+﻿namespace CardMoba.Client.GameLogic.RoundFlow
 {
     /// <summary>
     /// 单回合的各阶段枚举（客户端本地定义，与服务端协议保持数值一致）。

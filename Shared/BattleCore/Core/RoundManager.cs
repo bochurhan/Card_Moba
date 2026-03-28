@@ -1,4 +1,4 @@
-#pragma warning disable CS8632
+ï»¿#pragma warning disable CS8632
 
 using System;
 using System.Collections.Generic;
@@ -42,7 +42,7 @@ namespace CardMoba.BattleCore.Core
             WinnerId = null;
             ctx.PendingPlanSnapshots.Clear();
 
-            ctx.RoundLog.Add("[RoundManager] Õ½¶·³õÊ¼»¯Íê³É¡£");
+            ctx.RoundLog.Add("[RoundManager] æˆ˜æ–—åˆå§‹åŒ–å®Œæˆã€‚");
             ctx.EventBus.Publish(new BattleStartEvent
             {
                 BattleId = ctx.BattleId,
@@ -69,7 +69,7 @@ namespace CardMoba.BattleCore.Core
                 player.CorruptionFreePlaysRemainingThisRound = 0;
             }
 
-            ctx.RoundLog.Add($"[RoundManager] µÚ {CurrentRound} »ØºÏ¿ªÊ¼¡£");
+            ctx.RoundLog.Add($"[RoundManager] ç¬¬ {CurrentRound} å›åˆå¼€å§‹ã€‚");
             ctx.EventBus.Publish(new RoundStartEvent { Round = CurrentRound });
 
             ctx.TriggerManager.Fire(ctx, TriggerTiming.OnRoundStart, new TriggerContext
@@ -84,7 +84,7 @@ namespace CardMoba.BattleCore.Core
             _settlement.DrainPendingQueue(ctx);
 
             ctx.CurrentPhase = BattleContext.BattlePhase.PlayerAction;
-            ctx.RoundLog.Add($"[RoundManager] µÚ {CurrentRound} »ØºÏ×¼±¸Íê³É¡£");
+            ctx.RoundLog.Add($"[RoundManager] ç¬¬ {CurrentRound} å›åˆå‡†å¤‡å®Œæˆã€‚");
         }
 
         public List<EffectResult> PlayInstantCard(
@@ -98,13 +98,13 @@ namespace CardMoba.BattleCore.Core
             var card = ctx.CardManager.GetCard(ctx, cardInstanceId);
             if (card == null)
             {
-                ctx.RoundLog.Add($"[RoundManager] ÕÒ²»µ½Ë²²ßÅÆÊµÀı {cardInstanceId}¡£");
+                ctx.RoundLog.Add($"[RoundManager] æ‰¾ä¸åˆ°ç¬ç­–ç‰Œå®ä¾‹ {cardInstanceId}ã€‚");
                 return new List<EffectResult>();
             }
 
             if (!card.OwnerId.Equals(playerId, StringComparison.Ordinal))
             {
-                ctx.RoundLog.Add($"[RoundManager] Ë²²ßÅÆ {cardInstanceId} ²»ÊôÓÚÍæ¼Ò {playerId}¡£");
+                ctx.RoundLog.Add($"[RoundManager] ç¬ç­–ç‰Œ {cardInstanceId} ä¸å±äºç©å®¶ {playerId}ã€‚");
                 return new List<EffectResult>();
             }
 
@@ -112,19 +112,19 @@ namespace CardMoba.BattleCore.Core
             var effects = ResolveCardEffects(ctx, card);
             if (effects == null)
             {
-                ctx.RoundLog.Add($"[RoundManager] ÕÒ²»µ½Ë²²ßÅÆ {cardInstanceId}£¨{effectiveConfigId}£©µÄ¿¨ÅÆ¶¨Òå¡£");
+                ctx.RoundLog.Add($"[RoundManager] æ‰¾ä¸åˆ°ç¬ç­–ç‰Œ {cardInstanceId}ï¼ˆ{effectiveConfigId}ï¼‰çš„å¡ç‰Œå®šä¹‰ã€‚");
                 return new List<EffectResult>();
             }
 
             var instantRules = ctx.PlayRules.Resolve(ctx, playerId, effects, PlayOrigin.PlayerHandPlay);
             if (!instantRules.Allowed)
             {
-                ctx.RoundLog.Add($"[RoundManager] Ë²²ßÅÆ {cardInstanceId} ±»ÏŞÖÆ£¬Ô­Òò£º{instantRules.BlockReason}");
+                ctx.RoundLog.Add($"[RoundManager] ç¬ç­–ç‰Œ {cardInstanceId} è¢«é™åˆ¶ï¼ŒåŸå› ï¼š{instantRules.BlockReason}");
                 return new List<EffectResult>();
             }
 
             StampCardSourceMetadata(ctx, effects, card, runtimeParams);
-            ctx.RoundLog.Add($"[RoundManager] Íæ¼Ò {playerId} ´ò³öË²²ßÅÆ {cardInstanceId}£¨{effectiveConfigId}£©¡£");
+            ctx.RoundLog.Add($"[RoundManager] ç©å®¶ {playerId} æ‰“å‡ºç¬ç­–ç‰Œ {cardInstanceId}ï¼ˆ{effectiveConfigId}ï¼‰ã€‚");
 
             var results = _settlement.ResolveInstantFromCard(ctx, playerId, card, effects);
             if (results.Count > 0 || card.Zone != CardZone.Hand)
@@ -140,13 +140,13 @@ namespace CardMoba.BattleCore.Core
             var card = ctx.CardManager.GetCard(ctx, planCard.CardInstanceId);
             if (card == null)
             {
-                ctx.RoundLog.Add($"[RoundManager] ÕÒ²»µ½¶¨²ßÅÆÊµÀı {planCard.CardInstanceId}¡£");
+                ctx.RoundLog.Add($"[RoundManager] æ‰¾ä¸åˆ°å®šç­–ç‰Œå®ä¾‹ {planCard.CardInstanceId}ã€‚");
                 return false;
             }
 
             if (!card.OwnerId.Equals(planCard.PlayerId, StringComparison.Ordinal))
             {
-                ctx.RoundLog.Add($"[RoundManager] ¶¨²ßÅÆ {planCard.CardInstanceId} ²»ÊôÓÚÍæ¼Ò {planCard.PlayerId}¡£");
+                ctx.RoundLog.Add($"[RoundManager] å®šç­–ç‰Œ {planCard.CardInstanceId} ä¸å±äºç©å®¶ {planCard.PlayerId}ã€‚");
                 return false;
             }
 
@@ -154,14 +154,14 @@ namespace CardMoba.BattleCore.Core
             var resolvedEffects = ResolveCardEffects(ctx, card);
             if (resolvedEffects == null)
             {
-                ctx.RoundLog.Add($"[RoundManager] ÕÒ²»µ½¶¨²ßÅÆ {planCard.CardInstanceId}£¨{effectiveConfigId}£©µÄ¿¨ÅÆ¶¨Òå¡£");
+                ctx.RoundLog.Add($"[RoundManager] æ‰¾ä¸åˆ°å®šç­–ç‰Œ {planCard.CardInstanceId}ï¼ˆ{effectiveConfigId}ï¼‰çš„å¡ç‰Œå®šä¹‰ã€‚");
                 return false;
             }
 
             var planRules = ctx.PlayRules.Resolve(ctx, planCard.PlayerId, resolvedEffects, PlayOrigin.PlayerHandPlay);
             if (!planRules.Allowed)
             {
-                ctx.RoundLog.Add($"[RoundManager] ¶¨²ßÅÆ {planCard.CardInstanceId} ±»ÏŞÖÆ£¬Ô­Òò£º{planRules.BlockReason}");
+                ctx.RoundLog.Add($"[RoundManager] å®šç­–ç‰Œ {planCard.CardInstanceId} è¢«é™åˆ¶ï¼ŒåŸå› ï¼š{planRules.BlockReason}");
                 return false;
             }
 
@@ -169,7 +169,7 @@ namespace CardMoba.BattleCore.Core
 
             if (!ctx.CardManager.CommitPlanCard(ctx, planCard.CardInstanceId))
             {
-                ctx.RoundLog.Add($"[RoundManager] ¶¨²ßÅÆ {planCard.CardInstanceId} Ğ£ÑéÊ§°Ü£¬¾Ü¾øÌá½»¡£");
+                ctx.RoundLog.Add($"[RoundManager] å®šç­–ç‰Œ {planCard.CardInstanceId} æ ¡éªŒå¤±è´¥ï¼Œæ‹’ç»æäº¤ã€‚");
                 return false;
             }
 
@@ -190,7 +190,7 @@ namespace CardMoba.BattleCore.Core
             ctx.PendingPlanSnapshots.Add(pendingCard);
 
             ctx.RoundLog.Add(
-                $"[RoundManager] Íæ¼Ò {planCard.PlayerId} Ìá½»¶¨²ß¿ìÕÕ {pendingCard.SnapshotId}£¬À´Ô´ÊµÀı {planCard.CardInstanceId}£¨Ë³Ğò {pendingCard.SubmitOrder}£©¡£");
+                $"[RoundManager] ç©å®¶ {planCard.PlayerId} æäº¤å®šç­–å¿«ç…§ {pendingCard.SnapshotId}ï¼Œæ¥æºå®ä¾‹ {planCard.CardInstanceId}ï¼ˆé¡ºåº {pendingCard.SubmitOrder}ï¼‰ã€‚");
             return true;
         }
 
@@ -198,7 +198,7 @@ namespace CardMoba.BattleCore.Core
         {
             if (IsBattleOver) return;
 
-            ctx.RoundLog.Add($"[RoundManager] µÚ {CurrentRound} »ØºÏ½áËã¿ªÊ¼¡£");
+            ctx.RoundLog.Add($"[RoundManager] ç¬¬ {CurrentRound} å›åˆç»“ç®—å¼€å§‹ã€‚");
             ctx.CurrentPhase = BattleContext.BattlePhase.Settlement;
 
             ctx.CardManager.ScanStatCards(ctx);
@@ -211,7 +211,7 @@ namespace CardMoba.BattleCore.Core
             }
             else
             {
-                ctx.RoundLog.Add("[RoundManager] ±¾»ØºÏÎŞ¶¨²ßÅÆ£¬Ìø¹ı¶¨²ß½áËã¡£");
+                ctx.RoundLog.Add("[RoundManager] æœ¬å›åˆæ— å®šç­–ç‰Œï¼Œè·³è¿‡å®šç­–ç»“ç®—ã€‚");
             }
             ctx.PendingPlanSnapshots.Clear();
 
@@ -232,7 +232,7 @@ namespace CardMoba.BattleCore.Core
                 if (shield <= 0) continue;
 
                 kv.Value.HeroEntity.Shield = 0;
-                ctx.RoundLog.Add($"[RoundManager] {kv.Key} »ØºÏ½áÊø»¤¶ÜÇåÁã£¨{shield} -> 0£©¡£");
+                ctx.RoundLog.Add($"[RoundManager] {kv.Key} å›åˆç»“æŸæŠ¤ç›¾æ¸…é›¶ï¼ˆ{shield} -> 0ï¼‰ã€‚");
             }
 
             ctx.TriggerManager.TickDecay(ctx);
@@ -241,7 +241,7 @@ namespace CardMoba.BattleCore.Core
 
             ctx.CurrentPhase = BattleContext.BattlePhase.RoundEnd;
             ctx.EventBus.Publish(new RoundEndEvent { Round = CurrentRound });
-            ctx.RoundLog.Add($"[RoundManager] µÚ {CurrentRound} »ØºÏ½áÊø¡£");
+            ctx.RoundLog.Add($"[RoundManager] ç¬¬ {CurrentRound} å›åˆç»“æŸã€‚");
         }
 
         private bool CheckDeathAndBattleOver(BattleContext ctx)
@@ -261,7 +261,7 @@ namespace CardMoba.BattleCore.Core
                     continue;
 
                 deadPlayer.HeroEntity.DeathEventFired = true;
-                ctx.RoundLog.Add($"[RoundManager] Íæ¼Ò {deadId} ËÀÍö¡£");
+                ctx.RoundLog.Add($"[RoundManager] ç©å®¶ {deadId} æ­»äº¡ã€‚");
 
                 ctx.TriggerManager.Fire(ctx, TriggerTiming.OnNearDeath, new TriggerContext
                 {
@@ -273,7 +273,7 @@ namespace CardMoba.BattleCore.Core
                 if (deadPlayer.HeroEntity.IsAlive)
                 {
                     deadPlayer.HeroEntity.DeathEventFired = false;
-                    ctx.RoundLog.Add($"[RoundManager] Íæ¼Ò {deadId} ±»¾È»î¡£");
+                    ctx.RoundLog.Add($"[RoundManager] ç©å®¶ {deadId} è¢«æ•‘æ´»ã€‚");
                     continue;
                 }
 
@@ -304,7 +304,7 @@ namespace CardMoba.BattleCore.Core
                 IsBattleOver = true;
                 WinnerId = null;
                 ctx.CurrentPhase = BattleContext.BattlePhase.BattleEnd;
-                ctx.RoundLog.Add("[RoundManager] Õ½¶·½áÊø£ºÆ½¾Ö¡£");
+                ctx.RoundLog.Add("[RoundManager] æˆ˜æ–—ç»“æŸï¼šå¹³å±€ã€‚");
                 ctx.EventBus.Publish(new BattleEndEvent { WinnerId = null, IsDraw = true });
                 return true;
             }
@@ -314,7 +314,7 @@ namespace CardMoba.BattleCore.Core
                 IsBattleOver = true;
                 WinnerId = finalAlivePlayers[0];
                 ctx.CurrentPhase = BattleContext.BattlePhase.BattleEnd;
-                ctx.RoundLog.Add($"[RoundManager] Õ½¶·½áÊø£ºÍæ¼Ò {WinnerId} »ñÊ¤¡£");
+                ctx.RoundLog.Add($"[RoundManager] æˆ˜æ–—ç»“æŸï¼šç©å®¶ {WinnerId} è·èƒœã€‚");
                 ctx.EventBus.Publish(new BattleEndEvent { WinnerId = WinnerId, IsDraw = false });
                 return true;
             }
@@ -339,7 +339,7 @@ namespace CardMoba.BattleCore.Core
             var effects = ctx.BuildCardEffects(cardConfigId);
             if (effects == null)
             {
-                reason = $"ÕÒ²»µ½¿¨ÅÆ¶¨Òå {cardConfigId}";
+                reason = $"æ‰¾ä¸åˆ°å¡ç‰Œå®šä¹‰ {cardConfigId}";
                 return false;
             }
 
@@ -371,7 +371,7 @@ namespace CardMoba.BattleCore.Core
                 return new PlayRuleResolution
                 {
                     Allowed = false,
-                    BlockReason = $"ÕÒ²»µ½¿¨ÅÆ¶¨Òå {card.GetEffectiveConfigId()}"
+                    BlockReason = $"æ‰¾ä¸åˆ°å¡ç‰Œå®šä¹‰ {card.GetEffectiveConfigId()}"
                 };
             }
 
@@ -505,6 +505,7 @@ namespace CardMoba.BattleCore.Core
         }
     }
 }
+
 
 
 

@@ -1,4 +1,4 @@
-# ⚠️ BattleCore 系统架构关系图（V1 归档）
+﻿# ⚠️ BattleCore 系统架构关系图（V1 归档）
 
 > **本文档已归档**（2026-03-04）。BattleCore V2 重构已启动，请参阅：
 > - 新架构总览：[SystemArchitecture_V2.md](SystemArchitecture_V2.md) ← **当前有效文档**

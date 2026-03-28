@@ -1,4 +1,4 @@
-namespace CardMoba.Client.GameLogic.RoundFlow
+﻿namespace CardMoba.Client.GameLogic.RoundFlow
 {
     /// <summary>
     /// 回合各阶段时长配置（客户端本地定义）。

@@ -1,4 +1,4 @@
-namespace CardMoba.Protocol.Enums
+﻿namespace CardMoba.Protocol.Enums
 {
     /// <summary>
     /// Buff 类型枚举。

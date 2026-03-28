@@ -1,4 +1,4 @@
-namespace CardMoba.Protocol.Enums
+﻿namespace CardMoba.Protocol.Enums
 {
     /// <summary>
     /// 卡牌效果目标类型 —— 决定卡牌结算时作用于谁。

@@ -1,4 +1,4 @@
-#pragma warning disable CS8632
+﻿#pragma warning disable CS8632
 
 namespace CardMoba.BattleCore.Modifiers
 {

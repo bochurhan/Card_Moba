@@ -1,4 +1,4 @@
-using CardMoba.Protocol.Enums;
+﻿using CardMoba.Protocol.Enums;
 
 namespace CardMoba.BattleCore.Definitions
 {
