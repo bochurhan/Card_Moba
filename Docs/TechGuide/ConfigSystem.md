@@ -1,33 +1,29 @@
-﻿# 配置系统说明
+# 配置系统说明
 
-**文档版本**: 2026-03-26  
+**文档版本**: 2026-03-28  
 **状态**: 当前有效  
-**适用范围**: 当前卡牌配置作者链路与运行时读取链路
+**适用范围**: 当前卡牌配置作者链路、BattleCore 配置适配与 MatchFlow 构筑目录装配
 
 ---
 
 ## 1. 结论
 
-当前配置链路已经收口为：
+当前配置链路已经收口为两条消费方向：
 
-- 唯一作者入口：
-  - `CardEditorWindow`
-- 唯一作者真源：
-  - `Client/Assets/StreamingAssets/Config/cards.json`
-- 运行时读取：
-  - `cards.json`
-- 审阅导出：
-  - `Config/Excel/Cards.csv`
-- Excel 审阅产物：
-  - `Config/Excel/Cards.xlsx`
+- `BattleCore` 配置消费
+  - `CardConfig` -> 客户端/服务端适配 -> `BattleCardDefinition`
+- `MatchFlow` 构筑消费
+  - `CardConfig` -> `CardConfigManager.CreateBuildCatalog()` -> `IBuildCatalog`
 
-CSV 现在只承担审阅功能，不再是作者输入源。
+唯一作者真源仍然是：
+
+- `Client/Assets/StreamingAssets/Config/cards.json`
 
 ---
 
 ## 2. 当前链路
 
-### 2.1 编辑器
+### 2.1 编辑器与作者真源
 
 `CardEditorWindow` 负责：
 
@@ -36,28 +32,43 @@ CSV 现在只承担审阅功能，不再是作者输入源。
 - 保存 `cards.json`
 - 自动导出审阅 CSV
 
-### 2.2 运行时
+### 2.2 BattleCore 运行时读取
 
-运行时只读取：
+BattleCore 不直接读 `cards.json` 文件。
 
-- `Client/Assets/StreamingAssets/Config/cards.json`
+当前链路是：
 
-BattleCore 不直接读取 CSV。
+1. 上层加载 `cards.json`
+2. 解析为 `CardConfig`
+3. 适配为 `BattleCardDefinition`
+4. 通过 `BattleContext.CardDefinitionProvider` 提供给 `BattleCore`
 
-### 2.3 审阅产物
+### 2.3 MatchFlow 构筑读取
 
-审阅文件包括：
+`MatchFlow` 同样不直接读取 `cards.json` 文件。
 
-- `Config/Excel/Cards.csv`
-- `Config/Excel/Cards.xlsx`
+当前链路是：
 
-它们用于：
+1. 上层加载 `cards.json`
+2. 解析为 `CardConfig`
+3. 客户端当前可直接通过 `CardConfigManager.CreateBuildCatalog()` 调用 `BuildCatalogAssembler`
+4. 组装为 `IBuildCatalog`
+5. `BuildOfferGenerator` 和 `BuildActionApplier` 读取 `IBuildCatalog`
 
-- diff 审阅
-- 策划/设计浏览
-- Excel 输出
+### 2.4 当前装备配置
 
-不用于直接回写运行时配置。
+装备配置尚未进入 `cards.json`。
+
+当前状态：
+
+- `EquipmentDefinition` 已在 `MatchFlow` 中建模
+- 当前通过上层手动注册到 `IBuildCatalog`
+- 已实现示例：`burning_blood`
+
+后续若装备进入统一配置链路，应继续保持：
+
+- 作者侧模型放在 `ConfigModels`
+- 运行时消费通过 `MatchFlow.Catalog` 装配
 
 ---
 
@@ -75,7 +86,36 @@ BattleCore 不直接读取 CSV。
 
 ---
 
-## 4. 当前支持范围
+## 4. MatchFlow 当前消费哪些字段
+
+`BuildCatalogAssembler` 当前主要消费以下字段：
+
+- `CardId`
+- `HeroClass`
+- `Rarity`
+- `Tags`
+- `UpgradedCardConfigId`
+
+当前默认规则：
+
+- `ConfigId = CardId.ToString()`
+- 稀有度映射：
+  - `1 -> Common`
+  - `2 -> Uncommon`
+  - `3 -> Rare`
+  - `>= 4 -> Legendary`
+- 默认从奖励池排除：
+  - `Legendary`
+  - `Status`
+  - 作为其他卡升级目标的卡
+- 默认按职业注册 class pool，例如：
+  - `class:Warrior`
+  - `class:Assassin`
+  - `class:Mage`
+
+---
+
+## 5. BattleCore 当前支持范围
 
 当前 BattleCore 主配置白名单包括：
 
@@ -88,6 +128,9 @@ BattleCore 不直接读取 CSV。
 - `GenerateCard`
 - `Lifesteal`
 - `GainEnergy`
+- `MoveSelectedCardToDeckTop`
+- `ReturnSourceCardToHandAtRoundEnd`
+- `UpgradeCardsInHand`
 
 卡牌层主字段：
 
@@ -102,28 +145,13 @@ BattleCore 不直接读取 CSV。
 - `tags`
 - `energyCost`
 - `rarity`
+- `upgradedCardConfigId`
 - `playConditions`
 - `effects`
 
-效果层主字段：
-
-- `effectType`
-- `value`
-- `valueExpression`
-- `repeatCount`
-- `duration`
-- `targetOverride`
-- `buffConfigId`
-- `generateCardConfigId`
-- `generateCardZone`
-- `generateCardIsTemp`
-- `priority`
-- `subPriority`
-- `effectConditions`
-
 ---
 
-## 5. 已移除字段
+## 6. 已移除字段
 
 以下旧字段已经从当前主配置链路移除：
 
@@ -142,40 +170,22 @@ BattleCore 不直接读取 CSV。
 - `effectParams`
 - `subEffects`
 
-原则是：
-
-- 新卡不再使用这些字段
-- 编辑器不再暴露这些入口
-- 运行时不再兼容读取这些字段
-
 ---
 
-## 6. 审阅 CSV
+## 7. 审阅产物
 
-`Cards.csv` 当前是一份导出审阅视图。
+审阅文件包括：
 
-它保留：
+- `Config/Excel/Cards.csv`
+- `Config/Excel/Cards.xlsx`
 
-- 基础卡牌信息
-- `EffectSummary`
-- `EffectsJson`
+它们用于：
 
-目的是方便 diff 和审阅，而不是承担复杂嵌套结构的作者输入。
+- diff 审阅
+- 策划/设计浏览
+- Excel 输出
 
----
-
-## 7. Excel 导出
-
-`Config/Excel/merge_to_xlsx.py` 当前输入：
-
-- `Cards.csv`
-- `Cards_Template_Enums.csv`
-
-输出：
-
-- `Cards.xlsx`
-
-`Cards.xlsx` 同样是审阅产物，不是作者真源。
+不用于直接驱动 BattleCore 或 MatchFlow。
 
 ---
 
@@ -183,8 +193,8 @@ BattleCore 不直接读取 CSV。
 
 当前判断配置是否符合契约时，应优先参考：
 
-- [CardSystem.md](../GameDesign/CardSystem.md)
-- [SettlementRules.md](../GameDesign/SettlementRules.md)
+- [../GameDesign/CardSystem.md](../GameDesign/CardSystem.md)
+- [../GameDesign/SettlementRules.md](../GameDesign/SettlementRules.md)
+- [MatchFlow.md](MatchFlow.md)
 - [SystemArchitecture_V2.md](SystemArchitecture_V2.md)
 
-历史文档若与上述内容冲突，以当前契约为准。

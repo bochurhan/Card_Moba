@@ -1,23 +1,25 @@
-﻿# Shared 目录说明
+# Shared 目录说明
 
-**文档版本**: 2026-03-27  
+**文档版本**: 2026-03-28  
 **状态**: 当前契约
 
 ## 1. 目录定位
 
 `Shared/` 放前后端共享的纯逻辑与共享模型。
 
-当前只保留三块：
+当前主线包含四块：
 
 - `Protocol`
 - `ConfigModels`
 - `BattleCore`
+- `MatchFlow`
 
-这三块的目标是：
+这四块的目标是：
 
 - 统一公共枚举和协议语言
 - 统一作者侧配置模型
-- 统一 BattleCore 运行时战斗逻辑
+- 统一单场战斗运行时逻辑
+- 统一整局流程、构筑窗口与跨战斗持久状态
 
 ## 2. 顶层结构
 
@@ -53,11 +55,11 @@
 
 ### 2.3 BattleCore
 
-`BattleCore/` 是纯运行时战斗引擎。
+`BattleCore/` 是纯运行时单场战斗引擎。
 
 负责：
 
-- 战斗状态
+- battle 内状态
 - 出牌流程
 - 定策快照
 - 结算流程
@@ -68,6 +70,26 @@
 - Unity UI
 - 服务器表现层
 - 配置文件读取
+- 整局多场对局流程
+
+### 2.4 MatchFlow
+
+`MatchFlow/` 是位于 `BattleCore` 之上的整局流程层。
+
+负责：
+
+- 整局 `MatchContext`
+- 多场 battle step 编排
+- 场间构筑窗口
+- 跨战斗持久 HP / Deck
+- 装备 battle 生命周期钩子
+- `CardConfig -> IBuildCatalog` 的构筑侧配置装配
+
+不负责：
+
+- 单场 battle 结算细节
+- Unity 配置读取
+- 网络协议与房间管理
 
 ## 3. 依赖方向
 
@@ -75,40 +97,22 @@
 
 - `Protocol` <- `ConfigModels`
 - `Protocol` <- `BattleCore`
+- `Protocol` <- `MatchFlow`
+- `ConfigModels` <- `MatchFlow`
+- `BattleCore` <- `MatchFlow`
 
-`ConfigModels` 与 `BattleCore` 尽量解耦，由客户端适配层连接。
+`ConfigModels` 与 `BattleCore` 仍应尽量解耦，由 `MatchFlow` 或更上层适配器连接。
 
-## 4. BattleCore 当前子目录
+## 4. 当前重要边界
 
-当前 `Shared/BattleCore/` 主体目录包括：
-
-- `Context`
-- `Core`
-- `Costs`
-- `Definitions`
-- `EventBus`
-- `Foundation`
-- `Handlers`
-- `Managers`
-- `Modifiers`
-- `Random`
-- `Resolvers`
-- `Rules`
-
-这些目录的详细职责请看：
-
-- [SharedArchitecture.md](../Docs/TechGuide/SharedArchitecture.md)
-
-## 5. 当前重要边界
-
-### 5.1 ConfigModels、Definitions、Foundation
+### 4.1 ConfigModels、Definitions、Foundation
 
 这三层不要混。
 
 - `ConfigModels`
   - 作者侧配置语义
 - `Definitions`
-  - BattleCore 直接消费的静态模板
+  - BattleCore 或 MatchFlow 直接消费的静态模板
 - `Foundation`
   - BattleCore 运行时基础模型
 
@@ -117,44 +121,44 @@
 - [CardConfig.cs](ConfigModels/Card/CardConfig.cs)
 - [BuffConfig.cs](BattleCore/Definitions/BuffConfig.cs)
 - [BattleCard.cs](BattleCore/Foundation/Cards/BattleCard.cs)
+- [BuildDefinitions.cs](MatchFlow/Definitions/BuildDefinitions.cs)
 
-### 5.2 Costs、Rules、Modifiers
+### 4.2 BattleCore 与 MatchFlow
 
-这三层也不要混。
+这两层也不要混。
 
-- `Costs`
-  - 只负责实际耗能计算
-- `Rules`
-  - 负责操作规则判定
-- `Modifiers`
-  - 负责结算值修正
+- `BattleCore`
+  - 只负责单场 battle 的即时状态与结算
+- `MatchFlow`
+  - 负责 battle 之外的整局状态机与持久状态
 
-例如：
+当前例子：
 
-- `Corruption`
-  - Buff 是状态真源
-  - Rule 判断这次是否命中
-  - Cost 只计算最终耗能
-- `Strength / Weak / Vulnerable`
-  - 属于 `Modifiers`
+- 单场结束摘要：`BattleSummary`
+- 整局推进：`MatchManager`
+- battle 启动计划：`BattleSetupBuilder`
+- 构筑窗口：`BuildOfferGenerator` / `BuildActionApplier`
 
-## 6. 当前有效文档
+## 5. 当前有效文档
 
 建议从下面几份开始：
 
-- [Docs/README.md](../Docs/README.md)
-- [Docs/TechGuide/SharedArchitecture.md](../Docs/TechGuide/SharedArchitecture.md)
-- [Docs/TechGuide/SystemArchitecture_V2.md](../Docs/TechGuide/SystemArchitecture_V2.md)
-- [Docs/TechGuide/ConfigSystem.md](../Docs/TechGuide/ConfigSystem.md)
-- [Docs/GameDesign/CardSystem.md](../Docs/GameDesign/CardSystem.md)
+- [docs/README.md](../docs/README.md)
+- [docs/TechGuide/SharedArchitecture.md](../docs/TechGuide/SharedArchitecture.md)
+- [docs/TechGuide/SystemArchitecture_V2.md](../docs/TechGuide/SystemArchitecture_V2.md)
+- [docs/TechGuide/MatchFlow.md](../docs/TechGuide/MatchFlow.md)
+- [docs/TechGuide/ConfigSystem.md](../docs/TechGuide/ConfigSystem.md)
+- [docs/GameDesign/CardSystem.md](../docs/GameDesign/CardSystem.md)
+- [docs/GameDesign/InGameDraft.md](../docs/GameDesign/InGameDraft.md)
 
-## 7. 当前不再保留在主线的内容
+## 6. 当前不再保留在主线的内容
 
-以下内容已经从当前 1v1 主线移出，不应继续当成现行契约：
+以下内容已经从当前主线移出，不应继续当成现行契约：
 
-- 分路状态容器
+- 旧版分路状态容器
 - 旧阶段系统预留枚举
+- 把整局流程直接塞进 `BattleCore`
 
 历史版本已归档到：
 
-- [Archive/Shared_3v3_PreRewrite](../Archive/Shared_3v3_PreRewrite)
+- [docs/_Archive](../docs/_Archive)

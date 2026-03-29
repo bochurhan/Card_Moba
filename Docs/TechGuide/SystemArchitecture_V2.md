@@ -1,6 +1,6 @@
-﻿# BattleCore V2 当前架构
+# BattleCore V2 当前架构
 
-**文档版本**: 2026-03-27  
+**文档版本**: 2026-03-28  
 **状态**: 当前契约  
 **适用范围**: `Shared/BattleCore` 当前运行时主流程
 
@@ -22,6 +22,8 @@
 
 - [RoundManager.cs](/d:/Card_Moba/Shared/BattleCore/Core/RoundManager.cs)
 - [SettlementEngine.cs](/d:/Card_Moba/Shared/BattleCore/Core/SettlementEngine.cs)
+- [BattleFactory.cs](/d:/Card_Moba/Shared/BattleCore/Core/BattleFactory.cs)
+- [BattleRuleset.cs](/d:/Card_Moba/Shared/BattleCore/Core/BattleRuleset.cs)
 
 职责：
 
@@ -111,9 +113,11 @@
 - `BattleId`
 - `CurrentRound`
 - `CurrentPhase`
-- 玩家集合
+- `Ruleset`
+- 玩家集合与队伍集合
 - `PendingEffectQueue`
 - `PendingPlanSnapshots`
+- 通用实体注册表（含 team objective）
 - `RoundLog`
 - `EventBus`
 - 各类 Manager / Resolver / Rule / Cost 服务
@@ -166,6 +170,17 @@ BattleCore 通过 `BattleContext.CardDefinitionProvider` 获取它。
 - 已提交定策不会被后续打牌反向污染
 - 同一实例如果重新回到可打出区，可以再次打出并生成新快照
 
+## 5.1 Team / Objective / Summary 支撑类型
+
+当前 BattleCore 还新增了三类对接 `MatchFlow` 的支撑文件：
+
+- [BattleTeamState.cs](/d:/Card_Moba/Shared/BattleCore/Context/BattleTeamState.cs)
+  - battle 内队伍状态与共享 objective 入口
+- [BattleRuleset.cs](/d:/Card_Moba/Shared/BattleCore/Core/BattleRuleset.cs)
+  - 单场 battle 结束规则与 objective 终止策略
+- [BattleSummary.cs](/d:/Card_Moba/Shared/BattleCore/Results/BattleSummary.cs)
+  - battle 结束后交给 `MatchFlow` 的标准摘要
+
 ## 6. 回合流程
 
 ### 6.1 InitBattle
@@ -174,6 +189,7 @@ BattleCore 通过 `BattleContext.CardDefinitionProvider` 获取它。
 
 - 初始化战斗状态
 - 清空待结算快照与挂起队列
+- 清空 `CompletedBattleSummary`
 - 发布 `BattleStartEvent`
 
 ### 6.2 BeginRound
@@ -208,6 +224,7 @@ BattleCore 通过 `BattleContext.CardDefinitionProvider` 获取它。
 11. `CardManager.OnRoundEnd()`
 12. `CardManager.DestroyTempCards()`
 13. 发布 `RoundEndEvent`
+14. 若 battle 结束，则自动写入 `CompletedBattleSummary`
 
 ## 7. 出牌链路
 
@@ -310,3 +327,6 @@ BattleCore 通过 `BattleContext.CardDefinitionProvider` 获取它。
 - [SettlementRules.md](../GameDesign/SettlementRules.md)
 - [CardSystem.md](../GameDesign/CardSystem.md)
 - [ConfigSystem.md](ConfigSystem.md)
+
+
+

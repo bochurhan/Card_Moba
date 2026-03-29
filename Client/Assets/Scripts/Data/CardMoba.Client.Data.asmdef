@@ -1,19 +1,30 @@
 {
-  "name": "CardMoba.Client.Data",
-  "rootNamespace": "CardMoba.Client.Data",
-  "references": [
-    "CardMoba.BattleCore",
-    "CardMoba.ConfigModels",
-    "CardMoba.Protocol",
-    "CardMoba.Client.Network"
-  ],
-  "includePlatforms": [],
-  "excludePlatforms": [],
-  "allowUnsafeCode": false,
-  "overrideReferences": false,
-  "precompiledReferences": [],
-  "autoReferenced": true,
-  "defineConstraints": [],
-  "versionDefines": [],
-  "noEngineReferences": false
+    "name":  "CardMoba.Client.Data",
+    "rootNamespace":  "CardMoba.Client.Data",
+    "references":  [
+                       "CardMoba.BattleCore",
+                       "CardMoba.ConfigModels",
+                       "CardMoba.MatchFlow",
+                       "CardMoba.Protocol",
+                       "CardMoba.Client.Network"
+                   ],
+    "includePlatforms":  [
+
+                         ],
+    "excludePlatforms":  [
+
+                         ],
+    "allowUnsafeCode":  false,
+    "overrideReferences":  false,
+    "precompiledReferences":  [
+
+                              ],
+    "autoReferenced":  true,
+    "defineConstraints":  [
+
+                          ],
+    "versionDefines":  [
+
+                       ],
+    "noEngineReferences":  false
 }

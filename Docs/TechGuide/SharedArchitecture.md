@@ -1,14 +1,14 @@
-﻿# Shared 架构说明
+# Shared 架构说明
 
-**文档版本**: 2026-03-27  
+**文档版本**: 2026-03-28  
 **状态**: 当前契约  
 **适用范围**: `Shared/` 顶层结构、`Shared/BattleCore/` 子目录职责、`Rules` 当前落地边界
 
 ## 1. 目标
 
-这份文档只回答三件事：
+这份文档当前主要回答四件事：
 
-- `Shared/` 三个顶层模块分别负责什么
+- `Shared/` 四个顶层模块分别负责什么
 - `Shared/BattleCore/` 当前各子目录的职责边界是什么
 - `Rules` 这层当前已经落了什么，后续准备继续收什么
 
@@ -20,11 +20,12 @@
 
 ## 2. Shared 顶层结构
 
-当前 `Shared/` 只保留三块：
+当前 `Shared/` 主线包含四块：
 
-- `Protocol`
-- `ConfigModels`
-- `BattleCore`
+- `Protocol` 
+- `ConfigModels` 
+- `BattleCore` 
+- `MatchFlow`
 
 ### 2.1 Protocol
 
@@ -60,7 +61,7 @@
 
 ### 2.3 BattleCore
 
-`BattleCore` 是纯运行时战斗引擎。
+`BattleCore` 是纯运行时单场战斗引擎。
 
 它负责：
 
@@ -75,8 +76,27 @@
 - Unity UI
 - 客户端表现
 - 配置文件读取
+- 整局多场流程
 
-### 2.4 ConfigModels、Definitions、Foundation 的区别
+### 2.4 MatchFlow
+
+`MatchFlow` 是位于 `BattleCore` 之上的整局状态机层。
+
+它负责：
+
+- `MatchContext` 与多场 step 推进
+- 场间 `BuildWindow`
+- 跨战斗持久 HP / Deck
+- 装备 battle 生命周期钩子
+- `CardConfig -> IBuildCatalog` 的构筑侧装配
+
+它不负责：
+
+- 单场 battle 结算细节
+- Unity 配置读取
+- 网络协议与房间管理
+
+### 2.5 ConfigModels、Definitions、Foundation 的区别
 
 这三个概念最容易混。
 
@@ -108,10 +128,13 @@
 
 建议保持下面这条依赖方向不变：
 
-- `Protocol` <- `ConfigModels`
-- `Protocol` <- `BattleCore`
+- `Protocol` <- `ConfigModels` 
+- `Protocol` <- `BattleCore` 
+- `Protocol` <- `MatchFlow` 
+- `ConfigModels` <- `MatchFlow` 
+- `BattleCore` <- `MatchFlow` 
 
-`ConfigModels` 和 `BattleCore` 应尽量解耦，由客户端适配层连接。
+`ConfigModels` 和 `BattleCore` 应尽量解耦，由 `MatchFlow` 或更上层适配器连接。
 
 ## 4. BattleCore 子目录职责
 
@@ -438,3 +461,6 @@
 - [ConfigSystem.md](ConfigSystem.md)
 - [CardSystem.md](../GameDesign/CardSystem.md)
 - [SettlementRules.md](../GameDesign/SettlementRules.md)
+
+
+

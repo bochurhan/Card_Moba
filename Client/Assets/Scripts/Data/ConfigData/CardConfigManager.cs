@@ -1,8 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using CardMoba.Client.Data.ConfigData.JsonModels;
 using CardMoba.ConfigModels.Card;
+using CardMoba.MatchFlow.Catalog;
+using CardMoba.MatchFlow.Definitions;
 using CardMoba.Protocol.Enums;
 using UnityEngine;
 
@@ -153,6 +155,17 @@ namespace CardMoba.Client.Data.ConfigData
         public bool HasCard(int cardId)
         {
             return _isLoaded && _cardDict.ContainsKey(cardId);
+        }
+
+        public IBuildCatalog CreateBuildCatalog(
+            IEnumerable<EquipmentDefinition> equipmentDefinitions = null,
+            BuildCatalogAssemblerOptions options = null)
+        {
+            if (!EnsureLoaded())
+                return new InMemoryBuildCatalog();
+
+            var assembler = new BuildCatalogAssembler();
+            return assembler.Create(_cardDict.Values, equipmentDefinitions, options);
         }
 
         private void LoadCards()
@@ -419,3 +432,5 @@ namespace CardMoba.Client.Data.ConfigData
         }
     }
 }
+
+
