@@ -1,4 +1,4 @@
-﻿#pragma warning disable CS8632
+#pragma warning disable CS8632
 
 using System;
 using System.Collections.Generic;
@@ -214,6 +214,15 @@ namespace CardMoba.BattleCore.Managers
             foreach (var kv in ctx.AllPlayers)
             {
                 var player = kv.Value;
+                if (!player.HeroEntity.IsAlive && !ctx.Ruleset.DeadPlayersDrawCards)
+                {
+                    if (!ctx.Ruleset.DeadPlayersCanAct)
+                        player.Energy = 0;
+
+                    ctx.RoundLog.Add($"[CardManager] skip round start draw for dead player {player.PlayerId}.");
+                    continue;
+                }
+
                 player.Energy = player.MaxEnergy;
                 ctx.RoundLog.Add($"[CardManager] {player.PlayerId} energy reset to {player.Energy}/{player.MaxEnergy}.");
                 DrawCards(ctx, kv.Key, 5);
