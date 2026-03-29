@@ -1,14 +1,12 @@
-﻿#pragma warning disable CS8632
+#pragma warning disable CS8632
 
+using System;
 using System.Collections.Generic;
 using CardMoba.BattleCore.Context;
 using CardMoba.BattleCore.Foundation;
 
 namespace CardMoba.BattleCore.Resolvers
 {
-    /// <summary>
-    /// 效果目标类型。
-    /// </summary>
     public enum TargetType
     {
         Self = 0,
@@ -16,11 +14,11 @@ namespace CardMoba.BattleCore.Resolvers
         AllOpponents = 2,
         All = 3,
         None = 4,
+        Teammate = 5,
+        AllAllies = 6,
+        EnemyObjective = 7,
     }
 
-    /// <summary>
-    /// 将目标语义解析为具体实体列表。
-    /// </summary>
     public class TargetResolver
     {
         public List<Entity> Resolve(BattleContext ctx, string targetTypeStr, Entity source)
@@ -32,6 +30,7 @@ namespace CardMoba.BattleCore.Resolvers
         public List<Entity> Resolve(BattleContext ctx, TargetType targetType, Entity source)
         {
             var result = new List<Entity>();
+            var sourceTeamId = ResolveSourceTeamId(ctx, source);
 
             switch (targetType)
             {
@@ -39,18 +38,43 @@ namespace CardMoba.BattleCore.Resolvers
                     result.Add(source);
                     break;
 
+                case TargetType.Teammate:
+                    AddTeamHeroes(ctx, result, sourceTeamId, source.OwnerPlayerId, includeSource: false);
+                    break;
+
+                case TargetType.AllAllies:
+                    AddTeamHeroes(ctx, result, sourceTeamId, source.OwnerPlayerId, includeSource: true);
+                    break;
+
                 case TargetType.Opponent:
                 case TargetType.AllOpponents:
-                    foreach (var kv in ctx.AllPlayers)
+                    foreach (var team in ctx.AllTeams.Values)
                     {
-                        if (kv.Key != source.OwnerPlayerId)
-                            result.Add(kv.Value.HeroEntity);
+                        if (string.Equals(team.TeamId, sourceTeamId, StringComparison.Ordinal))
+                            continue;
+
+                        AddTeamHeroes(ctx, result, team.TeamId, source.OwnerPlayerId, includeSource: true);
+                    }
+                    break;
+
+                case TargetType.EnemyObjective:
+                    foreach (var team in ctx.AllTeams.Values)
+                    {
+                        if (string.Equals(team.TeamId, sourceTeamId, StringComparison.Ordinal))
+                            continue;
+
+                        var objective = ctx.GetObjectiveForTeam(team.TeamId);
+                        if (objective != null && IsEligibleTarget(ctx, objective))
+                            result.Add(objective);
                     }
                     break;
 
                 case TargetType.All:
-                    foreach (var kv in ctx.AllPlayers)
-                        result.Add(kv.Value.HeroEntity);
+                    foreach (var player in ctx.AllPlayers.Values)
+                    {
+                        if (IsEligibleTarget(ctx, player.HeroEntity))
+                            result.Add(player.HeroEntity);
+                    }
                     break;
 
                 case TargetType.None:
@@ -76,12 +100,64 @@ namespace CardMoba.BattleCore.Resolvers
                 case "allopponents":
                 case "allenemies":
                     return TargetType.AllOpponents;
+                case "teammate":
+                case "ally":
+                    return TargetType.Teammate;
+                case "allallies":
+                case "allies":
+                    return TargetType.AllAllies;
+                case "enemyobjective":
+                case "objective":
+                    return TargetType.EnemyObjective;
                 case "all":
                     return TargetType.All;
                 case "none":
                 default:
                     return TargetType.None;
             }
+        }
+
+        private static void AddTeamHeroes(
+            BattleContext ctx,
+            List<Entity> result,
+            string teamId,
+            string sourceOwnerPlayerId,
+            bool includeSource)
+        {
+            foreach (var player in ctx.GetPlayersByTeam(teamId))
+            {
+                if (!includeSource && string.Equals(player.PlayerId, sourceOwnerPlayerId, StringComparison.Ordinal))
+                    continue;
+
+                if (IsEligibleTarget(ctx, player.HeroEntity))
+                    result.Add(player.HeroEntity);
+            }
+        }
+
+        private static string ResolveSourceTeamId(BattleContext ctx, Entity source)
+        {
+            if (!string.IsNullOrWhiteSpace(source.TeamId))
+                return source.TeamId;
+
+            if (!string.IsNullOrWhiteSpace(source.OwnerPlayerId))
+                return ctx.GetPlayer(source.OwnerPlayerId)?.TeamId ?? string.Empty;
+
+            return string.Empty;
+        }
+
+        private static bool IsEligibleTarget(BattleContext ctx, Entity entity)
+        {
+            if (entity == null || !entity.IsAlive || !entity.IsTargetable)
+                return false;
+
+            foreach (var requiredDeadEntityId in entity.RequiredDeadEntityIdsToTarget)
+            {
+                var blocker = ctx.GetEntity(requiredDeadEntityId);
+                if (blocker != null && blocker.IsAlive)
+                    return false;
+            }
+
+            return true;
         }
     }
 }

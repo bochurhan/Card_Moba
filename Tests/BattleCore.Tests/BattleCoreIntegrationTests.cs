@@ -12,6 +12,8 @@ using CardMoba.BattleCore.Definitions;
 using CardMoba.BattleCore.EventBus;
 using CardMoba.BattleCore.Foundation;
 using CardMoba.BattleCore.Handlers;
+using CardMoba.BattleCore.Resolvers;
+using CardMoba.BattleCore.Results;
 using CardMoba.BattleCore.Rules.Play;
 using CardMoba.Protocol.Enums;
 
@@ -24,7 +26,9 @@ namespace CardMoba.Tests
             Func<string, BuffConfig?>? buffConfigProvider = null,
             Func<string, BattleCardDefinition?>? cardDefinitionProvider = null,
             Dictionary<string, BattleCardDefinition>? mutableCardDefinitions = null,
-            IEventBus? eventBus = null)
+            IEventBus? eventBus = null,
+            BattleRuleset? ruleset = null,
+            List<ObjectiveSetupData>? objectives = null)
         {
             Func<string, BattleCardDefinition?>? effectiveCardDefinitionProvider = cardDefinitionProvider;
             if (mutableCardDefinitions != null)
@@ -63,7 +67,259 @@ namespace CardMoba.Tests
                 },
             };
 
-            return factory.CreateBattle("test-battle", seed, players, eventBus);
+            return factory.CreateBattle("test-battle", seed, players, eventBus: eventBus, ruleset: ruleset, objectives: objectives);
+        }
+
+        [Fact]
+        public void T00_BattleFactory_DefaultsPlayerTeamIdToPlayerId_AndRegistersHeroEntity()
+        {
+            var result = CreateTestBattle();
+            var ctx = result.Context;
+
+            ctx.GetTeam("P1").Should().NotBeNull();
+            ctx.GetTeam("P2").Should().NotBeNull();
+            ctx.GetTeam("P1")!.PlayerIds.Should().ContainSingle().Which.Should().Be("P1");
+            ctx.GetTeam("P2")!.PlayerIds.Should().ContainSingle().Which.Should().Be("P2");
+
+            ctx.AllPlayers["P1"].TeamId.Should().Be("P1");
+            ctx.AllPlayers["P1"].HeroEntity.TeamId.Should().Be("P1");
+            ctx.GetEntity("hero_P1").Should().BeSameAs(ctx.AllPlayers["P1"].HeroEntity);
+            ctx.Ruleset.Mode.Should().Be(BattleMode.Duel1v1);
+        }
+
+        [Fact]
+        public void T00_BattleFactory_RegistersTeamSharedObjective()
+        {
+            var factory = new BattleFactory();
+            var players = new List<PlayerSetupData>
+            {
+                new PlayerSetupData
+                {
+                    PlayerId = "P1",
+                    TeamId = "TeamA",
+                    InitialHp = 30,
+                    MaxHp = 30,
+                },
+                new PlayerSetupData
+                {
+                    PlayerId = "P2",
+                    TeamId = "TeamB",
+                    InitialHp = 30,
+                    MaxHp = 30,
+                },
+            };
+            var objectives = new List<ObjectiveSetupData>
+            {
+                new ObjectiveSetupData
+                {
+                    EntityId = "crystal_team_a",
+                    TeamId = "TeamA",
+                    MaxHp = 50,
+                    IsTargetable = true,
+                    EndsMatchWhenDestroyed = true,
+                },
+            };
+            objectives[0].RequiredDeadEntityIdsToTarget.Add("hero_P1");
+
+            var result = factory.CreateBattle(
+                "test-battle-objective",
+                42,
+                players,
+                eventBus: null,
+                ruleset: new BattleRuleset
+                {
+                    Mode = BattleMode.Team2v2,
+                    EnableObjectives = true,
+                },
+                objectives: objectives);
+
+            var ctx = result.Context;
+            var team = ctx.GetTeam("TeamA");
+            var objective = ctx.GetObjectiveForTeam("TeamA");
+
+            team.Should().NotBeNull();
+            team!.ObjectiveEntityId.Should().Be("crystal_team_a");
+            team.PlayerIds.Should().ContainSingle().Which.Should().Be("P1");
+
+            objective.Should().NotBeNull();
+            objective!.Type.Should().Be(EntityType.Structure);
+            objective.TeamId.Should().Be("TeamA");
+            objective.EndsMatchWhenDestroyed.Should().BeTrue();
+            objective.RequiredDeadEntityIdsToTarget.Should().ContainSingle().Which.Should().Be("hero_P1");
+            ctx.GetPlayersByTeam("TeamA").Should().ContainSingle(p => p.PlayerId == "P1");
+        }
+
+        [Fact]
+        public void T00_RoundLimitBattle_DeadHeroCannotPlay_AndDeadPlayersSkipNextRoundDraw()
+        {
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinition("lethal_damage", MakeDamageEffect(40)),
+                MakeCardDefinition("dead_player_card", MakeDamageEffect(5)));
+            var result = CreateTestBattle(
+                mutableCardDefinitions: definitions,
+                ruleset: new BattleRuleset
+                {
+                    LocalEndPolicy = BattleLocalEndPolicy.RoundLimit,
+                    MaxRounds = 3,
+                });
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            PlayStrictInstantCard(ctx, rm, definitions, "P1", "round_limit_lethal", "lethal_damage", MakeDamageEffect(40));
+
+            ctx.AllPlayers["P2"].HeroEntity.IsAlive.Should().BeFalse();
+            rm.IsBattleOver.Should().BeFalse();
+
+            var deadPlayerCard = GiveHandCard(ctx, "P2", "dead_player_hand", "dead_player_card");
+            var deadPlayerRules = rm.ResolvePlayRules(ctx, "P2", deadPlayerCard);
+            deadPlayerRules.Allowed.Should().BeFalse();
+            deadPlayerRules.BlockReason.Should().Be("已死亡的玩家无法出牌。");
+            rm.PlayInstantCard(ctx, "P2", deadPlayerCard.InstanceId).Should().BeEmpty();
+
+            GiveCardInZone(ctx, "P2", "dead_player_deck_card", CardZone.Deck, "dead_player_card");
+            rm.EndRound(ctx);
+            rm.BeginRound(ctx);
+
+            ctx.AllPlayers["P2"].Energy.Should().Be(0);
+            ctx.AllPlayers["P2"].GetCardsInZone(CardZone.Hand).Should().BeEmpty();
+            ctx.AllPlayers["P2"].GetCardsInZone(CardZone.Deck)
+                .Should().ContainSingle(card => card.InstanceId == "dead_player_deck_card");
+        }
+
+        [Fact]
+        public void T00_RoundLimitBattle_EndsAsDraw_WhenMaxRoundsReached()
+        {
+            var result = CreateTestBattle(
+                ruleset: new BattleRuleset
+                {
+                    LocalEndPolicy = BattleLocalEndPolicy.RoundLimit,
+                    MaxRounds = 1,
+                });
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            rm.EndRound(ctx);
+
+            rm.IsBattleOver.Should().BeTrue();
+            rm.WinnerId.Should().BeNull();
+            ctx.CurrentPhase.Should().Be(BattleContext.BattlePhase.BattleEnd);
+        }
+
+        [Fact]
+        public void T00_TargetResolver_EnemyObjective_UnlocksAfterLinkedHeroDeath_AndObjectiveDestructionEndsBattle()
+        {
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinition("objective_strike", MakeDamageEffect(12, "EnemyObjective")));
+            var objectives = new List<ObjectiveSetupData>
+            {
+                new ObjectiveSetupData
+                {
+                    EntityId = "crystal_p2",
+                    TeamId = "P2",
+                    MaxHp = 10,
+                    IsTargetable = true,
+                    EndsMatchWhenDestroyed = true,
+                },
+            };
+            objectives[0].RequiredDeadEntityIdsToTarget.Add("hero_P2");
+
+            var result = CreateTestBattle(
+                mutableCardDefinitions: definitions,
+                ruleset: new BattleRuleset
+                {
+                    LocalEndPolicy = BattleLocalEndPolicy.RoundLimit,
+                    MaxRounds = 3,
+                    EnableObjectives = true,
+                    MatchTerminalPolicy = MatchTerminalPolicy.ObjectiveDestroyed,
+                },
+                objectives: objectives);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+            var resolver = new TargetResolver();
+
+            rm.BeginRound(ctx);
+            resolver.Resolve(ctx, "EnemyObjective", ctx.AllPlayers["P1"].HeroEntity).Should().BeEmpty();
+
+            ctx.AllPlayers["P2"].HeroEntity.Hp = 0;
+            var targets = resolver.Resolve(ctx, "EnemyObjective", ctx.AllPlayers["P1"].HeroEntity);
+            targets.Should().ContainSingle();
+            targets[0].EntityId.Should().Be("crystal_p2");
+
+            PlayStrictInstantCard(ctx, rm, definitions, "P1", "objective_finisher", "objective_strike", MakeDamageEffect(12, "EnemyObjective"));
+
+            ctx.GetEntity("crystal_p2")!.IsAlive.Should().BeFalse();
+            rm.IsBattleOver.Should().BeTrue();
+            rm.WinnerId.Should().Be("P1");
+            ctx.CurrentPhase.Should().Be(BattleContext.BattlePhase.BattleEnd);
+        }
+
+        [Fact]
+        public void T00_RoundManager_AutoProducesBattleSummary_WhenRoundLimitEndsBattle()
+        {
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinition("lethal_damage", MakeDamageEffect(40)));
+            var result = CreateTestBattle(
+                mutableCardDefinitions: definitions,
+                ruleset: new BattleRuleset
+                {
+                    LocalEndPolicy = BattleLocalEndPolicy.RoundLimit,
+                    MaxRounds = 1,
+                });
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            PlayStrictInstantCard(ctx, rm, definitions, "P1", "summary_lethal", "lethal_damage", MakeDamageEffect(40));
+            rm.EndRound(ctx);
+
+            rm.CompletedBattleSummary.Should().NotBeNull();
+            rm.CompletedBattleSummary!.BattleId.Should().Be(ctx.BattleId);
+            rm.CompletedBattleSummary.BattleEndReason.Should().Be(BattleEndReason.RoundLimitReached);
+            rm.CompletedBattleSummary.MatchTerminated.Should().BeFalse();
+            rm.CompletedBattleSummary.WinningTeamId.Should().BeNull();
+            rm.CompletedBattleSummary.DeadPlayerIds.Should().Contain("P2");
+            rm.CompletedBattleSummary.ExtraBuildPickPlayerIds.Should().Contain("P1");
+        }
+
+        [Fact]
+        public void T00_RoundManager_AutoProducesBattleSummary_WhenObjectiveIsDestroyed()
+        {
+            var definitions = CreateMutableCardDefinitions(
+                MakeCardDefinition("objective_strike", MakeDamageEffect(12, "EnemyObjective")));
+            var objectives = new List<ObjectiveSetupData>
+            {
+                new ObjectiveSetupData
+                {
+                    EntityId = "crystal_p2",
+                    TeamId = "P2",
+                    MaxHp = 10,
+                    IsTargetable = true,
+                    EndsMatchWhenDestroyed = true,
+                },
+            };
+            objectives[0].RequiredDeadEntityIdsToTarget.Add("hero_P2");
+
+            var result = CreateTestBattle(
+                mutableCardDefinitions: definitions,
+                ruleset: new BattleRuleset
+                {
+                    LocalEndPolicy = BattleLocalEndPolicy.RoundLimit,
+                    MaxRounds = 3,
+                    EnableObjectives = true,
+                    MatchTerminalPolicy = MatchTerminalPolicy.ObjectiveDestroyed,
+                },
+                objectives: objectives);
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            ctx.AllPlayers["P2"].HeroEntity.Hp = 0;
+            PlayStrictInstantCard(ctx, rm, definitions, "P1", "objective_summary", "objective_strike", MakeDamageEffect(12, "EnemyObjective"));
+
+            rm.CompletedBattleSummary.Should().NotBeNull();
+            rm.CompletedBattleSummary!.BattleEndReason.Should().Be(BattleEndReason.ObjectiveDestroyed);
+            rm.CompletedBattleSummary.MatchTerminated.Should().BeTrue();
+            rm.CompletedBattleSummary.MatchEndReason.Should().Be(MatchEndReason.ObjectiveDestroyed);
+            rm.CompletedBattleSummary.WinningTeamId.Should().Be("P1");
+            rm.CompletedBattleSummary.DestroyedObjectiveEntityId.Should().Be("crystal_p2");
+            rm.CompletedBattleSummary.DeadPlayerIds.Should().Contain("P2");
         }
 
         private static EffectUnit MakeDamageEffect(int value, string targetType = "Enemy")
@@ -75,7 +331,6 @@ namespace CardMoba.Tests
                 ValueExpression = value.ToString(),
                 Layer = SettlementLayer.Damage,
             };
-
         private static EffectUnit MakePierceEffect(int value, string targetType = "Enemy")
             => new EffectUnit
             {
@@ -1345,7 +1600,7 @@ namespace CardMoba.Tests
             var delayedVulnerable = new BuffConfig
             {
                 BuffId = "delayed_vulnerable_next_round",
-                BuffName = "�»غ�����",
+                BuffName = "delayed_vulnerable_next_round",
                 BuffType = BuffType.DelayedVulnerableNextRound,
                 DefaultValue = 50,
                 DefaultDuration = 2,
@@ -1355,7 +1610,7 @@ namespace CardMoba.Tests
             var vulnerable = new BuffConfig
             {
                 BuffId = "vulnerable",
-                BuffName = "易伤",
+                BuffName = "vulnerable",
                 BuffType = BuffType.Vulnerable,
                 DefaultValue = 50,
                 DefaultDuration = 1,
@@ -1606,7 +1861,7 @@ namespace CardMoba.Tests
             var corruption = new BuffConfig
             {
                 BuffId = "corruption",
-                BuffName = "腐化",
+                BuffName = "corruption",
                 BuffType = BuffType.Corruption,
                 DefaultValue = 2,
                 DefaultDuration = 0,
@@ -1632,7 +1887,7 @@ namespace CardMoba.Tests
             var corruption = new BuffConfig
             {
                 BuffId = "corruption",
-                BuffName = "腐化",
+                BuffName = "corruption",
                 BuffType = BuffType.Corruption,
                 DefaultValue = 2,
                 DefaultDuration = 0,
@@ -1671,7 +1926,7 @@ namespace CardMoba.Tests
             var corruption = new BuffConfig
             {
                 BuffId = "corruption",
-                BuffName = "腐化",
+                BuffName = "corruption",
                 BuffType = BuffType.Corruption,
                 DefaultValue = 2,
                 DefaultDuration = 0,
@@ -1721,7 +1976,7 @@ namespace CardMoba.Tests
             var corruption = new BuffConfig
             {
                 BuffId = "corruption",
-                BuffName = "腐化",
+                BuffName = "corruption",
                 BuffType = BuffType.Corruption,
                 DefaultValue = 2,
                 DefaultDuration = 0,

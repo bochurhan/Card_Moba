@@ -23,6 +23,7 @@ namespace CardMoba.BattleCore.Context
     public class PlayerData
     {
         public string PlayerId { get; set; } = string.Empty;
+        public string TeamId { get; set; } = string.Empty;
         public string HeroConfigId { get; set; } = string.Empty;
         public Entity HeroEntity { get; set; } = new Entity();
 
@@ -75,5 +76,7 @@ namespace CardMoba.BattleCore.Context
         public int CorruptionFreePlaysRemainingThisRound { get; set; }
 
         public DefenseSnapshot? CurrentDefenseSnapshot { get; set; }
+
+        public bool CanAct => HeroEntity != null && HeroEntity.IsAlive;
     }
 }

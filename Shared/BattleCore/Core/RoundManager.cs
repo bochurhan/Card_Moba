@@ -1,12 +1,14 @@
-﻿#pragma warning disable CS8632
+#pragma warning disable CS8632
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using CardMoba.BattleCore.Context;
 using CardMoba.BattleCore.Costs;
 using CardMoba.BattleCore.EventBus;
 using CardMoba.BattleCore.Foundation;
 using CardMoba.BattleCore.Managers;
+using CardMoba.BattleCore.Results;
 using CardMoba.BattleCore.Rules.Play;
 using CardMoba.Protocol.Enums;
 
@@ -28,6 +30,7 @@ namespace CardMoba.BattleCore.Core
         public int CurrentRound { get; private set; }
         public bool IsBattleOver { get; private set; }
         public string? WinnerId { get; private set; }
+        public BattleSummary? CompletedBattleSummary { get; private set; }
 
         public RoundManager()
         {
@@ -40,9 +43,10 @@ namespace CardMoba.BattleCore.Core
             CurrentRound = 0;
             IsBattleOver = false;
             WinnerId = null;
+            CompletedBattleSummary = null;
             ctx.PendingPlanSnapshots.Clear();
 
-            ctx.RoundLog.Add("[RoundManager] 战斗初始化完成。");
+            ctx.RoundLog.Add("[RoundManager] battle initialized.");
             ctx.EventBus.Publish(new BattleStartEvent
             {
                 BattleId = ctx.BattleId,
@@ -69,7 +73,7 @@ namespace CardMoba.BattleCore.Core
                 player.CorruptionFreePlaysRemainingThisRound = 0;
             }
 
-            ctx.RoundLog.Add($"[RoundManager] 第 {CurrentRound} 回合开始。");
+            ctx.RoundLog.Add($"[RoundManager] round {CurrentRound} start.");
             ctx.EventBus.Publish(new RoundStartEvent { Round = CurrentRound });
 
             ctx.TriggerManager.Fire(ctx, TriggerTiming.OnRoundStart, new TriggerContext
@@ -84,7 +88,7 @@ namespace CardMoba.BattleCore.Core
             _settlement.DrainPendingQueue(ctx);
 
             ctx.CurrentPhase = BattleContext.BattlePhase.PlayerAction;
-            ctx.RoundLog.Add($"[RoundManager] 第 {CurrentRound} 回合准备完成。");
+            ctx.RoundLog.Add($"[RoundManager] round {CurrentRound} ready.");
         }
 
         public List<EffectResult> PlayInstantCard(
@@ -98,13 +102,13 @@ namespace CardMoba.BattleCore.Core
             var card = ctx.CardManager.GetCard(ctx, cardInstanceId);
             if (card == null)
             {
-                ctx.RoundLog.Add($"[RoundManager] 找不到瞬策牌实例 {cardInstanceId}。");
+                ctx.RoundLog.Add($"[RoundManager] instant card instance not found: {cardInstanceId}.");
                 return new List<EffectResult>();
             }
 
             if (!card.OwnerId.Equals(playerId, StringComparison.Ordinal))
             {
-                ctx.RoundLog.Add($"[RoundManager] 瞬策牌 {cardInstanceId} 不属于玩家 {playerId}。");
+                ctx.RoundLog.Add($"[RoundManager] instant card {cardInstanceId} does not belong to {playerId}.");
                 return new List<EffectResult>();
             }
 
@@ -112,19 +116,19 @@ namespace CardMoba.BattleCore.Core
             var effects = ResolveCardEffects(ctx, card);
             if (effects == null)
             {
-                ctx.RoundLog.Add($"[RoundManager] 找不到瞬策牌 {cardInstanceId}（{effectiveConfigId}）的卡牌定义。");
+                ctx.RoundLog.Add($"[RoundManager] missing card definition for instant card {cardInstanceId} ({effectiveConfigId}).");
                 return new List<EffectResult>();
             }
 
             var instantRules = ctx.PlayRules.Resolve(ctx, playerId, effects, PlayOrigin.PlayerHandPlay);
             if (!instantRules.Allowed)
             {
-                ctx.RoundLog.Add($"[RoundManager] 瞬策牌 {cardInstanceId} 被限制，原因：{instantRules.BlockReason}");
+                ctx.RoundLog.Add($"[RoundManager] instant card {cardInstanceId} blocked: {instantRules.BlockReason}");
                 return new List<EffectResult>();
             }
 
             StampCardSourceMetadata(ctx, effects, card, runtimeParams);
-            ctx.RoundLog.Add($"[RoundManager] 玩家 {playerId} 打出瞬策牌 {cardInstanceId}（{effectiveConfigId}）。");
+            ctx.RoundLog.Add($"[RoundManager] player {playerId} played instant card {cardInstanceId} ({effectiveConfigId}).");
 
             var results = _settlement.ResolveInstantFromCard(ctx, playerId, card, effects);
             if (results.Count > 0 || card.Zone != CardZone.Hand)
@@ -140,13 +144,13 @@ namespace CardMoba.BattleCore.Core
             var card = ctx.CardManager.GetCard(ctx, planCard.CardInstanceId);
             if (card == null)
             {
-                ctx.RoundLog.Add($"[RoundManager] 找不到定策牌实例 {planCard.CardInstanceId}。");
+                ctx.RoundLog.Add($"[RoundManager] plan card instance not found: {planCard.CardInstanceId}.");
                 return false;
             }
 
             if (!card.OwnerId.Equals(planCard.PlayerId, StringComparison.Ordinal))
             {
-                ctx.RoundLog.Add($"[RoundManager] 定策牌 {planCard.CardInstanceId} 不属于玩家 {planCard.PlayerId}。");
+                ctx.RoundLog.Add($"[RoundManager] plan card {planCard.CardInstanceId} does not belong to {planCard.PlayerId}.");
                 return false;
             }
 
@@ -154,14 +158,14 @@ namespace CardMoba.BattleCore.Core
             var resolvedEffects = ResolveCardEffects(ctx, card);
             if (resolvedEffects == null)
             {
-                ctx.RoundLog.Add($"[RoundManager] 找不到定策牌 {planCard.CardInstanceId}（{effectiveConfigId}）的卡牌定义。");
+                ctx.RoundLog.Add($"[RoundManager] missing card definition for plan card {planCard.CardInstanceId} ({effectiveConfigId}).");
                 return false;
             }
 
             var planRules = ctx.PlayRules.Resolve(ctx, planCard.PlayerId, resolvedEffects, PlayOrigin.PlayerHandPlay);
             if (!planRules.Allowed)
             {
-                ctx.RoundLog.Add($"[RoundManager] 定策牌 {planCard.CardInstanceId} 被限制，原因：{planRules.BlockReason}");
+                ctx.RoundLog.Add($"[RoundManager] plan card {planCard.CardInstanceId} blocked: {planRules.BlockReason}");
                 return false;
             }
 
@@ -169,7 +173,7 @@ namespace CardMoba.BattleCore.Core
 
             if (!ctx.CardManager.CommitPlanCard(ctx, planCard.CardInstanceId))
             {
-                ctx.RoundLog.Add($"[RoundManager] 定策牌 {planCard.CardInstanceId} 校验失败，拒绝提交。");
+                ctx.RoundLog.Add($"[RoundManager] commit validation failed for plan card {planCard.CardInstanceId}.");
                 return false;
             }
 
@@ -190,7 +194,7 @@ namespace CardMoba.BattleCore.Core
             ctx.PendingPlanSnapshots.Add(pendingCard);
 
             ctx.RoundLog.Add(
-                $"[RoundManager] 玩家 {planCard.PlayerId} 提交定策快照 {pendingCard.SnapshotId}，来源实例 {planCard.CardInstanceId}（顺序 {pendingCard.SubmitOrder}）。");
+                $"[RoundManager] player {planCard.PlayerId} committed snapshot {pendingCard.SnapshotId} from {planCard.CardInstanceId} at order {pendingCard.SubmitOrder}.");
             return true;
         }
 
@@ -198,7 +202,7 @@ namespace CardMoba.BattleCore.Core
         {
             if (IsBattleOver) return;
 
-            ctx.RoundLog.Add($"[RoundManager] 第 {CurrentRound} 回合结算开始。");
+            ctx.RoundLog.Add($"[RoundManager] round {CurrentRound} settlement start.");
             ctx.CurrentPhase = BattleContext.BattlePhase.Settlement;
 
             ctx.CardManager.ScanStatCards(ctx);
@@ -211,7 +215,7 @@ namespace CardMoba.BattleCore.Core
             }
             else
             {
-                ctx.RoundLog.Add("[RoundManager] 本回合无定策牌，跳过定策结算。");
+                ctx.RoundLog.Add("[RoundManager] no plan cards this round.");
             }
             ctx.PendingPlanSnapshots.Clear();
 
@@ -222,6 +226,7 @@ namespace CardMoba.BattleCore.Core
                 Round = CurrentRound,
             });
             _settlement.DrainPendingQueue(ctx);
+            if (CheckDeathAndBattleOver(ctx)) return;
 
             ctx.BuffManager.OnRoundEnd(ctx, CurrentRound);
             if (CheckDeathAndBattleOver(ctx)) return;
@@ -232,7 +237,7 @@ namespace CardMoba.BattleCore.Core
                 if (shield <= 0) continue;
 
                 kv.Value.HeroEntity.Shield = 0;
-                ctx.RoundLog.Add($"[RoundManager] {kv.Key} 回合结束护盾清零（{shield} -> 0）。");
+                ctx.RoundLog.Add($"[RoundManager] cleared shield for {kv.Key} ({shield} -> 0).");
             }
 
             ctx.TriggerManager.TickDecay(ctx);
@@ -241,10 +246,43 @@ namespace CardMoba.BattleCore.Core
 
             ctx.CurrentPhase = BattleContext.BattlePhase.RoundEnd;
             ctx.EventBus.Publish(new RoundEndEvent { Round = CurrentRound });
-            ctx.RoundLog.Add($"[RoundManager] 第 {CurrentRound} 回合结束。");
+            ctx.RoundLog.Add($"[RoundManager] round {CurrentRound} end.");
+            CheckDeathAndBattleOver(ctx, allowRoundLimit: true);
         }
 
-        private bool CheckDeathAndBattleOver(BattleContext ctx)
+        private bool CheckDeathAndBattleOver(BattleContext ctx, bool allowRoundLimit = false)
+        {
+            ProcessDeadPlayers(ctx);
+            ProcessDeadNonPlayerEntities(ctx);
+
+            if (TryEndMatchByDestroyedObjective(ctx))
+                return true;
+
+            if (ctx.Ruleset.LocalEndPolicy == BattleLocalEndPolicy.TeamElimination
+                && TryEndBattleByTeamElimination(ctx))
+            {
+                return true;
+            }
+
+            if (allowRoundLimit
+                && ctx.Ruleset.LocalEndPolicy == BattleLocalEndPolicy.RoundLimit
+                && CurrentRound >= ctx.Ruleset.MaxRounds)
+            {
+                FinalizeBattle(
+                    ctx,
+                    winnerId: null,
+                    isDraw: true,
+                    battleEndReason: BattleEndReason.RoundLimitReached,
+                    matchEndReason: MatchEndReason.None,
+                    destroyedObjectiveEntityId: null,
+                    logMessage: $"[RoundManager] battle ended at round limit {ctx.Ruleset.MaxRounds}.");
+                return true;
+            }
+
+            return IsBattleOver;
+        }
+
+        private void ProcessDeadPlayers(BattleContext ctx)
         {
             var deadPlayers = new List<string>();
 
@@ -261,7 +299,7 @@ namespace CardMoba.BattleCore.Core
                     continue;
 
                 deadPlayer.HeroEntity.DeathEventFired = true;
-                ctx.RoundLog.Add($"[RoundManager] 玩家 {deadId} 死亡。");
+                ctx.RoundLog.Add($"[RoundManager] player {deadId} died.");
 
                 ctx.TriggerManager.Fire(ctx, TriggerTiming.OnNearDeath, new TriggerContext
                 {
@@ -273,7 +311,7 @@ namespace CardMoba.BattleCore.Core
                 if (deadPlayer.HeroEntity.IsAlive)
                 {
                     deadPlayer.HeroEntity.DeathEventFired = false;
-                    ctx.RoundLog.Add($"[RoundManager] 玩家 {deadId} 被救活。");
+                    ctx.RoundLog.Add($"[RoundManager] player {deadId} revived during near-death handling.");
                     continue;
                 }
 
@@ -291,35 +329,201 @@ namespace CardMoba.BattleCore.Core
                 });
                 ctx.EventBus.Publish(new PlayerDeathEvent { PlayerId = deadId });
             }
+        }
 
-            var finalAlivePlayers = new List<string>();
-            foreach (var kv in ctx.AllPlayers)
+        private void ProcessDeadNonPlayerEntities(BattleContext ctx)
+        {
+            foreach (var entity in ctx.AllEntities.Values)
             {
-                if (kv.Value.HeroEntity.IsAlive)
-                    finalAlivePlayers.Add(kv.Key);
+                if (entity.Type == EntityType.Player || entity.IsAlive || entity.DeathEventFired)
+                    continue;
+
+                entity.DeathEventFired = true;
+                ctx.RoundLog.Add($"[RoundManager] entity {entity.EntityId} died.");
+                ctx.EventBus.Publish(new EntityDeathEvent
+                {
+                    EntityId = entity.EntityId,
+                    KillerEntityId = string.Empty,
+                });
+            }
+        }
+
+        private bool TryEndMatchByDestroyedObjective(BattleContext ctx)
+        {
+            if (!ctx.Ruleset.EnableObjectives
+                || ctx.Ruleset.MatchTerminalPolicy != MatchTerminalPolicy.ObjectiveDestroyed)
+            {
+                return false;
             }
 
-            if (finalAlivePlayers.Count == 0)
+            var destroyedObjectives = ctx.AllEntities.Values
+                .Where(entity => entity.Type == EntityType.Structure
+                    && entity.EndsMatchWhenDestroyed
+                    && !entity.IsAlive)
+                .ToList();
+
+            if (destroyedObjectives.Count == 0)
+                return false;
+
+            if (destroyedObjectives.Count > 1)
             {
-                IsBattleOver = true;
-                WinnerId = null;
-                ctx.CurrentPhase = BattleContext.BattlePhase.BattleEnd;
-                ctx.RoundLog.Add("[RoundManager] 战斗结束：平局。");
-                ctx.EventBus.Publish(new BattleEndEvent { WinnerId = null, IsDraw = true });
+                FinalizeBattle(
+                    ctx,
+                    winnerId: null,
+                    isDraw: true,
+                    battleEndReason: BattleEndReason.ObjectiveDestroyed,
+                    matchEndReason: MatchEndReason.ObjectiveDestroyed,
+                    destroyedObjectiveEntityId: null,
+                    logMessage: "[RoundManager] multiple objectives were destroyed at the same time.");
                 return true;
             }
 
-            if (finalAlivePlayers.Count == 1)
+            var destroyedObjective = destroyedObjectives[0];
+            var survivingTeamIds = ctx.AllPlayers.Values
+                .Select(player => player.TeamId)
+                .Where(teamId => !string.Equals(teamId, destroyedObjective.TeamId, StringComparison.Ordinal))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+            if (survivingTeamIds.Count == 1)
             {
-                IsBattleOver = true;
-                WinnerId = finalAlivePlayers[0];
-                ctx.CurrentPhase = BattleContext.BattlePhase.BattleEnd;
-                ctx.RoundLog.Add($"[RoundManager] 战斗结束：玩家 {WinnerId} 获胜。");
-                ctx.EventBus.Publish(new BattleEndEvent { WinnerId = WinnerId, IsDraw = false });
+                FinalizeBattle(
+                    ctx,
+                    winnerId: survivingTeamIds[0],
+                    isDraw: false,
+                    battleEndReason: BattleEndReason.ObjectiveDestroyed,
+                    matchEndReason: MatchEndReason.ObjectiveDestroyed,
+                    destroyedObjectiveEntityId: destroyedObjective.EntityId,
+                    logMessage: $"[RoundManager] objective {destroyedObjective.EntityId} was destroyed. Winner team: {survivingTeamIds[0]}.");
+                return true;
+            }
+
+            FinalizeBattle(
+                ctx,
+                winnerId: null,
+                isDraw: true,
+                battleEndReason: BattleEndReason.ObjectiveDestroyed,
+                matchEndReason: MatchEndReason.ObjectiveDestroyed,
+                destroyedObjectiveEntityId: destroyedObjective.EntityId,
+                logMessage: $"[RoundManager] objective {destroyedObjective.EntityId} was destroyed with no unique surviving team.");
+            return true;
+        }
+
+        private bool TryEndBattleByTeamElimination(BattleContext ctx)
+        {
+            var allTeamIds = ctx.AllPlayers.Values
+                .Select(player => player.TeamId)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            var aliveTeamIds = ctx.AllPlayers.Values
+                .Where(player => player.HeroEntity.IsAlive)
+                .Select(player => player.TeamId)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+            if (aliveTeamIds.Count == 0)
+            {
+                FinalizeBattle(ctx, winnerId: null, isDraw: true, battleEndReason: BattleEndReason.TeamEliminated, matchEndReason: MatchEndReason.None, destroyedObjectiveEntityId: null, logMessage: "[RoundManager] battle ended in a draw.");
+                return true;
+            }
+
+            if (aliveTeamIds.Count == 1 && allTeamIds.Count > 1)
+            {
+                FinalizeBattle(
+                    ctx,
+                    winnerId: aliveTeamIds[0],
+                    isDraw: false,
+                    battleEndReason: BattleEndReason.TeamEliminated,
+                    matchEndReason: MatchEndReason.None,
+                    destroyedObjectiveEntityId: null,
+                    logMessage: $"[RoundManager] winner team: {aliveTeamIds[0]}.");
                 return true;
             }
 
             return false;
+        }
+
+        private void FinalizeBattle(
+            BattleContext ctx,
+            string? winnerId,
+            bool isDraw,
+            BattleEndReason battleEndReason,
+            MatchEndReason matchEndReason,
+            string? destroyedObjectiveEntityId,
+            string logMessage)
+        {
+            if (IsBattleOver)
+                return;
+
+            IsBattleOver = true;
+            WinnerId = isDraw ? null : winnerId;
+            CompletedBattleSummary = BuildBattleSummary(
+                ctx,
+                battleEndReason,
+                matchEndReason,
+                WinnerId,
+                destroyedObjectiveEntityId);
+            ctx.CurrentPhase = BattleContext.BattlePhase.BattleEnd;
+            ctx.RoundLog.Add(logMessage);
+            ctx.EventBus.Publish(new BattleEndEvent
+            {
+                WinnerId = WinnerId,
+                IsDraw = isDraw,
+            });
+        }
+
+        private BattleSummary BuildBattleSummary(
+            BattleContext ctx,
+            BattleEndReason battleEndReason,
+            MatchEndReason matchEndReason,
+            string? winnerId,
+            string? destroyedObjectiveEntityId)
+        {
+            var summary = new BattleSummary
+            {
+                BattleId = ctx.BattleId,
+                RoundsPlayed = CurrentRound,
+                BattleEndReason = battleEndReason,
+                MatchTerminated = matchEndReason != MatchEndReason.None,
+                MatchEndReason = matchEndReason,
+                WinningTeamId = winnerId,
+                DestroyedObjectiveEntityId = destroyedObjectiveEntityId,
+            };
+
+            foreach (var deadPlayer in ctx.AllPlayers.Values.Where(player => !player.HeroEntity.IsAlive))
+                summary.DeadPlayerIds.Add(deadPlayer.PlayerId);
+
+            foreach (var playerId in GetExtraBuildPickPlayerIds(ctx, summary.DeadPlayerIds))
+                summary.ExtraBuildPickPlayerIds.Add(playerId);
+
+            return summary;
+        }
+
+        private static List<string> GetExtraBuildPickPlayerIds(BattleContext ctx, IReadOnlyCollection<string> deadPlayerIds)
+        {
+            var rewardPlayerIds = new HashSet<string>(StringComparer.Ordinal);
+            if (deadPlayerIds.Count == 0)
+                return rewardPlayerIds.ToList();
+
+            var alivePlayers = ctx.AllPlayers.Values
+                .Where(player => player.HeroEntity.IsAlive)
+                .ToList();
+            if (alivePlayers.Count == 0)
+                return rewardPlayerIds.ToList();
+
+            foreach (var deadPlayerId in deadPlayerIds)
+            {
+                if (!ctx.AllPlayers.TryGetValue(deadPlayerId, out var deadPlayer))
+                    continue;
+
+                foreach (var alivePlayer in alivePlayers)
+                {
+                    if (!string.Equals(alivePlayer.TeamId, deadPlayer.TeamId, StringComparison.Ordinal))
+                        rewardPlayerIds.Add(alivePlayer.PlayerId);
+                }
+            }
+
+            return rewardPlayerIds.ToList();
         }
 
         private static List<EffectUnit>? ResolveCardEffects(
@@ -505,14 +709,3 @@ namespace CardMoba.BattleCore.Core
         }
     }
 }
-
-
-
-
-
-
-
-
-
-
-

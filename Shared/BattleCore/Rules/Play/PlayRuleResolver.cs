@@ -1,4 +1,4 @@
-﻿#pragma warning disable CS8632
+#pragma warning disable CS8632
 
 using System.Collections.Generic;
 using CardMoba.BattleCore.Context;
@@ -24,11 +24,18 @@ namespace CardMoba.BattleCore.Rules.Play
                 return resolution;
             }
 
+            if (!ctx.Ruleset.DeadPlayersCanAct && !player.CanAct)
+            {
+                resolution.Allowed = false;
+                resolution.BlockReason = "已死亡的玩家无法出牌。";
+                return resolution;
+            }
+
             if (ContainsDamageCardSemantics(effects)
                 && ctx.BuffManager.HasBuffType(ctx, player.HeroEntity.EntityId, BuffType.NoDamageCardThisTurn))
             {
                 resolution.Allowed = false;
-                resolution.BlockReason = "本回合不能再打出伤害牌";
+                resolution.BlockReason = "本回合不能再打出伤害牌。";
                 return resolution;
             }
 
