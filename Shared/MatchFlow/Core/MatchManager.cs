@@ -183,6 +183,24 @@ namespace CardMoba.MatchFlow.Core
                 throw new InvalidOperationException($"Player {playerId} has no editable build opportunities remaining.");
 
             var opportunity = playerWindow.Opportunities[playerWindow.NextOpportunityIndex];
+            if (opportunity.IsResolved)
+                throw new InvalidOperationException($"Build opportunity {opportunity.OpportunityIndex} for player {playerId} has already been resolved.");
+            if (opportunity.CommittedActionType != BuildActionType.None
+                && opportunity.CommittedActionType != choice.ActionType)
+            {
+                throw new InvalidOperationException(
+                    $"Build opportunity {opportunity.OpportunityIndex} for player {playerId} has already committed to action {opportunity.CommittedActionType}.");
+            }
+
+            if (choice.ActionType == BuildActionType.AddCard
+                && !opportunity.Offers.DraftGroupsRevealed)
+            {
+                CommitAddCardOpportunity(context, player, opportunity);
+                context.MatchLog.Add(
+                    $"[MatchManager] player {playerId} committed build opportunity {opportunity.OpportunityIndex} to action {choice.ActionType} and revealed draft groups.");
+                return;
+            }
+
             _buildActionApplier.ApplyChoice(player, playerWindow, opportunity, choice);
             playerWindow.NextOpportunityIndex++;
             if (playerWindow.NextOpportunityIndex < playerWindow.OpportunityCount)
@@ -285,8 +303,19 @@ namespace CardMoba.MatchFlow.Core
             return playerWindow;
         }
 
+        private void CommitAddCardOpportunity(MatchContext context, PlayerMatchState player, BuildOpportunityState opportunity)
+        {
+            _buildOfferGenerator.RevealDraftGroups(context, player, opportunity);
+            opportunity.CommittedActionType = BuildActionType.AddCard;
+            opportunity.AvailableActions.Clear();
+            opportunity.AvailableActions.Add(BuildActionType.AddCard);
+        }
+
         private static BuildChoice CreateDefaultChoice(BuildOpportunityState opportunity, BuildActionType preferredAction)
         {
+            if (opportunity.CommittedActionType != BuildActionType.None)
+                return BuildChoice.Create(opportunity.CommittedActionType);
+
             var actionType = opportunity.AvailableActions.Contains(preferredAction)
                 ? preferredAction
                 : opportunity.AvailableActions.First();

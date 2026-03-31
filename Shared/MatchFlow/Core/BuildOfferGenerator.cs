@@ -93,12 +93,27 @@ namespace CardMoba.MatchFlow.Core
             if (opportunity.Offers.RemovableCards.Count > 0)
                 opportunity.AvailableActions.Add(BuildActionType.RemoveCard);
 
-            foreach (var group in BuildDraftGroups(context, player, opportunityIndex))
-                opportunity.Offers.DraftGroups.Add(group);
-            if (opportunity.Offers.DraftGroups.Count > 0)
+            if (HasDraftOffers(context, player))
                 opportunity.AvailableActions.Add(BuildActionType.AddCard);
 
             return opportunity;
+        }
+
+        public void RevealDraftGroups(MatchContext context, PlayerMatchState player, BuildOpportunityState opportunity)
+        {
+            if (context == null)
+                throw new ArgumentNullException(nameof(context));
+            if (player == null)
+                throw new ArgumentNullException(nameof(player));
+            if (opportunity == null)
+                throw new ArgumentNullException(nameof(opportunity));
+            if (opportunity.Offers.DraftGroupsRevealed)
+                return;
+
+            opportunity.Offers.DraftGroups.Clear();
+            foreach (var group in BuildDraftGroups(context, player, opportunity.OpportunityIndex))
+                opportunity.Offers.DraftGroups.Add(group);
+            opportunity.Offers.DraftGroupsRevealed = true;
         }
 
         private IEnumerable<BuildCardCandidate> BuildUpgradeCandidates(PlayerBuildWindowState playerWindow)
@@ -127,11 +142,7 @@ namespace CardMoba.MatchFlow.Core
 
         private IEnumerable<BuildDraftGroup> BuildDraftGroups(MatchContext context, PlayerMatchState player, int opportunityIndex)
         {
-            string? poolId = context.Ruleset.GetStepOrThrow(context.CurrentStepIndex).BuildPoolId
-                ?? player.Loadout.DefaultBuildPoolId;
-            var poolCards = _catalog.GetDraftPoolCards(poolId, player.Loadout.ClassId)
-                .Where(card => card.CanAppearInBuildReward && !card.IsLegendary)
-                .ToList();
+            var poolCards = GetDraftPoolCards(context, player);
             if (poolCards.Count == 0)
                 yield break;
 
@@ -165,6 +176,20 @@ namespace CardMoba.MatchFlow.Core
                 if (group.Offers.Count > 0)
                     yield return group;
             }
+        }
+
+        private bool HasDraftOffers(MatchContext context, PlayerMatchState player)
+        {
+            return GetDraftPoolCards(context, player).Count > 0;
+        }
+
+        private List<BuildCardDefinition> GetDraftPoolCards(MatchContext context, PlayerMatchState player)
+        {
+            string? poolId = context.Ruleset.GetStepOrThrow(context.CurrentStepIndex).BuildPoolId
+                ?? player.Loadout.DefaultBuildPoolId;
+            return _catalog.GetDraftPoolCards(poolId, player.Loadout.ClassId)
+                .Where(card => card.CanAppearInBuildReward && !card.IsLegendary)
+                .ToList();
         }
 
         private static int CalculateHealAmount(int maxHp, float percent)

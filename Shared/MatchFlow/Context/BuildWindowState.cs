@@ -32,6 +32,7 @@ namespace CardMoba.MatchFlow.Context
         public int OpportunityIndex { get; set; }
         public List<BuildActionType> AvailableActions { get; } = new List<BuildActionType>();
         public BuildOfferSet Offers { get; set; } = new BuildOfferSet();
+        public BuildActionType CommittedActionType { get; set; }
         public BuildChoice? Choice { get; set; }
         public bool IsResolved { get; set; }
     }
@@ -39,6 +40,7 @@ namespace CardMoba.MatchFlow.Context
     public sealed class BuildOfferSet
     {
         public int HealAmount { get; set; }
+        public bool DraftGroupsRevealed { get; set; }
         public List<BuildCardCandidate> UpgradableCards { get; } = new List<BuildCardCandidate>();
         public List<BuildCardCandidate> RemovableCards { get; } = new List<BuildCardCandidate>();
         public List<BuildDraftGroup> DraftGroups { get; } = new List<BuildDraftGroup>();

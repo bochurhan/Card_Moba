@@ -265,7 +265,7 @@ namespace CardMoba.BattleCore.Core
             }
 
             if (allowRoundLimit
-                && ctx.Ruleset.LocalEndPolicy == BattleLocalEndPolicy.RoundLimit
+                && ctx.Ruleset.MaxRounds > 0
                 && CurrentRound >= ctx.Ruleset.MaxRounds)
             {
                 FinalizeBattle(

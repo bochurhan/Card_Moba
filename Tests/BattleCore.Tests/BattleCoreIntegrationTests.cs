@@ -206,6 +206,27 @@ namespace CardMoba.Tests
         }
 
         [Fact]
+        public void T00_TeamEliminationBattle_AlsoEndsAtRoundLimit_WhenNoWinnerAppears()
+        {
+            var result = CreateTestBattle(
+                ruleset: new BattleRuleset
+                {
+                    LocalEndPolicy = BattleLocalEndPolicy.TeamElimination,
+                    MaxRounds = 1,
+                });
+            var (ctx, rm) = (result.Context, result.RoundManager);
+
+            rm.BeginRound(ctx);
+            rm.EndRound(ctx);
+
+            rm.IsBattleOver.Should().BeTrue();
+            rm.WinnerId.Should().BeNull();
+            rm.CompletedBattleSummary.Should().NotBeNull();
+            rm.CompletedBattleSummary!.BattleEndReason.Should().Be(BattleEndReason.RoundLimitReached);
+            ctx.CurrentPhase.Should().Be(BattleContext.BattlePhase.BattleEnd);
+        }
+
+        [Fact]
         public void T00_TargetResolver_EnemyObjective_UnlocksAfterLinkedHeroDeath_AndObjectiveDestructionEndsBattle()
         {
             var definitions = CreateMutableCardDefinitions(

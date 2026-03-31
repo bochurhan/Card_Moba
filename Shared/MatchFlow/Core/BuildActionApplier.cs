@@ -49,6 +49,8 @@ namespace CardMoba.MatchFlow.Core
                     break;
 
                 case BuildActionType.AddCard:
+                    if (!opportunity.Offers.DraftGroupsRevealed)
+                        throw new InvalidOperationException("Add card choices have not been revealed yet.");
                     ApplyAdd(playerWindow, opportunity, choice.SelectedDraftOfferIdsByGroup);
                     break;
 
@@ -57,6 +59,7 @@ namespace CardMoba.MatchFlow.Core
             }
 
             opportunity.Choice = choice;
+            opportunity.CommittedActionType = choice.ActionType;
             opportunity.IsResolved = true;
         }
 

@@ -150,6 +150,8 @@ namespace CardMoba.Tests
                 BuildActionType.RemoveCard,
                 BuildActionType.AddCard,
             });
+            p1Window.Opportunities[0].Offers.DraftGroupsRevealed.Should().BeFalse();
+            p1Window.Opportunities[0].Offers.DraftGroups.Should().BeEmpty();
 
             var p2Window = context.ActiveBuildWindow.PlayerWindows["P2"];
             p2Window.RestrictionMode.Should().Be(BuildWindowRestrictionMode.ForcedRecovery);
@@ -185,6 +187,17 @@ namespace CardMoba.Tests
             });
 
             var addOpportunity = context.ActiveBuildWindow.PlayerWindows["P1"].Opportunities[1];
+            addOpportunity.Offers.DraftGroupsRevealed.Should().BeFalse();
+            addOpportunity.Offers.DraftGroups.Should().BeEmpty();
+
+            manager.ApplyBuildAction(context, "P1", BuildActionType.AddCard);
+
+            context.ActiveBuildWindow.PlayerWindows["P1"].NextOpportunityIndex.Should().Be(1);
+            addOpportunity.CommittedActionType.Should().Be(BuildActionType.AddCard);
+            addOpportunity.Offers.DraftGroupsRevealed.Should().BeTrue();
+            addOpportunity.Offers.DraftGroups.Should().HaveCountGreaterThan(0);
+            addOpportunity.AvailableActions.Should().ContainSingle().Which.Should().Be(BuildActionType.AddCard);
+
             var addChoice = BuildChoice.Create(BuildActionType.AddCard);
             foreach (var group in addOpportunity.Offers.DraftGroups)
                 addChoice.SelectedDraftOfferIdsByGroup[group.GroupIndex] = group.Offers.First().OfferId;
@@ -209,6 +222,35 @@ namespace CardMoba.Tests
             context.Players["P1"].Deck.FindCard(upgradeTargetId)!.CurrentConfigId.Should().Be("slash_plus");
             context.Players["P1"].Deck.Cards.Should().HaveCount(5);
             context.Players["P2"].Deck.Cards.Should().HaveCount(1);
+        }
+
+        [Fact]
+        public void AddCardCommit_RevealsDraftGroups_AndPreventsSwitchingToOtherActions()
+        {
+            var ruleset = CreateRuleset(openBuildWindowAfterFirst: true, includeSecondStep: true);
+            var context = CreateMatchContext(ruleset);
+            var manager = CreateMatchManager();
+            manager.StartMatch(context);
+
+            var summary = new BattleSummary
+            {
+                BattleId = context.ActiveBattleContext!.BattleId,
+                BattleEndReason = BattleEndReason.RoundLimitReached,
+            };
+            summary.ExtraBuildPickPlayerIds.Add("P1");
+            manager.CompleteCurrentBattle(context, summary);
+
+            manager.ApplyBuildAction(context, "P1", BuildActionType.Heal);
+
+            var addOpportunity = context.ActiveBuildWindow!.PlayerWindows["P1"].Opportunities[1];
+            manager.ApplyBuildAction(context, "P1", BuildActionType.AddCard);
+
+            addOpportunity.CommittedActionType.Should().Be(BuildActionType.AddCard);
+            addOpportunity.Offers.DraftGroupsRevealed.Should().BeTrue();
+            addOpportunity.IsResolved.Should().BeFalse();
+
+            Action act = () => manager.ApplyBuildAction(context, "P1", BuildActionType.Heal);
+            act.Should().Throw<InvalidOperationException>();
         }
 
         [Fact]
