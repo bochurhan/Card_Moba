@@ -714,6 +714,10 @@ MonoBehaviour:
   _gameOverPanel: {fileID: 747910185}
   _gameOverText: {fileID: 1747084860}
   _restartButton: {fileID: 420272702}
+  _runtimeMode: 0
+  _onlineHubUrl: http://127.0.0.1:5000/hubs/match
+  _onlineDisplayName: Player
+  _joinMatchId: 
 --- !u!114 &203403019
 MonoBehaviour:
   m_ObjectHideFlags: 0

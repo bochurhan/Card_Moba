@@ -2,28 +2,35 @@
 using UnityEngine.UI;
 using TMPro;
 using System;
+using System.Collections;
 using System.Collections.Generic;
-using CardMoba.BattleCore.Foundation;
-using CardMoba.BattleCore.Context;
-using CardMoba.ConfigModels.Card;
+using CardMoba.Client.GameLogic.Abstractions;
+using CardMoba.Client.GameLogic.Online;
+using CardMoba.Client.Network.Connection;
 using CardMoba.Protocol.Enums;
 using CardMoba.Client.GameLogic.RoundFlow;   // RoundPhase / RoundPhaseTimerClient
 using CardMoba.Client.Presentation.UI.Components;
 
 namespace CardMoba.Client.Presentation.Battle
 {
+    public enum BattleRuntimeMode
+    {
+        Local = 0,
+        OnlineHost = 1,
+        OnlineJoin = 2,
+    }
+
     /// <summary>
     /// 战斗UI主控制器（V2）—— 管理整个战斗界面的显示和交互。
     ///
     /// 挂载方式：挂在战斗场景的根 Canvas 上。在 Inspector 中拖拽绑定各 UI 引用。
     ///
-    /// 数据来源（V2 API，完全基于 PlayerData / Entity / BattleCard）：
-    ///   BattleGameManager.GetHumanPlayer()    → PlayerData
-    ///   BattleGameManager.GetHumanHandCards() → List&lt;(BattleCard, CardConfig)&gt;
-    ///   PlayerData.HeroEntity                 → Entity (HP/Shield/Armor)
-    ///   PlayerData.GetCardsInZone(CardZone)   → List&lt;BattleCard&gt;
+    /// 数据来源（当前通过 IBattleClientRuntime 提供）：
+    ///   Runtime.CurrentBattleView   → BattleSnapshotViewState
+    ///   Runtime.CurrentBuildWindow  → BuildWindowViewState
     ///
-    /// ⚠️ 本类不再引用任何 V1 类型（PlayerBattleState / CardInstance / player.Hand / player.Energy）。
+    /// UI 不直接依赖 BattleCore 的 PlayerData / BattleCard，
+    /// 这样后续可无缝切到服务端联机 runtime。
     /// </summary>
     public class BattleUIManager : MonoBehaviour
     {
@@ -73,18 +80,26 @@ namespace CardMoba.Client.Presentation.Battle
         [SerializeField] private TextMeshProUGUI _gameOverText;
         [SerializeField] private Button          _restartButton;
 
+        [Header("── 运行模式 ──")]
+        [SerializeField] private BattleRuntimeMode _runtimeMode = BattleRuntimeMode.Local;
+        [SerializeField] private string _onlineHubUrl = "http://127.0.0.1:5000/hubs/match";
+        [SerializeField] private string _onlineDisplayName = "Player";
+        [SerializeField] private string _joinMatchId = string.Empty;
+
         // ══════════════════════════════════════════════════════════════════════
         // 内部状态
         // ══════════════════════════════════════════════════════════════════════
 
-        private GameLogic.BattleGameManager _gameManager;
+        private IBattleClientRuntime        _gameRuntime;
         private RoundPhaseTimerClient       _phaseTimer;
+        private BuildWindowPanel            _buildWindowPanel;
 
         private bool _isTimerLocked;
 
         private readonly List<GameObject> _cardObjects = new List<GameObject>();
         private readonly List<string>     _logMessages = new List<string>();
         private readonly List<GameObject> _discardSelectionOptionObjects = new List<GameObject>();
+        private Coroutine _logScrollCoroutine;
 
         private GameObject _discardSelectionPanel;
         private RectTransform _discardSelectionDialog;
@@ -103,7 +118,9 @@ namespace CardMoba.Client.Presentation.Battle
             EnsureEventSystem();
             EnsureGraphicRaycaster();
 
-            _gameManager = new GameLogic.BattleGameManager();
+            _gameRuntime = CreateRuntime();
+            EnsureBuildWindowPanel();
+            _buildWindowPanel?.Bind(_gameRuntime);
 
             _phaseTimer = GetComponent<RoundPhaseTimerClient>()
                        ?? gameObject.AddComponent<RoundPhaseTimerClient>();
@@ -113,10 +130,13 @@ namespace CardMoba.Client.Presentation.Battle
 
             _phaseTimer.OnLocalTimerExpired += OnTimerLocked;
 
-            _gameManager.OnStateChanged += RefreshAllUI;
-            _gameManager.OnLogMessage   += AddLogMessage;
-            _gameManager.OnGameOver     += ShowGameOver;
-            _gameManager.OnPhaseChanged += OnPhaseChanged;
+            _gameRuntime.OnStateChanged += RefreshAllUI;
+            _gameRuntime.OnLogMessage   += AddLogMessage;
+            _gameRuntime.OnGameOver     += ShowGameOver;
+            _gameRuntime.OnPhaseChanged += OnPhaseChanged;
+            _gameRuntime.OnBuildWindowOpened += OnBuildWindowOpened;
+            _gameRuntime.OnBuildWindowUpdated += OnBuildWindowUpdated;
+            _gameRuntime.OnBuildWindowClosed += OnBuildWindowClosed;
 
             if (_endTurnButton     != null) _endTurnButton.onClick.AddListener(OnEndTurnClicked);
             if (_restartButton     != null) _restartButton.onClick.AddListener(OnRestartClicked);
@@ -151,20 +171,38 @@ namespace CardMoba.Client.Presentation.Battle
             return child.GetComponent<TextMeshProUGUI>();
         }
 
-        private void Start() => StartNewBattle();
+        private async void Start()
+        {
+            await StartNewBattleAsync();
+        }
 
         private void OnDestroy()
         {
             if (_phaseTimer   != null) _phaseTimer.OnLocalTimerExpired -= OnTimerLocked;
-            if (_gameManager  != null)
+            if (_gameRuntime  != null)
             {
-                _gameManager.OnStateChanged -= RefreshAllUI;
-                _gameManager.OnLogMessage   -= AddLogMessage;
-                _gameManager.OnGameOver     -= ShowGameOver;
-                _gameManager.OnPhaseChanged -= OnPhaseChanged;
+                _gameRuntime.OnStateChanged -= RefreshAllUI;
+                _gameRuntime.OnLogMessage   -= AddLogMessage;
+                _gameRuntime.OnGameOver     -= ShowGameOver;
+                _gameRuntime.OnPhaseChanged -= OnPhaseChanged;
+                _gameRuntime.OnBuildWindowOpened -= OnBuildWindowOpened;
+                _gameRuntime.OnBuildWindowUpdated -= OnBuildWindowUpdated;
+                _gameRuntime.OnBuildWindowClosed -= OnBuildWindowClosed;
             }
             if (_endTurnButton != null) _endTurnButton.onClick.RemoveListener(OnEndTurnClicked);
             if (_restartButton != null) _restartButton.onClick.RemoveListener(OnRestartClicked);
+            if (_gameRuntime is IDisposable disposableRuntime)
+                disposableRuntime.Dispose();
+        }
+
+        private IBattleClientRuntime CreateRuntime()
+        {
+            return _runtimeMode switch
+            {
+                BattleRuntimeMode.OnlineHost => new OnlineBattleClientRuntime(new MatchHubConnection()),
+                BattleRuntimeMode.OnlineJoin => new OnlineBattleClientRuntime(new MatchHubConnection()),
+                _ => new GameLogic.BattleGameManager(),
+            };
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -188,39 +226,95 @@ namespace CardMoba.Client.Presentation.Battle
                 canvas.gameObject.AddComponent<GraphicRaycaster>();
         }
 
+        private void EnsureBuildWindowPanel()
+        {
+            if (_buildWindowPanel != null)
+                return;
+
+            Canvas canvas = GetComponentInParent<Canvas>() ?? GetComponent<Canvas>();
+            if (canvas == null)
+            {
+                Debug.LogError("[BattleUI] 无法创建构筑面板：未找到 Canvas。");
+                return;
+            }
+
+            var panelObject = new GameObject("BuildWindowPanel", typeof(RectTransform), typeof(Image), typeof(BuildWindowPanel));
+            panelObject.transform.SetParent(canvas.transform, false);
+            panelObject.transform.SetAsLastSibling();
+            _buildWindowPanel = panelObject.GetComponent<BuildWindowPanel>();
+            _buildWindowPanel.Bind(_gameRuntime);
+            _buildWindowPanel.Hide();
+        }
+
         // ══════════════════════════════════════════════════════════════════════
         // 对局控制
         // ══════════════════════════════════════════════════════════════════════
 
-        private void StartNewBattle()
+        private async System.Threading.Tasks.Task StartNewBattleAsync()
         {
             _logMessages.Clear();
             _isTimerLocked = false;
             HideDiscardSelection();
             if (_gameOverPanel != null) _gameOverPanel.SetActive(false);
             if (_logText       != null) _logText.text = "";
-            _gameManager.StartBattle();
-            AddLogMessage(">>> 对局开始！<<<");
+            _buildWindowPanel?.Hide();
+
+            if (_gameRuntime is OnlineBattleClientRuntime onlineRuntime)
+            {
+                try
+                {
+                    if (_runtimeMode == BattleRuntimeMode.OnlineHost)
+                    {
+                        AddLogMessage("<color=#99ddff>>> 联机建房中... <<<</color>");
+                        await onlineRuntime.HostLocalMatchAsync(_onlineHubUrl, _onlineDisplayName);
+                    }
+                    else if (_runtimeMode == BattleRuntimeMode.OnlineJoin)
+                    {
+                        if (string.IsNullOrWhiteSpace(_joinMatchId))
+                        {
+                            AddLogMessage("<color=#ff8866>[联机] Join 模式缺少房间号。</color>");
+                            return;
+                        }
+
+                        AddLogMessage($"<color=#99ddff>>> 联机加入房间 {_joinMatchId} 中... <<<</color>");
+                        await onlineRuntime.JoinLocalMatchAsync(_onlineHubUrl, _joinMatchId, _onlineDisplayName);
+                    }
+                    else
+                    {
+                        _gameRuntime.StartBattle();
+                        AddLogMessage(">>> 对局开始！<<<");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AddLogMessage($"<color=#ff8866>[联机] 启动失败：{ex.Message}</color>");
+                }
+            }
+            else
+            {
+                _gameRuntime.StartBattle();
+                AddLogMessage(">>> 对局开始！<<<");
+            }
         }
 
         // ══════════════════════════════════════════════════════════════════════
-        // UI 刷新（V2 PlayerData / Entity / BattleCard）
+        // UI 刷新（基于战斗快照 ViewModel）
         // ══════════════════════════════════════════════════════════════════════
 
         private void RefreshAllUI()
         {
-            RefreshPlayerPanel(_gameManager.GetHumanPlayer(), true);
-            RefreshPlayerPanel(_gameManager.GetAiPlayer(), false);
+            var battleView = _gameRuntime.CurrentBattleView;
+            RefreshPlayerPanel(battleView?.LocalPlayer, true);
+            RefreshPlayerPanel(battleView?.OpponentPlayer, false);
             RefreshHandCards();
             RefreshButtons();
-            if (_roundText != null) _roundText.text = $"第 {_gameManager.CurrentRound} 回合";
+            if (_roundText != null) _roundText.text = $"第 {_gameRuntime.CurrentRound} 回合";
         }
 
-        /// <summary>刷新玩家/对手信息面板（V2 PlayerData.HeroEntity）</summary>
-        private void RefreshPlayerPanel(PlayerData player, bool isHuman)
+        /// <summary>刷新玩家/对手信息面板。</summary>
+        private void RefreshPlayerPanel(BattlePlayerViewState player, bool isHuman)
         {
             if (player == null) return;
-            var hero = player.HeroEntity;
 
             var nameText    = isHuman ? _myNameText    : _enemyNameText;
             var hpText      = isHuman ? _myHpText      : _enemyHpText;
@@ -229,27 +323,21 @@ namespace CardMoba.Client.Presentation.Battle
             var shieldText  = isHuman ? _myShieldText  : _enemyShieldText;
             var deckInfoTxt = isHuman ? _myDeckInfoText : _enemyDeckInfoText;
 
-            if (nameText   != null) nameText.text   = isHuman ? "你" : "对手";
-            if (hpText     != null) hpText.text     = $"HP: {hero.Hp}/{hero.MaxHp}";
-            if (hpBar      != null) { hpBar.maxValue = hero.MaxHp; hpBar.value = hero.Hp; }
+            if (nameText   != null) nameText.text   = player.DisplayName;
+            if (hpText     != null) hpText.text     = $"HP: {player.Hp}/{player.MaxHp}";
+            if (hpBar      != null) { hpBar.maxValue = player.MaxHp; hpBar.value = player.Hp; }
             if (energyText != null) energyText.text = $"能量: {player.Energy}/{player.MaxEnergy}";
-            if (shieldText != null) shieldText.text = hero.Shield > 0 ? $"护盾: {hero.Shield}" : string.Empty;
+            if (shieldText != null) shieldText.text = player.Shield > 0 ? $"护盾: {player.Shield}" : string.Empty;
 
             if (deckInfoTxt != null)
             {
-                int h = player.GetCardsInZone(CardZone.Hand).Count;
-                int d = player.GetCardsInZone(CardZone.Deck).Count;
-                int p = player.GetCardsInZone(CardZone.Discard).Count;
-                string buffSummary = isHuman
-                    ? _gameManager.GetHumanBuffSummary()
-                    : _gameManager.GetAiBuffSummary();
-                deckInfoTxt.text = $"手牌:{h}  牌库:{d}  弃牌:{p}\nBuff: {buffSummary}";
+                deckInfoTxt.text = $"手牌:{player.HandCount}  牌库:{player.DeckCount}  弃牌:{player.DiscardCount}\nBuff: {player.BuffSummaryText}";
             }
         }
 
         /// <summary>
         /// 刷新手牌区域：销毁旧卡牌 GameObject，
-        /// 按 BattleGameManager.GetHumanHandCards() 返回顺序重新生成。
+        /// 按当前 runtime 返回的手牌顺序重新生成。
         /// </summary>
         private void RefreshHandCards()
         {
@@ -260,25 +348,25 @@ namespace CardMoba.Client.Presentation.Battle
             if (_cardPrefab    == null) { Debug.LogError("[BattleUI] _cardPrefab 未绑定");    return; }
             if (_handContainer == null) { Debug.LogError("[BattleUI] _handContainer 未绑定"); return; }
 
-            var handCards = _gameManager.GetHumanHandCards();
+            var handCards = _gameRuntime.CurrentBattleView?.LocalHandCards ?? new List<BattleCardViewState>();
 
             for (int i = 0; i < handCards.Count; i++)
             {
-                var (battleCard, config) = handCards[i];
+                var battleCard = handCards[i];
                 var go = Instantiate(_cardPrefab, _handContainer);
-                go.name = $"Card_{i}_{config?.CardName ?? battleCard.ConfigId}";
-                SetupCardUI(go, battleCard, config, i);
+                go.name = $"Card_{i}_{battleCard.DisplayName}";
+                SetupCardUI(go, battleCard, i);
                 _cardObjects.Add(go);
             }
         }
 
-        /// <summary>设置单张卡牌 UI（使用 V2 BattleCard + CardConfig，config 可为 null）</summary>
-        private void SetupCardUI(GameObject go, BattleCard battleCard, CardConfig config, int index)
+        /// <summary>设置单张卡牌 UI。</summary>
+        private void SetupCardUI(GameObject go, BattleCardViewState battleCard, int index)
         {
-            string cardName  = config?.CardName    ?? battleCard.ConfigId;
-            string desc      = config?.Description ?? "（无描述）";
-            int    cost      = _gameManager.GetDisplayedCost(battleCard);
-            bool   isInstant = config?.TrackType   == CardTrackType.Instant;
+            string cardName  = battleCard.DisplayName;
+            string desc      = battleCard.Description;
+            int    cost      = battleCard.DisplayedCost;
+            bool   isInstant = battleCard.TrackType == CardTrackType.Instant;
 
             var nameText  = go.transform.Find("CardNameText")?.GetComponent<TextMeshProUGUI>();
             var costText  = go.transform.Find("CostText")?.GetComponent<TextMeshProUGUI>();
@@ -310,17 +398,40 @@ namespace CardMoba.Client.Presentation.Battle
 
         private void RefreshButtons()
         {
-            bool can = _gameManager.IsPlayerTurn && !_gameManager.IsGameOver && !_isTimerLocked && !IsDiscardSelectionOpen();
+            bool canOperateCards = _gameRuntime.IsPlayerTurn
+                && !_gameRuntime.IsGameOver
+                && !_isTimerLocked
+                && !IsDiscardSelectionOpen()
+                && !IsBuildWindowOpen()
+                && !_gameRuntime.IsTurnLocked;
 
-            if (_endTurnButton     != null) _endTurnButton.interactable = can;
+            bool canToggleTurn = _gameRuntime.IsPlayerTurn
+                && !_gameRuntime.IsGameOver
+                && !_isTimerLocked
+                && !IsDiscardSelectionOpen()
+                && !IsBuildWindowOpen();
+
+            bool endTurnInteractable = _gameRuntime.SupportsTurnLockToggle
+                ? canToggleTurn && _gameRuntime.CanToggleTurnLock
+                : canOperateCards;
+
+            if (_endTurnButton     != null) _endTurnButton.interactable = endTurnInteractable;
             if (_endTurnButtonText != null)
-                _endTurnButtonText.text = can ? "结束回合" : (_isTimerLocked ? "等待结算..." : "等待中...");
+                _endTurnButtonText.text = endTurnInteractable
+                    ? (_gameRuntime.SupportsTurnLockToggle
+                        ? (_gameRuntime.IsTurnLocked ? "取消锁定" : "锁定回合")
+                        : "结束回合")
+                    : IsBuildWindowOpen()
+                        ? "构筑中..."
+                        : _gameRuntime.SupportsTurnLockToggle && canToggleTurn && !_gameRuntime.CanToggleTurnLock
+                            ? "冷却中..."
+                            : (_isTimerLocked ? "等待结算..." : "等待中...");
 
             foreach (var obj in _cardObjects)
             {
                 if (obj == null) continue;
                 var btn = obj.GetComponent<Button>();
-                if (btn != null) btn.interactable = can;
+                if (btn != null) btn.interactable = canOperateCards;
             }
         }
 
@@ -330,43 +441,66 @@ namespace CardMoba.Client.Presentation.Battle
 
         private void OnCardClicked(int handIndex)
         {
-            if (!_gameManager.IsPlayerTurn) { AddLogMessage("<color=#ff8888>当前不是你的回合</color>"); return; }
-            if (_gameManager.IsGameOver)    { AddLogMessage("<color=#ff8888>游戏已结束</color>");       return; }
+            if (!_gameRuntime.IsPlayerTurn) { AddLogMessage("<color=#ff8888>当前不是你的回合</color>"); return; }
+            if (_gameRuntime.IsGameOver)    { AddLogMessage("<color=#ff8888>游戏已结束</color>");       return; }
             if (_isTimerLocked)             { AddLogMessage("<color=#ff8888>时间已到，等待结算...</color>"); return; }
+            if (IsBuildWindowOpen())        { AddLogMessage("<color=#ff8888>当前处于构筑阶段</color>"); return; }
             if (IsDiscardSelectionOpen())   { AddLogMessage("<color=#ff8888>请先完成当前选牌操作</color>"); return; }
+            if (_gameRuntime.IsTurnLocked)  { AddLogMessage("<color=#ff8888>当前已锁定回合，请先取消锁定</color>"); return; }
 
-            var handCards = _gameManager.GetHumanHandCards();
+            var handCards = _gameRuntime.CurrentBattleView?.LocalHandCards;
+            if (handCards == null) return;
             if (handIndex < 0 || handIndex >= handCards.Count) return;
 
-            var (battleCard, config) = handCards[handIndex];
-            bool isInstant = config?.TrackType == CardTrackType.Instant;
+            var battleCard = handCards[handIndex];
+            bool isInstant = battleCard.TrackType == CardTrackType.Instant;
 
-            if (RequiresDiscardSelection(config))
+            if (battleCard.RequiresDiscardSelection)
             {
-                ShowDiscardSelection(handIndex, isInstant, config?.CardName ?? battleCard.ConfigId);
+                ShowDiscardSelection(battleCard.InstanceId, isInstant, battleCard.DisplayName);
                 return;
             }
 
             string result = isInstant
-                ? _gameManager.PlayerPlayInstantCard(handIndex)
-                : _gameManager.PlayerCommitPlanCard(handIndex);
+                ? _gameRuntime.PlayerPlayInstantCard(battleCard.InstanceId)
+                : _gameRuntime.PlayerCommitPlanCard(battleCard.InstanceId);
 
-            AddLogMessage($"<color=#aaffaa>出牌: {config?.CardName ?? battleCard.ConfigId} → {result}</color>");
+            AddLogMessage($"<color=#aaffaa>出牌: {battleCard.DisplayName} → {result}</color>");
         }
 
         private void OnEndTurnClicked()
         {
-            if (!_gameManager.IsPlayerTurn || _gameManager.IsGameOver) return;
+            if (!_gameRuntime.IsPlayerTurn || _gameRuntime.IsGameOver || IsBuildWindowOpen()) return;
+            if (_gameRuntime.SupportsTurnLockToggle)
+            {
+                if (!_gameRuntime.CanToggleTurnLock)
+                {
+                    AddLogMessage("<color=#ff8888>回合锁定切换冷却中</color>");
+                    return;
+                }
+
+                bool targetLockState = !_gameRuntime.IsTurnLocked;
+                AddLogMessage(targetLockState
+                    ? "<color=#ffcc00>── 你锁定了本回合 ──</color>"
+                    : "<color=#ffcc00>── 你取消了回合锁定 ──</color>");
+                _gameRuntime.SetTurnLock(targetLockState);
+                RefreshButtons();
+                return;
+            }
+
             AddLogMessage("<color=#ffcc00>── 你结束了回合 ──</color>");
-            _gameManager.PlayerEndTurn();
+            _gameRuntime.PlayerEndTurn();
         }
 
-        private void OnRestartClicked() => StartNewBattle();
+        private async void OnRestartClicked()
+        {
+            await StartNewBattleAsync();
+        }
 
         private void OnDebugStatusClicked()
         {
             AddLogMessage("<color=#aaaaff>── [调试] 战场快照 ──</color>");
-            _gameManager.PrintBattleStatus();
+            _gameRuntime.PrintBattleStatus();
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -379,39 +513,77 @@ namespace CardMoba.Client.Presentation.Battle
             HideDiscardSelection();
             RefreshButtons();
             AddLogMessage("<color=#ffcc44>⏱ 操作时间结束，自动结算...</color>");
-            if (_gameManager.IsPlayerTurn && !_gameManager.IsGameOver)
-                _gameManager.PlayerEndTurn();
-        }
-
-        private void OnPhaseChanged(string phaseDesc)
-        {
-            if (_phaseText != null) _phaseText.text = phaseDesc;
-
-            if (phaseDesc.Contains("操作期"))
+            if (_gameRuntime.IsPlayerTurn && !_gameRuntime.IsGameOver && !IsBuildWindowOpen())
             {
-                long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                _phaseTimer?.OnServerPhaseChange(RoundPhase.OperationWindow, nowMs);
-                _isTimerLocked = false;
-                RefreshButtons();
-            }
-            else if (phaseDesc.Contains("结算"))
-            {
-                _roundTimerUI?.ShowStaticPhase("结算中...");
+                if (_gameRuntime.SupportsTurnLockToggle)
+                    _gameRuntime.SetTurnLock(true);
+                else
+                    _gameRuntime.PlayerEndTurn();
             }
         }
 
-        private static bool RequiresDiscardSelection(CardConfig config)
+        private void OnPhaseChanged(BattlePhaseViewState phaseState)
         {
-            if (config?.Effects == null)
-                return false;
+            if (_phaseText != null) _phaseText.text = phaseState?.DisplayText ?? string.Empty;
+            if (phaseState == null)
+                return;
 
-            foreach (var effect in config.Effects)
+            switch (phaseState.PhaseKind)
             {
-                if (effect.EffectType == EffectType.MoveSelectedCardToDeckTop)
-                    return true;
+                case BattleClientPhaseKind.Operation:
+                    if (phaseState.UseOperationTimer)
+                    {
+                        long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                        _phaseTimer?.OnServerPhaseChange(RoundPhase.OperationWindow, nowMs);
+                    }
+                    else
+                    {
+                        _phaseTimer?.StopTimer();
+                        _roundTimerUI?.ShowStaticPhase(string.IsNullOrWhiteSpace(phaseState.TimerText) ? "操作中" : phaseState.TimerText);
+                    }
+
+                    _isTimerLocked = false;
+                    break;
+
+                case BattleClientPhaseKind.Settlement:
+                    _phaseTimer?.StopTimer();
+                    _roundTimerUI?.ShowStaticPhase(string.IsNullOrWhiteSpace(phaseState.TimerText) ? "结算中..." : phaseState.TimerText);
+                    break;
+
+                default:
+                    _phaseTimer?.StopTimer();
+                    _roundTimerUI?.ShowStaticPhase(string.IsNullOrWhiteSpace(phaseState.TimerText) ? phaseState.DisplayText : phaseState.TimerText);
+                    _isTimerLocked = false;
+                    break;
             }
 
-            return false;
+            RefreshButtons();
+        }
+
+        private void OnBuildWindowOpened(BuildWindowViewState viewState)
+        {
+            HideDiscardSelection();
+            _isTimerLocked = false;
+            _buildWindowPanel?.Show(viewState);
+            RefreshButtons();
+            AddLogMessage($"<color=#99ddff>[构筑] {viewState.DisplayText}</color>");
+        }
+
+        private void OnBuildWindowUpdated(BuildWindowViewState viewState)
+        {
+            _buildWindowPanel?.Show(viewState);
+            RefreshButtons();
+        }
+
+        private void OnBuildWindowClosed()
+        {
+            _buildWindowPanel?.Hide();
+            RefreshButtons();
+        }
+
+        private bool IsBuildWindowOpen()
+        {
+            return _buildWindowPanel != null && _buildWindowPanel.IsVisible;
         }
 
         private bool IsDiscardSelectionOpen()
@@ -419,9 +591,9 @@ namespace CardMoba.Client.Presentation.Battle
             return _discardSelectionPanel != null && _discardSelectionPanel.activeSelf;
         }
 
-        private void ShowDiscardSelection(int handIndex, bool isInstant, string sourceCardName)
+        private void ShowDiscardSelection(string sourceCardInstanceId, bool isInstant, string sourceCardName)
         {
-            var discardCards = _gameManager.GetHumanDiscardCards();
+            var discardCards = _gameRuntime.CurrentBattleView?.LocalDiscardCards ?? new List<BattleCardViewState>();
             if (discardCards.Count == 0)
             {
                 AddLogMessage("<color=#ff8888>弃牌堆为空，无法打出这张牌</color>");
@@ -439,15 +611,15 @@ namespace CardMoba.Client.Presentation.Battle
             const float spacing = 44f;
             for (int i = 0; i < discardCards.Count; i++)
             {
-                var (selectedCard, selectedConfig) = discardCards[i];
-                string selectedCardName = selectedConfig?.CardName ?? selectedCard.GetEffectiveConfigId();
+                var selectedCard = discardCards[i];
+                string selectedCardName = selectedCard.DisplayName;
                 float y = startY - i * spacing;
                 var optionObject = CreateDiscardSelectionButton(
                     _discardSelectionDialog,
                     $"DiscardOption_{i}",
                     $"[{i + 1}] {selectedCardName}",
                     new Vector2(0f, y),
-                    () => ConfirmDiscardSelection(handIndex, isInstant, sourceCardName, selectedCard, selectedCardName));
+                    () => ConfirmDiscardSelection(sourceCardInstanceId, isInstant, sourceCardName, selectedCard, selectedCardName));
                 _discardSelectionOptionObjects.Add(optionObject);
             }
 
@@ -455,7 +627,7 @@ namespace CardMoba.Client.Presentation.Battle
             RefreshButtons();
         }
 
-        private void ConfirmDiscardSelection(int handIndex, bool isInstant, string sourceCardName, BattleCard selectedCard, string selectedCardName)
+        private void ConfirmDiscardSelection(string sourceCardInstanceId, bool isInstant, string sourceCardName, BattleCardViewState selectedCard, string selectedCardName)
         {
             HideDiscardSelection();
 
@@ -465,8 +637,8 @@ namespace CardMoba.Client.Presentation.Battle
             };
 
             string result = isInstant
-                ? _gameManager.PlayerPlayInstantCard(handIndex, runtimeParams)
-                : _gameManager.PlayerCommitPlanCard(handIndex, runtimeParams);
+                ? _gameRuntime.PlayerPlayInstantCard(sourceCardInstanceId, runtimeParams)
+                : _gameRuntime.PlayerCommitPlanCard(sourceCardInstanceId, runtimeParams);
 
             AddLogMessage($"<color=#aaffaa>出牌: {sourceCardName}（选择 {selectedCardName}） -> {result}</color>");
         }
@@ -592,14 +764,45 @@ namespace CardMoba.Client.Presentation.Battle
             if (_logScrollRect != null)
             {
                 Canvas.ForceUpdateCanvases();
+                if (_logScrollRect.content != null)
+                    LayoutRebuilder.ForceRebuildLayoutImmediate(_logScrollRect.content);
+                if (_logText != null)
+                    LayoutRebuilder.ForceRebuildLayoutImmediate(_logText.rectTransform);
+
                 _logScrollRect.verticalNormalizedPosition = 0f;
+                if (_logScrollCoroutine != null)
+                    StopCoroutine(_logScrollCoroutine);
+                _logScrollCoroutine = StartCoroutine(ScrollLogToBottomNextFrame());
             }
             Debug.Log($"[BattleUI] {msg}");
+        }
+
+        private IEnumerator ScrollLogToBottomNextFrame()
+        {
+            yield return null;
+
+            if (_logScrollRect == null)
+                yield break;
+
+            Canvas.ForceUpdateCanvases();
+            if (_logScrollRect.content != null)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(_logScrollRect.content);
+            if (_logText != null)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(_logText.rectTransform);
+            _logScrollRect.verticalNormalizedPosition = 0f;
+
+            yield return null;
+
+            if (_logScrollRect != null)
+                _logScrollRect.verticalNormalizedPosition = 0f;
+
+            _logScrollCoroutine = null;
         }
 
         private void ShowGameOver(int winnerCode)
         {
             HideDiscardSelection();
+            _buildWindowPanel?.Hide();
             if (_gameOverPanel != null) _gameOverPanel.SetActive(true);
             if (_gameOverText  != null)
                 _gameOverText.text = winnerCode == 1 ? "[胜利] 你赢了！"

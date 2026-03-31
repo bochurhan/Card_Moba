@@ -4,6 +4,7 @@
   "references": [
     "CardMoba.BattleCore",
     "CardMoba.ConfigModels",
+    "CardMoba.MatchFlow",
     "CardMoba.Protocol",
     "CardMoba.Client.Data",
     "CardMoba.Client.Network"

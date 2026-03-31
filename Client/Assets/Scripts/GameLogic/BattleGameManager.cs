@@ -2,12 +2,20 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using CardMoba.BattleCore.Context;
 using CardMoba.BattleCore.Core;
 using CardMoba.BattleCore.Definitions;
 using CardMoba.BattleCore.EventBus;
 using CardMoba.BattleCore.Foundation;
+using CardMoba.Client.GameLogic.Abstractions;
 using CardMoba.ConfigModels.Card;
+using CardMoba.MatchFlow.Catalog;
+using CardMoba.MatchFlow.Context;
+using CardMoba.MatchFlow.Core;
+using CardMoba.MatchFlow.Deck;
+using CardMoba.MatchFlow.Definitions;
+using CardMoba.MatchFlow.Rules;
 using CardMoba.Protocol.Enums;
 using CardMoba.BattleCore.Rules.Play;
 using CardMoba.Client.Data.ConfigData;
@@ -15,10 +23,10 @@ using CardMoba.Client.Data.ConfigData;
 namespace CardMoba.Client.GameLogic
 {
     /// <summary>
-    /// 战斗流程管理器，负责桥接 UI 与 BattleCore。
-    /// 它负责创建对局、暴露 UI 可调用接口、驱动 AI 回合，并把 BattleCore 事件转成日志和界面刷新。
+    /// 本地对局流程管理器，负责桥接 UI、MatchFlow 与 BattleCore。
+    /// 当前用于客户端本地验证 1v1 的 4+1 整局流程，并复用现有 Battle UI。
     /// </summary>
-    public class BattleGameManager
+    public class BattleGameManager : IBattleClientRuntime
     {
         /// <summary>对局状态变化时触发，用于刷新 HP、能量、手牌和 Buff 等表现。</summary>
         public event Action OnStateChanged;
@@ -33,13 +41,29 @@ namespace CardMoba.Client.GameLogic
         public event Action<int> OnGameOver;
 
         /// <summary>回合阶段切换时触发，用于更新阶段提示。</summary>
-        public event Action<string> OnPhaseChanged;
+        public event Action<BattlePhaseViewState> OnPhaseChanged;
+
+        /// <summary>构筑窗口首次打开时触发。</summary>
+        public event Action<BuildWindowViewState> OnBuildWindowOpened;
+
+        /// <summary>构筑窗口内容更新时触发。</summary>
+        public event Action<BuildWindowViewState> OnBuildWindowUpdated;
+
+        /// <summary>构筑窗口关闭时触发。</summary>
+        public event Action OnBuildWindowClosed;
 
         public const string HumanPlayerId = "player1";
         public const string AiPlayerId    = "player2";
+        public const string HumanTeamId   = "team_player";
+        public const string AiTeamId      = "team_ai";
 
         private BattleContext _ctx;
         private RoundManager  _roundManager;
+        private MatchContext _matchContext;
+        private MatchManager _matchManager;
+        private InternalEventBus _eventBus;
+        private int _totalBattleCount;
+        private BuildWindowViewState _currentBuildWindow;
 
         // configId -> CardConfig 映射，供运行时用 BattleCard.ConfigId 反查配置。
         private readonly Dictionary<string, CardConfig> _cardConfigMap
@@ -52,10 +76,25 @@ namespace CardMoba.Client.GameLogic
         public bool IsPlayerTurn { get; private set; }
 
         /// <summary>对局是否已结束。</summary>
-        public bool IsGameOver => _roundManager?.IsBattleOver ?? false;
+        public bool IsGameOver => _matchContext?.IsMatchOver ?? (_roundManager?.IsBattleOver ?? false);
+
+        /// <summary>本地验证模式不支持回合锁定/取消锁定。</summary>
+        public bool SupportsTurnLockToggle => false;
+
+        /// <summary>本地验证模式不存在回合锁定状态。</summary>
+        public bool IsTurnLocked => false;
+
+        /// <summary>本地验证模式不支持回合锁定冷却。</summary>
+        public bool CanToggleTurnLock => false;
 
         /// <summary>当前回合数。</summary>
         public int CurrentRound => _roundManager?.CurrentRound ?? 0;
+
+        /// <summary>当前战斗快照视图状态。</summary>
+        public BattleSnapshotViewState CurrentBattleView => CreateBattleSnapshotViewState();
+
+        /// <summary>当前构筑窗口视图状态。</summary>
+        public BuildWindowViewState CurrentBuildWindow => _currentBuildWindow;
 
         /// <summary>
         /// 启动一场新的 1v1 对战，使用默认战士套牌。
@@ -72,13 +111,11 @@ namespace CardMoba.Client.GameLogic
         {
             EnsureConfigLoaded();
             _cardConfigMap.Clear();
+            _currentBuildWindow = null;
+            IsPlayerTurn = false;
 
             BuildCardConfigMap();
-
-            var humanDeck = BuildDeckConfig(playerDeckIds);
-            var aiDeck    = BuildDeckConfig(aiDeckIds);
-
-            var eventBus = new InternalEventBus(this);
+            _eventBus = new InternalEventBus(this);
 
             var factory = new BattleFactory
             {
@@ -100,74 +137,51 @@ namespace CardMoba.Client.GameLogic
                     };
                 },
             };
-            var result  = factory.CreateBattle(
-                battleId:   "local-battle",
-                randomSeed: 42,
-                players: new List<PlayerSetupData>
-                {
-                    new PlayerSetupData
-                    {
-                        PlayerId     = HumanPlayerId,
-                        MaxHp        = 200,
-                        InitialHp    = 200,
-                        InitialArmor = 0,
-                        DeckConfig   = humanDeck,
-                    },
-                    new PlayerSetupData
-                    {
-                        PlayerId     = AiPlayerId,
-                        MaxHp        = 200,
-                        InitialHp    = 200,
-                        InitialArmor = 0,
-                        DeckConfig   = aiDeck,
-                    },
-                },
-                eventBus: eventBus);
+            var buildCatalog = CardConfigManager.Instance.CreateBuildCatalog(CreateDefaultEquipmentDefinitions());
+            var matchFactory = new MatchFactory();
 
-            _ctx          = result.Context;
-            _roundManager = result.RoundManager;
+            _matchManager = new MatchManager(factory, buildCatalog: buildCatalog);
+            _matchContext = matchFactory.CreateMatch(
+                "local-matchflow",
+                CreateLocalMatchRuleset(),
+                CreateMatchPlayers(playerDeckIds, aiDeckIds),
+                baseRandomSeed: 42);
+            _totalBattleCount = _matchContext.Ruleset.Steps.Count;
 
-            foreach (var log in result.SetupLog)
-                OnLogMessage?.Invoke(ColorizeLog(log));
-
-            _roundManager.BeginRound(_ctx);
-            FlushLogs();
-
-            IsPlayerTurn = true;
-            OnPhaseChanged?.Invoke($"第 {_roundManager.CurrentRound} 回合 · 玩家行动");
-            OnStateChanged?.Invoke();
+            _matchManager.StartMatch(_matchContext, _eventBus);
+            SyncActiveBattle();
+            FlushMatchLogs();
+            StartActiveBattle();
         }
 
         /// <summary>
         /// 玩家打出一张瞬策牌，并立即结算。
         /// </summary>
-        /// <param name="handIndex">该牌在手牌列表中的索引。</param>
-        /// <returns>成功时返回卡名，失败时返回原因。</returns>
-        public string PlayerPlayInstantCard(int handIndex)
+        public string PlayerPlayInstantCard(string cardInstanceId)
         {
             if (!IsPlayerTurn || IsGameOver) return "当前无法操作";
-            return PlayCardInternal(HumanPlayerId, handIndex, instant: true, runtimeParams: null);
+            return PlayCardInternal(HumanPlayerId, cardInstanceId, instant: true, runtimeParams: null);
         }
 
-        public string PlayerPlayInstantCard(int handIndex, Dictionary<string, string> runtimeParams)
+        public string PlayerPlayInstantCard(string cardInstanceId, Dictionary<string, string> runtimeParams)
         {
             if (!IsPlayerTurn || IsGameOver) return "当前无法操作";
-            return PlayCardInternal(HumanPlayerId, handIndex, instant: true, runtimeParams);
+            return PlayCardInternal(HumanPlayerId, cardInstanceId, instant: true, runtimeParams);
         }
 
         /// <summary>
         /// 玩家提交一张定策牌，等待回合结束统一结算。
         /// </summary>
-        public string PlayerCommitPlanCard(int handIndex)
+        public string PlayerCommitPlanCard(string cardInstanceId)
         {
             if (!IsPlayerTurn || IsGameOver) return "当前无法操作";
-            return PlayCardInternal(HumanPlayerId, handIndex, instant: false, runtimeParams: null);
+            return PlayCardInternal(HumanPlayerId, cardInstanceId, instant: false, runtimeParams: null);
         }
 
-        public string PlayerCommitPlanCard(int handIndex, Dictionary<string, string> runtimeParams)
+        public string PlayerCommitPlanCard(string cardInstanceId, Dictionary<string, string> runtimeParams)
         {
             if (!IsPlayerTurn || IsGameOver) return "当前无法操作";
-            return PlayCardInternal(HumanPlayerId, handIndex, instant: false, runtimeParams);
+            return PlayCardInternal(HumanPlayerId, cardInstanceId, instant: false, runtimeParams);
         }
 
         /// <summary>
@@ -175,71 +189,46 @@ namespace CardMoba.Client.GameLogic
         /// </summary>
         public void PlayerEndTurn()
         {
-            if (!IsPlayerTurn || IsGameOver) return;
+            if (!IsPlayerTurn || IsGameOver || _ctx == null || _roundManager == null) return;
 
             IsPlayerTurn = false;
+            var battleContext = _ctx;
+            var roundManager = _roundManager;
 
-            OnPhaseChanged?.Invoke($"第 {_roundManager.CurrentRound} 回合 · 对手行动...");
+            PublishBattlePhase(BattleClientPhaseKind.OpponentAction, "对手行动", "对手行动");
             OnStateChanged?.Invoke();
             ExecuteAiTurn();
             FlushLogs();
 
-            if (IsGameOver) { NotifyGameOver(); return; }
+            if (!ReferenceEquals(_ctx, battleContext) || !ReferenceEquals(_roundManager, roundManager))
+                return;
 
-            OnPhaseChanged?.Invoke($"第 {_roundManager.CurrentRound} 回合 · 回合结算...");
-            _roundManager.EndRound(_ctx);
+            if (HandleBattleCompletion())
+                return;
+
+            PublishBattlePhase(BattleClientPhaseKind.Settlement, "回合结算", "结算中...");
+            roundManager.EndRound(battleContext);
             FlushLogs();
             OnStateChanged?.Invoke();
 
-            if (IsGameOver) { NotifyGameOver(); return; }
+            if (HandleBattleCompletion())
+                return;
 
-            _roundManager.BeginRound(_ctx);
+            roundManager.BeginRound(battleContext);
             FlushLogs();
 
             IsPlayerTurn = true;
-            OnPhaseChanged?.Invoke($"第 {_roundManager.CurrentRound} 回合 · 玩家行动");
+            PublishBattlePhase(BattleClientPhaseKind.Operation, "操作期（无时限）", "操作中（无时限）");
             OnStateChanged?.Invoke();
         }
 
-        /// <summary>获取玩家运行时数据。</summary>
-        public PlayerData GetHumanPlayer() => _ctx?.GetPlayer(HumanPlayerId);
-
-        /// <summary>获取 AI 运行时数据。</summary>
-        public PlayerData GetAiPlayer() => _ctx?.GetPlayer(AiPlayerId);
-
-        /// <summary>
-        /// 获取玩家手牌，并附带对应的 CardConfig。
-        /// </summary>
-        public List<(BattleCard Card, CardConfig Config)> GetHumanHandCards()
+        public void SetTurnLock(bool isLocked)
         {
-            var list   = new List<(BattleCard, CardConfig)>();
-            var player = _ctx?.GetPlayer(HumanPlayerId);
-            if (player == null) return list;
-
-            foreach (var bc in player.GetCardsInZone(CardZone.Hand))
-            {
-                var cfg = GetEffectiveCardConfig(bc);
-                list.Add((bc, cfg));
-            }
-            return list;
+            if (isLocked)
+                PlayerEndTurn();
         }
 
-        public List<(BattleCard Card, CardConfig Config)> GetHumanDiscardCards()
-        {
-            var list = new List<(BattleCard, CardConfig)>();
-            var player = _ctx?.GetPlayer(HumanPlayerId);
-            if (player == null) return list;
-
-            foreach (var bc in player.GetCardsInZone(CardZone.Discard))
-            {
-                var cfg = GetEffectiveCardConfig(bc);
-                list.Add((bc, cfg));
-            }
-
-            return list;
-        }
-
-        public int GetDisplayedCost(BattleCard battleCard)
+        private int GetDisplayedCost(BattleCard battleCard)
         {
             if (_ctx == null || _roundManager == null || battleCard == null)
                 return 0;
@@ -247,11 +236,11 @@ namespace CardMoba.Client.GameLogic
             return _roundManager.ResolvePlayCost(_ctx, battleCard.OwnerId, battleCard).FinalCost;
         }
 
-        public string GetHumanBuffSummary() => GetPlayerBuffSummary(HumanPlayerId);
+        private string GetHumanBuffSummary() => GetPlayerBuffSummary(HumanPlayerId);
 
-        public string GetAiBuffSummary() => GetPlayerBuffSummary(AiPlayerId);
+        private string GetAiBuffSummary() => GetPlayerBuffSummary(AiPlayerId);
 
-        public string GetPlayerBuffSummary(string playerId)
+        private string GetPlayerBuffSummary(string playerId)
         {
             var player = _ctx?.GetPlayer(playerId);
             if (player == null || _ctx == null)
@@ -291,9 +280,184 @@ namespace CardMoba.Client.GameLogic
                     OnLogMessage?.Invoke(line.TrimEnd('\r'));
         }
 
+        /// <summary>
+        /// 将本地 BattleCore 运行时映射为客户端战斗视图状态。
+        /// </summary>
+        private BattleSnapshotViewState CreateBattleSnapshotViewState()
+        {
+            var viewState = new BattleSnapshotViewState
+            {
+                MatchId = _matchContext?.MatchId ?? string.Empty,
+                BattleId = _ctx?.BattleId ?? string.Empty,
+                BattleIndex = GetCurrentBattleNumber(),
+                TotalBattleCount = _totalBattleCount,
+                CurrentRound = CurrentRound,
+                IsBattleOver = _roundManager?.IsBattleOver ?? false,
+                PhaseKind = ResolveCurrentBattlePhaseKind(),
+            };
+
+            if (_ctx == null)
+                return viewState;
+
+            var localPlayer = _ctx.GetPlayer(HumanPlayerId);
+            if (localPlayer != null)
+            {
+                viewState.LocalPlayer = CreateBattlePlayerViewState(localPlayer, true);
+                foreach (var card in localPlayer.GetCardsInZone(CardZone.Hand))
+                {
+                    var config = GetEffectiveCardConfig(card);
+                    viewState.LocalHandCards.Add(CreateBattleCardViewState(card, config, true));
+                }
+
+                foreach (var card in localPlayer.GetCardsInZone(CardZone.Discard))
+                {
+                    var config = GetEffectiveCardConfig(card);
+                    viewState.LocalDiscardCards.Add(CreateBattleCardViewState(card, config, false));
+                }
+            }
+
+            var opponentPlayer = _ctx.GetPlayer(AiPlayerId);
+            if (opponentPlayer != null)
+                viewState.OpponentPlayer = CreateBattlePlayerViewState(opponentPlayer, false);
+
+            return viewState;
+        }
+
+        private BattlePlayerViewState CreateBattlePlayerViewState(PlayerData player, bool isHuman)
+        {
+            var viewState = new BattlePlayerViewState
+            {
+                PlayerId = player.PlayerId,
+                TeamId = player.TeamId,
+                DisplayName = isHuman ? "你" : "对手",
+                IsAlive = player.HeroEntity.IsAlive,
+                Hp = player.HeroEntity.Hp,
+                MaxHp = player.HeroEntity.MaxHp,
+                Shield = player.HeroEntity.Shield,
+                Armor = player.HeroEntity.Armor,
+                Energy = player.Energy,
+                MaxEnergy = player.MaxEnergy,
+                HandCount = player.GetCardsInZone(CardZone.Hand).Count,
+                DeckCount = player.GetCardsInZone(CardZone.Deck).Count,
+                DiscardCount = player.GetCardsInZone(CardZone.Discard).Count,
+                PendingPlanCount = _ctx?.PendingPlanSnapshots.Count(item => string.Equals(item.PlayerId, player.PlayerId, StringComparison.Ordinal)) ?? 0,
+                IsTurnLocked = false,
+                LockCooldownUntilUnixMs = 0,
+                BuffSummaryText = isHuman ? GetHumanBuffSummary() : GetAiBuffSummary(),
+            };
+
+            if (_ctx != null)
+            {
+                foreach (var buff in _ctx.BuffManager.GetBuffs(player.HeroEntity.EntityId))
+                {
+                    viewState.Buffs.Add(new BattleBuffViewState
+                    {
+                        ConfigId = buff.ConfigId,
+                        DisplayName = string.IsNullOrWhiteSpace(buff.DisplayName) ? GetBuffDisplayName(buff.ConfigId) : buff.DisplayName,
+                        Value = buff.Value,
+                        RemainingRounds = buff.RemainingRounds,
+                    });
+                }
+            }
+
+            return viewState;
+        }
+
+        private BattleCardViewState CreateBattleCardViewState(BattleCard battleCard, CardConfig config, bool resolveDisplayedCost)
+        {
+            return new BattleCardViewState
+            {
+                InstanceId = battleCard.InstanceId,
+                BaseConfigId = battleCard.ConfigId,
+                EffectiveConfigId = battleCard.GetEffectiveConfigId(),
+                DisplayName = config?.CardName ?? battleCard.GetEffectiveConfigId(),
+                Description = config?.Description ?? "（无描述）",
+                DisplayedCost = resolveDisplayedCost ? GetDisplayedCost(battleCard) : (config?.EnergyCost ?? 0),
+                TrackType = config?.TrackType ?? CardTrackType.Instant,
+                RequiresDiscardSelection = RequiresDiscardSelection(config),
+            };
+        }
+
+        private BattleClientPhaseKind ResolveCurrentBattlePhaseKind()
+        {
+            if (_currentBuildWindow != null)
+                return BattleClientPhaseKind.BuildWindow;
+            if (_matchContext?.IsMatchOver == true)
+                return BattleClientPhaseKind.MatchEnded;
+            if (_ctx?.CurrentPhase == BattleContext.BattlePhase.Settlement)
+                return BattleClientPhaseKind.Settlement;
+            if (!IsPlayerTurn)
+                return BattleClientPhaseKind.OpponentAction;
+
+            return BattleClientPhaseKind.Operation;
+        }
+
+        /// <summary>
+        /// 提交当前本地玩家的一次构筑选择。
+        /// </summary>
+        public void SubmitBuildChoice(BuildChoiceViewState choice)
+        {
+            if (choice == null || _matchContext?.ActiveBuildWindow == null)
+                return;
+
+            try
+            {
+                _matchManager.ApplyBuildAction(_matchContext, HumanPlayerId, ToRuntimeBuildChoice(choice));
+                FlushMatchLogs();
+                PublishBuildWindowState(opened: false);
+                OnStateChanged?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                OnLogMessage?.Invoke($"<color=#ff8866>[构筑] {ex.Message}</color>");
+            }
+        }
+
+        /// <summary>
+        /// 锁定本地玩家的构筑选择，并在满足条件时推进到下一场战斗。
+        /// </summary>
+        public void LockBuildWindow()
+        {
+            if (_matchContext?.ActiveBuildWindow == null)
+                return;
+
+            try
+            {
+                _matchManager.LockBuildChoice(_matchContext, HumanPlayerId);
+                FlushMatchLogs();
+
+                if (_matchManager.AdvanceIfReady(_matchContext, _eventBus))
+                {
+                    CloseBuildWindow();
+                    FlushMatchLogs();
+
+                    if (_matchContext.IsMatchOver)
+                    {
+                        PublishDirectPhase(
+                            BattleClientPhaseKind.MatchEnded,
+                            "整局结束",
+                            "整局结束");
+                        OnStateChanged?.Invoke();
+                        NotifyGameOver();
+                        return;
+                    }
+
+                    StartActiveBattle();
+                    return;
+                }
+
+                PublishBuildWindowState(opened: false);
+                OnStateChanged?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                OnLogMessage?.Invoke($"<color=#ff8866>[构筑] {ex.Message}</color>");
+            }
+        }
+
         private string PlayCardInternal(
             string playerId,
-            int handIndex,
+            string cardInstanceId,
             bool instant,
             Dictionary<string, string>? runtimeParams)
         {
@@ -301,10 +465,10 @@ namespace CardMoba.Client.GameLogic
             if (player == null) return "玩家不存在";
 
             var hand = player.GetCardsInZone(CardZone.Hand);
-            if (handIndex < 0 || handIndex >= hand.Count)
-                return $"手牌索引越界（{handIndex}/{hand.Count}）";
+            var battleCard = hand.FirstOrDefault(card => string.Equals(card.InstanceId, cardInstanceId, StringComparison.Ordinal));
+            if (battleCard == null)
+                return $"手牌中不存在卡牌实例：{cardInstanceId}";
 
-            var battleCard = hand[handIndex];
             var cardConfig = GetEffectiveCardConfig(battleCard);
             if (cardConfig == null)
                 return $"找不到卡牌配置 configId={battleCard.GetEffectiveConfigId()}";
@@ -379,7 +543,7 @@ namespace CardMoba.Client.GameLogic
             }
 
             OnStateChanged?.Invoke();
-            if (IsGameOver) NotifyGameOver();
+            HandleBattleCompletion();
             return cardName;
         }
 
@@ -407,17 +571,597 @@ namespace CardMoba.Client.GameLogic
             var player = _ctx.GetPlayer(AiPlayerId);
             if (player == null || !player.HeroEntity.IsAlive) return;
 
+            var battleContextAtStart = _ctx;
             var hand = player.GetCardsInZone(CardZone.Hand);
             var snapshot = new List<BattleCard>(hand);
 
             foreach (var battleCard in snapshot)
             {
-                if (!player.HeroEntity.IsAlive || IsGameOver) break;
+                if (!ReferenceEquals(_ctx, battleContextAtStart) || !player.HeroEntity.IsAlive || IsGameOver) break;
                 var cfg = GetEffectiveCardConfig(battleCard);
                 if (cfg == null) continue;
 
                 bool isInstant = cfg.TrackType == CardTrackType.Instant;
-                PlayCardInternal(AiPlayerId, 0, isInstant, runtimeParams: null);
+                PlayCardInternal(AiPlayerId, battleCard.InstanceId, isInstant, runtimeParams: null);
+            }
+        }
+
+        private MatchRuleset CreateLocalMatchRuleset()
+        {
+            string defaultPoolId = BuildCatalogAssembler.GetDefaultPoolId(HeroClass.Warrior);
+            var ruleset = new MatchRuleset
+            {
+                BuildWindowTimeoutMs = 30000,
+                DefaultTimeoutAction = BuildActionType.Heal,
+            };
+
+            for (int i = 0; i < 4; i++)
+            {
+                var step = new MatchBattleStep
+                {
+                    StepId = $"battle_{i + 1:D2}",
+                    Mode = BattleStepMode.Duel1v1,
+                    BattleRuleset = new BattleRuleset
+                    {
+                        Mode = BattleMode.Duel1v1,
+                        LocalEndPolicy = BattleLocalEndPolicy.RoundLimit,
+                        MaxRounds = 5,
+                    },
+                    OpensBuildWindowAfter = true,
+                    BuildPoolId = defaultPoolId,
+                };
+                step.ParticipantPlayerIds.Add(HumanPlayerId);
+                step.ParticipantPlayerIds.Add(AiPlayerId);
+                ruleset.Steps.Add(step);
+            }
+
+            var finalStep = new MatchBattleStep
+            {
+                StepId = "battle_05_final",
+                Mode = BattleStepMode.Duel1v1,
+                BattleRuleset = new BattleRuleset
+                {
+                    Mode = BattleMode.Duel1v1,
+                    LocalEndPolicy = BattleLocalEndPolicy.TeamElimination,
+                    MaxRounds = 10,
+                },
+                OpensBuildWindowAfter = false,
+                BuildPoolId = defaultPoolId,
+            };
+            finalStep.ParticipantPlayerIds.Add(HumanPlayerId);
+            finalStep.ParticipantPlayerIds.Add(AiPlayerId);
+            ruleset.Steps.Add(finalStep);
+
+            return ruleset;
+        }
+
+        private IEnumerable<PlayerMatchState> CreateMatchPlayers(int[] playerDeckIds, int[] aiDeckIds)
+        {
+            yield return new PlayerMatchState
+            {
+                PlayerId = HumanPlayerId,
+                TeamId = HumanTeamId,
+                MaxHp = 200,
+                PersistentHp = 200,
+                Deck = BuildPersistentDeck(playerDeckIds, HumanPlayerId),
+                Loadout = CreateDefaultLoadout(),
+            };
+
+            yield return new PlayerMatchState
+            {
+                PlayerId = AiPlayerId,
+                TeamId = AiTeamId,
+                MaxHp = 200,
+                PersistentHp = 200,
+                Deck = BuildPersistentDeck(aiDeckIds, AiPlayerId),
+                Loadout = CreateDefaultLoadout(),
+            };
+        }
+
+        private PlayerLoadout CreateDefaultLoadout()
+        {
+            var loadout = new PlayerLoadout
+            {
+                ClassId = HeroClass.Warrior,
+                DefaultBuildPoolId = BuildCatalogAssembler.GetDefaultPoolId(HeroClass.Warrior),
+            };
+            loadout.EquipmentIds.Add("burning_blood");
+            return loadout;
+        }
+
+        private IEnumerable<EquipmentDefinition> CreateDefaultEquipmentDefinitions()
+        {
+            yield return new EquipmentDefinition
+            {
+                EquipmentId = "burning_blood",
+                ClassId = HeroClass.Warrior,
+                EffectType = EquipmentEffectType.HealAfterBattleFlat,
+                EffectValue = 6,
+            };
+        }
+
+        private PersistentDeckState BuildPersistentDeck(int[] cardIds, string ownerId)
+        {
+            var deck = new PersistentDeckState();
+            var instanceIndex = 0;
+
+            foreach (var id in cardIds)
+            {
+                if (CardConfigManager.Instance.GetCard(id) == null)
+                {
+                    OnLogMessage?.Invoke($"<color=#ffaa00>[警告] 找不到卡牌配置 {id}，已忽略。</color>");
+                    continue;
+                }
+
+                string configId = id.ToString();
+                deck.AddCard(new PersistentDeckCard
+                {
+                    PersistentCardId = $"{ownerId}_deck_{instanceIndex:D2}_{configId}",
+                    BaseConfigId = configId,
+                    CurrentConfigId = configId,
+                    UpgradeLevel = 0,
+                });
+                instanceIndex++;
+            }
+
+            return deck;
+        }
+
+        private void SyncActiveBattle()
+        {
+            _ctx = _matchContext?.ActiveBattleContext;
+            _roundManager = _matchContext?.ActiveRoundManager;
+        }
+
+        private void StartActiveBattle()
+        {
+            SyncActiveBattle();
+            if (_ctx == null || _roundManager == null || _roundManager.IsBattleOver)
+                return;
+
+            if (_roundManager.CurrentRound == 0)
+            {
+                OnLogMessage?.Invoke(
+                    $"<color=#99ddff>=== 进入第 {GetCurrentBattleNumber()}/{_totalBattleCount} 场：{GetCurrentBattleTitle()} ===</color>");
+                _roundManager.BeginRound(_ctx);
+                FlushLogs();
+            }
+
+            IsPlayerTurn = true;
+            PublishBattlePhase(BattleClientPhaseKind.Operation, "操作期（无时限）", "操作中（无时限）");
+            OnStateChanged?.Invoke();
+        }
+
+        private bool HandleBattleCompletion()
+        {
+            if (_matchContext == null || _roundManager == null || !_roundManager.IsBattleOver)
+                return false;
+
+            IsPlayerTurn = false;
+            _matchManager.CompleteCurrentBattle(_matchContext, _eventBus);
+            FlushMatchLogs();
+
+            if (_matchContext.ActiveBuildWindow != null)
+            {
+                OpenLocalBuildWindow();
+                return true;
+            }
+
+            SyncActiveBattle();
+
+            if (_matchContext.IsMatchOver)
+            {
+                PublishDirectPhase(
+                    BattleClientPhaseKind.MatchEnded,
+                    "整局结束",
+                    "整局结束");
+                OnStateChanged?.Invoke();
+                NotifyGameOver();
+                return true;
+            }
+
+            StartActiveBattle();
+            return true;
+        }
+
+        /// <summary>
+        /// 打开构筑窗口，并将非本地玩家的选择按默认规则自动锁定。
+        /// </summary>
+        private void OpenLocalBuildWindow()
+        {
+            if (_matchContext?.ActiveBuildWindow == null)
+                return;
+
+            IsPlayerTurn = false;
+            PublishDirectPhase(
+                BattleClientPhaseKind.BuildWindow,
+                $"第 {GetCurrentBattleNumber()}/{_totalBattleCount} 场结束 · 构筑阶段",
+                "构筑阶段");
+
+            AutoResolveRemoteBuildWindow();
+            FlushMatchLogs();
+            PublishBuildWindowState(opened: true);
+            OnStateChanged?.Invoke();
+        }
+
+        private void FlushMatchLogs()
+        {
+            if (_matchContext == null || _matchContext.MatchLog.Count == 0)
+                return;
+
+            foreach (var raw in _matchContext.MatchLog)
+                OnLogMessage?.Invoke(ColorizeMatchLog(raw));
+            _matchContext.MatchLog.Clear();
+        }
+
+        private int GetCurrentBattleNumber()
+        {
+            if (_matchContext == null)
+                return 0;
+
+            return Math.Min(_matchContext.CurrentStepIndex + 1, _totalBattleCount);
+        }
+
+        private string GetCurrentBattleTitle()
+        {
+            if (_matchContext == null || _matchContext.Ruleset.Steps.Count == 0)
+                return "战斗";
+
+            return _matchContext.CurrentStepIndex == _matchContext.Ruleset.Steps.Count - 1
+                ? "终局死斗"
+                : "常规战";
+        }
+
+        private string BuildPhaseText(string phaseLabel)
+        {
+            return $"第 {GetCurrentBattleNumber()}/{_totalBattleCount} 场 · {GetCurrentBattleTitle()} · 第 {CurrentRound} 回合 · {phaseLabel}";
+        }
+
+        /// <summary>
+        /// 将 Shared 的构筑窗口状态映射为客户端 UI 可消费的视图模型。
+        /// </summary>
+        private BuildWindowViewState CreateBuildWindowViewState()
+        {
+            if (_matchContext?.ActiveBuildWindow == null)
+                return null;
+
+            var viewState = new BuildWindowViewState
+            {
+                BattleIndex = GetCurrentBattleNumber(),
+                TotalBattleCount = _totalBattleCount,
+                BattleTitle = GetCurrentBattleTitle(),
+                DisplayText = $"第 {GetCurrentBattleNumber()}/{_totalBattleCount} 场结束 · 构筑阶段",
+                DeadlineUnixMs = _matchContext.ActiveBuildWindow.DeadlineUnixMs,
+                LocalPlayerId = HumanPlayerId,
+            };
+
+            foreach (var playerId in BuildBuildWindowPlayerOrder())
+            {
+                if (!_matchContext.ActiveBuildWindow.PlayerWindows.TryGetValue(playerId, out var playerWindow))
+                    continue;
+
+                var playerView = CreatePlayerBuildWindowViewState(playerWindow);
+                viewState.Players.Add(playerView);
+                if (string.Equals(playerId, HumanPlayerId, StringComparison.Ordinal))
+                    viewState.LocalPlayer = playerView;
+            }
+
+            if (viewState.LocalPlayer == null && viewState.Players.Count > 0)
+                viewState.LocalPlayer = viewState.Players[0];
+
+            return viewState;
+        }
+
+        private PlayerBuildWindowViewState CreatePlayerBuildWindowViewState(PlayerBuildWindowState playerWindow)
+        {
+            var playerView = new PlayerBuildWindowViewState
+            {
+                PlayerId = playerWindow.PlayerId,
+                DisplayName = GetPlayerLabel(playerWindow.PlayerId),
+                PreviewHp = playerWindow.PreviewHp,
+                MaxHp = playerWindow.MaxHp,
+                OpportunityCount = playerWindow.OpportunityCount,
+                NextOpportunityIndex = playerWindow.NextOpportunityIndex,
+                ResolvedOpportunityCount = playerWindow.Opportunities.Count(opportunity => opportunity.IsResolved),
+                IsLocked = playerWindow.IsLocked,
+                CanLock = !playerWindow.IsLocked,
+                RestrictionMode = playerWindow.RestrictionMode == BuildWindowRestrictionMode.ForcedRecovery
+                    ? BuildWindowRestrictionViewMode.ForcedRecovery
+                    : BuildWindowRestrictionViewMode.None,
+                RestrictionText = playerWindow.RestrictionMode == BuildWindowRestrictionMode.ForcedRecovery
+                    ? $"本场战败，只能休息，回复 {Math.Round(playerWindow.HealPercent * 100)}% 生命"
+                    : string.Empty,
+            };
+
+            foreach (var opportunity in playerWindow.Opportunities.Where(item => item.IsResolved && item.Choice != null))
+                playerView.ResolvedChoiceSummaries.Add(DescribeResolvedBuildChoice(opportunity));
+
+            if (!playerWindow.IsLocked && playerWindow.NextOpportunityIndex < playerWindow.Opportunities.Count)
+                playerView.CurrentOpportunity = CreateOpportunityViewState(playerWindow.Opportunities[playerWindow.NextOpportunityIndex]);
+
+            return playerView;
+        }
+
+        private BuildOpportunityViewState CreateOpportunityViewState(BuildOpportunityState opportunity)
+        {
+            var viewState = new BuildOpportunityViewState
+            {
+                OpportunityIndex = opportunity.OpportunityIndex,
+                HealAmount = opportunity.Offers.HealAmount,
+                CommittedActionType = ToViewActionType(opportunity.CommittedActionType),
+                DraftGroupsRevealed = opportunity.Offers.DraftGroupsRevealed,
+            };
+
+            foreach (var actionType in opportunity.AvailableActions)
+                viewState.AvailableActions.Add(ToViewActionType(actionType));
+
+            foreach (var candidate in opportunity.Offers.UpgradableCards)
+                viewState.UpgradableCards.Add(CreateBuildCardViewState(candidate.PersistentCardId, candidate.BaseConfigId, candidate.EffectiveConfigId, candidate.UpgradeLevel));
+
+            foreach (var candidate in opportunity.Offers.RemovableCards)
+                viewState.RemovableCards.Add(CreateBuildCardViewState(candidate.PersistentCardId, candidate.BaseConfigId, candidate.EffectiveConfigId, candidate.UpgradeLevel));
+
+            foreach (var draftGroup in opportunity.Offers.DraftGroups)
+            {
+                var groupView = new BuildDraftGroupViewState
+                {
+                    GroupIndex = draftGroup.GroupIndex,
+                };
+
+                foreach (var offer in draftGroup.Offers)
+                {
+                    var config = GetConfigForBuildCard(offer.EffectiveConfigId, offer.BaseConfigId);
+                    groupView.Offers.Add(new BuildDraftOfferViewState
+                    {
+                        OfferId = offer.OfferId,
+                        PersistentCardId = offer.PersistentCardId,
+                        ConfigId = offer.BaseConfigId,
+                        EffectiveConfigId = offer.EffectiveConfigId,
+                        DisplayName = config?.CardName ?? offer.EffectiveConfigId,
+                        Description = config?.Description ?? "（无描述）",
+                        RarityText = FormatBuildCardRarity(offer.Rarity),
+                        Cost = config?.EnergyCost ?? 0,
+                        UpgradeLevel = offer.UpgradeLevel,
+                        IsUpgraded = offer.IsUpgraded,
+                    });
+                }
+
+                viewState.DraftGroups.Add(groupView);
+            }
+
+            return viewState;
+        }
+
+        private BuildCardViewState CreateBuildCardViewState(string persistentCardId, string baseConfigId, string effectiveConfigId, int upgradeLevel)
+        {
+            var config = GetConfigForBuildCard(effectiveConfigId, baseConfigId);
+            return new BuildCardViewState
+            {
+                PersistentCardId = persistentCardId,
+                ConfigId = baseConfigId,
+                EffectiveConfigId = effectiveConfigId,
+                DisplayName = config?.CardName ?? effectiveConfigId,
+                Description = config?.Description ?? "（无描述）",
+                Cost = config?.EnergyCost ?? 0,
+                UpgradeLevel = upgradeLevel,
+            };
+        }
+
+        private CardConfig? GetConfigForBuildCard(string effectiveConfigId, string baseConfigId)
+        {
+            if (_cardConfigMap.TryGetValue(effectiveConfigId, out var effectiveConfig))
+                return effectiveConfig;
+
+            return _cardConfigMap.TryGetValue(baseConfigId, out var baseConfig) ? baseConfig : null;
+        }
+
+        private IEnumerable<string> BuildBuildWindowPlayerOrder()
+        {
+            yield return HumanPlayerId;
+            yield return AiPlayerId;
+
+            if (_matchContext?.ActiveBuildWindow == null)
+                yield break;
+
+            foreach (var playerId in _matchContext.ActiveBuildWindow.PlayerWindows.Keys)
+            {
+                if (playerId == HumanPlayerId || playerId == AiPlayerId)
+                    continue;
+
+                yield return playerId;
+            }
+        }
+
+        private string DescribeResolvedBuildChoice(BuildOpportunityState opportunity)
+        {
+            if (opportunity.Choice == null)
+                return $"第 {opportunity.OpportunityIndex + 1} 次：未选择";
+
+            switch (opportunity.Choice.ActionType)
+            {
+                case BuildActionType.Heal:
+                    return $"第 {opportunity.OpportunityIndex + 1} 次：休息（+{opportunity.Offers.HealAmount}）";
+
+                case BuildActionType.UpgradeCard:
+                    {
+                        var target = opportunity.Offers.UpgradableCards.FirstOrDefault(card =>
+                            string.Equals(card.PersistentCardId, opportunity.Choice.TargetPersistentCardId, StringComparison.Ordinal));
+                        string name = target != null ? ResolveCardName(target.EffectiveConfigId) : "未知卡牌";
+                        return $"第 {opportunity.OpportunityIndex + 1} 次：升级【{name}】";
+                    }
+
+                case BuildActionType.RemoveCard:
+                    {
+                        var target = opportunity.Offers.RemovableCards.FirstOrDefault(card =>
+                            string.Equals(card.PersistentCardId, opportunity.Choice.TargetPersistentCardId, StringComparison.Ordinal));
+                        string name = target != null ? ResolveCardName(target.EffectiveConfigId) : "未知卡牌";
+                        return $"第 {opportunity.OpportunityIndex + 1} 次：删去【{name}】";
+                    }
+
+                case BuildActionType.AddCard:
+                    {
+                        var names = new List<string>();
+                        foreach (var group in opportunity.Offers.DraftGroups)
+                        {
+                            if (!opportunity.Choice.SelectedDraftOfferIdsByGroup.TryGetValue(group.GroupIndex, out var offerId))
+                                continue;
+
+                            var offer = group.Offers.FirstOrDefault(item => string.Equals(item.OfferId, offerId, StringComparison.Ordinal));
+                            if (offer != null)
+                                names.Add(ResolveCardName(offer.EffectiveConfigId));
+                        }
+
+                        return names.Count == 0
+                            ? $"第 {opportunity.OpportunityIndex + 1} 次：拿牌（全部跳过）"
+                            : $"第 {opportunity.OpportunityIndex + 1} 次：拿牌（{string.Join("、", names)}）";
+                    }
+            }
+
+            return $"第 {opportunity.OpportunityIndex + 1} 次：{opportunity.Choice.ActionType}";
+        }
+
+        private void PublishBuildWindowState(bool opened)
+        {
+            _currentBuildWindow = CreateBuildWindowViewState();
+            if (_currentBuildWindow == null)
+                return;
+
+            LogBuildWindowDebugSnapshot(_currentBuildWindow, opened);
+
+            if (opened)
+                OnBuildWindowOpened?.Invoke(_currentBuildWindow);
+            else
+                OnBuildWindowUpdated?.Invoke(_currentBuildWindow);
+        }
+
+        private void CloseBuildWindow()
+        {
+            if (_currentBuildWindow == null && _matchContext?.ActiveBuildWindow == null)
+                return;
+
+            _currentBuildWindow = null;
+            OnBuildWindowClosed?.Invoke();
+        }
+
+        private void AutoResolveRemoteBuildWindow()
+        {
+            if (_matchContext?.ActiveBuildWindow == null)
+                return;
+
+            foreach (var playerWindow in _matchContext.ActiveBuildWindow.PlayerWindows.Values)
+            {
+                if (string.Equals(playerWindow.PlayerId, HumanPlayerId, StringComparison.Ordinal) || playerWindow.IsLocked)
+                    continue;
+
+                _matchManager.LockBuildChoice(_matchContext, playerWindow.PlayerId);
+            }
+        }
+
+        private void PublishBattlePhase(BattleClientPhaseKind phaseKind, string phaseLabel, string timerText)
+        {
+            PublishDirectPhase(phaseKind, BuildPhaseText(phaseLabel), timerText);
+        }
+
+        private void PublishDirectPhase(BattleClientPhaseKind phaseKind, string displayText, string timerText)
+        {
+            OnPhaseChanged?.Invoke(new BattlePhaseViewState
+            {
+                PhaseKind = phaseKind,
+                DisplayText = displayText,
+                TimerText = timerText,
+                UseOperationTimer = false,
+            });
+        }
+
+        private static BuildActionViewType ToViewActionType(BuildActionType actionType)
+        {
+            return actionType switch
+            {
+                BuildActionType.Heal => BuildActionViewType.Heal,
+                BuildActionType.AddCard => BuildActionViewType.AddCard,
+                BuildActionType.RemoveCard => BuildActionViewType.RemoveCard,
+                BuildActionType.UpgradeCard => BuildActionViewType.UpgradeCard,
+                _ => BuildActionViewType.None,
+            };
+        }
+
+        private static BuildActionType ToRuntimeActionType(BuildActionViewType actionType)
+        {
+            return actionType switch
+            {
+                BuildActionViewType.Heal => BuildActionType.Heal,
+                BuildActionViewType.AddCard => BuildActionType.AddCard,
+                BuildActionViewType.RemoveCard => BuildActionType.RemoveCard,
+                BuildActionViewType.UpgradeCard => BuildActionType.UpgradeCard,
+                _ => BuildActionType.None,
+            };
+        }
+
+        private static BuildChoice ToRuntimeBuildChoice(BuildChoiceViewState choice)
+        {
+            var runtimeChoice = new BuildChoice
+            {
+                ActionType = ToRuntimeActionType(choice.ActionType),
+                TargetPersistentCardId = choice.TargetPersistentCardId,
+            };
+
+            foreach (var pair in choice.SelectedDraftOfferIdsByGroup)
+                runtimeChoice.SelectedDraftOfferIdsByGroup[pair.Key] = pair.Value;
+
+            return runtimeChoice;
+        }
+
+        private static string FormatBuildCardRarity(BuildCardRarity rarity)
+        {
+            return rarity switch
+            {
+                BuildCardRarity.Common => "普通",
+                BuildCardRarity.Uncommon => "罕见",
+                BuildCardRarity.Rare => "稀有",
+                BuildCardRarity.Legendary => "传说",
+                _ => rarity.ToString(),
+            };
+        }
+
+        private void LogBuildWindowDebugSnapshot(BuildWindowViewState viewState, bool opened)
+        {
+            if (viewState == null)
+                return;
+
+            foreach (var player in viewState.Players)
+            {
+                string header = opened ? "打开构筑窗口" : "更新构筑窗口";
+                OnLogMessage?.Invoke(
+                    $"<color=#aaaaff>[构筑调试] {header}：{player.DisplayName} HP={player.PreviewHp}/{player.MaxHp} 已完成={player.ResolvedOpportunityCount}/{player.OpportunityCount} 锁定={player.IsLocked}</color>");
+
+                if (player.CurrentOpportunity == null)
+                {
+                    OnLogMessage?.Invoke($"<color=#aaaaff>[构筑调试] {player.DisplayName} 当前无可编辑机会。</color>");
+                    continue;
+                }
+
+                var opportunity = player.CurrentOpportunity;
+                string actions = opportunity.AvailableActions.Count == 0
+                    ? "无"
+                    : string.Join("、", opportunity.AvailableActions.Select(action => action.ToString()));
+                string upgradeNames = opportunity.UpgradableCards.Count == 0
+                    ? "无"
+                    : string.Join("、", opportunity.UpgradableCards.Select(card => card.DisplayName));
+                string removeNames = opportunity.RemovableCards.Count == 0
+                    ? "无"
+                    : string.Join("、", opportunity.RemovableCards.Select(card => card.DisplayName));
+                string draftGroups = !opportunity.DraftGroupsRevealed
+                    ? "未揭示"
+                    : opportunity.DraftGroups.Count == 0
+                        ? "无"
+                        : string.Join(" | ", opportunity.DraftGroups.Select(group =>
+                            $"组{group.GroupIndex + 1}:{string.Join("、", group.Offers.Select(offer => offer.DisplayName))}"));
+                string committedAction = opportunity.CommittedActionType == BuildActionViewType.None
+                    ? "无"
+                    : opportunity.CommittedActionType.ToString();
+
+                OnLogMessage?.Invoke(
+                    $"<color=#aaaaff>[构筑调试] {player.DisplayName} 第 {opportunity.OpportunityIndex + 1} 次机会：动作={actions}，已承诺={committedAction}，回血={opportunity.HealAmount}，升级候选={opportunity.UpgradableCards.Count}（{upgradeNames}），删牌候选={opportunity.RemovableCards.Count}（{removeNames}），拿牌组={opportunity.DraftGroups.Count}（{draftGroups}）</color>");
             }
         }
 
@@ -625,6 +1369,20 @@ namespace CardMoba.Client.GameLogic
             return _cardConfigMap.TryGetValue(battleCard.ConfigId, out var baseConfig) ? baseConfig : null;
         }
 
+        private static bool RequiresDiscardSelection(CardConfig? config)
+        {
+            if (config?.Effects == null)
+                return false;
+
+            foreach (var effect in config.Effects)
+            {
+                if (effect.EffectType == EffectType.MoveSelectedCardToDeckTop)
+                    return true;
+            }
+
+            return false;
+        }
+
         private void EnsureConfigLoaded()
         {
             if (!CardConfigManager.Instance.IsLoaded)
@@ -641,9 +1399,9 @@ namespace CardMoba.Client.GameLogic
 
         private void NotifyGameOver()
         {
-            string? winner = _roundManager?.WinnerId;
-            int code = winner == null       ? -1
-                     : winner == HumanPlayerId ? 1
+            string? winner = _matchContext?.WinnerTeamId ?? _roundManager?.WinnerId;
+            int code = winner == null ? -1
+                     : string.Equals(winner, HumanTeamId, StringComparison.Ordinal) || string.Equals(winner, HumanPlayerId, StringComparison.Ordinal) ? 1
                      : 2;
             OnGameOver?.Invoke(code);
         }
@@ -663,6 +1421,19 @@ namespace CardMoba.Client.GameLogic
                 return $"<color=#ffdd55>{log}</color>";
             if (lower.Contains("回合") && (log.Contains("---") || log.Contains("结算")))
                 return $"<color=#888888><size=85%>{log}</size></color>";
+
+            return log;
+        }
+
+        private static string ColorizeMatchLog(string log)
+        {
+            if (log.Contains("<color="))
+                return log;
+
+            if (log.Contains("[Equipment]"))
+                return $"<color=#66ee88>{log}</color>";
+            if (log.Contains("[MatchManager]") || log.Contains("[MatchFactory]"))
+                return $"<color=#99ddff>{log}</color>";
 
             return log;
         }
@@ -853,8 +1624,8 @@ namespace CardMoba.Client.GameLogic
 
         private string GetPlayerLabel(string playerId)
         {
-            return playerId == HumanPlayerId ? "你"
-                : playerId == AiPlayerId ? "对手"
+            return playerId == HumanPlayerId || playerId == HumanTeamId ? "你"
+                : playerId == AiPlayerId || playerId == AiTeamId ? "对手"
                 : playerId;
         }
 
