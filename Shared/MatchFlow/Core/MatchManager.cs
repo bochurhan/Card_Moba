@@ -213,6 +213,16 @@ namespace CardMoba.MatchFlow.Core
 
         public void LockBuildChoice(MatchContext context, string playerId)
         {
+            LockBuildChoice(context, playerId, context.Ruleset.DefaultTimeoutAction, honorCommittedAction: true);
+        }
+
+        public void ApplyDefaultBuildChoicesAndLock(MatchContext context, string playerId, BuildActionType defaultAction)
+        {
+            LockBuildChoice(context, playerId, defaultAction, honorCommittedAction: false);
+        }
+
+        private void LockBuildChoice(MatchContext context, string playerId, BuildActionType defaultAction, bool honorCommittedAction)
+        {
             if (context == null)
                 throw new ArgumentNullException(nameof(context));
             if (context.ActiveBuildWindow == null)
@@ -231,7 +241,10 @@ namespace CardMoba.MatchFlow.Core
                 var opportunity = playerWindow.Opportunities[playerWindow.NextOpportunityIndex];
                 if (!opportunity.IsResolved)
                 {
-                    var defaultChoice = CreateDefaultChoice(opportunity, context.Ruleset.DefaultTimeoutAction);
+                    if (!honorCommittedAction)
+                        RestoreAutoResolvableActions(playerWindow, opportunity);
+
+                    var defaultChoice = CreateDefaultChoice(opportunity, defaultAction, honorCommittedAction);
                     _buildActionApplier.ApplyChoice(player, playerWindow, opportunity, defaultChoice);
                     context.MatchLog.Add($"[MatchManager] player {playerId} auto-resolved build opportunity {opportunity.OpportunityIndex} with default action {defaultChoice.ActionType}.");
                 }
@@ -282,7 +295,7 @@ namespace CardMoba.MatchFlow.Core
             foreach (var playerWindow in context.ActiveBuildWindow.PlayerWindows.Values)
             {
                 if (!playerWindow.IsLocked)
-                    LockBuildChoice(context, playerWindow.PlayerId);
+                    ApplyDefaultBuildChoicesAndLock(context, playerWindow.PlayerId, context.Ruleset.DefaultTimeoutAction);
             }
 
             return AdvanceIfReady(context, eventBus);
@@ -311,15 +324,33 @@ namespace CardMoba.MatchFlow.Core
             opportunity.AvailableActions.Add(BuildActionType.AddCard);
         }
 
-        private static BuildChoice CreateDefaultChoice(BuildOpportunityState opportunity, BuildActionType preferredAction)
+        private static BuildChoice CreateDefaultChoice(BuildOpportunityState opportunity, BuildActionType preferredAction, bool honorCommittedAction)
         {
-            if (opportunity.CommittedActionType != BuildActionType.None)
+            if (honorCommittedAction && opportunity.CommittedActionType != BuildActionType.None)
                 return BuildChoice.Create(opportunity.CommittedActionType);
 
             var actionType = opportunity.AvailableActions.Contains(preferredAction)
                 ? preferredAction
                 : opportunity.AvailableActions.First();
             return BuildChoice.Create(actionType);
+        }
+
+        private static void RestoreAutoResolvableActions(PlayerBuildWindowState playerWindow, BuildOpportunityState opportunity)
+        {
+            opportunity.AvailableActions.Clear();
+            opportunity.AvailableActions.Add(BuildActionType.Heal);
+
+            if (playerWindow.RestrictionMode == BuildWindowRestrictionMode.ForcedRecovery)
+                return;
+
+            if (opportunity.Offers.UpgradableCards.Count > 0)
+                opportunity.AvailableActions.Add(BuildActionType.UpgradeCard);
+
+            if (opportunity.Offers.RemovableCards.Count > 0)
+                opportunity.AvailableActions.Add(BuildActionType.RemoveCard);
+
+            if (opportunity.Offers.DraftGroupsRevealed || opportunity.Offers.DraftGroups.Count > 0 || opportunity.CommittedActionType == BuildActionType.AddCard)
+                opportunity.AvailableActions.Add(BuildActionType.AddCard);
         }
     }
 }

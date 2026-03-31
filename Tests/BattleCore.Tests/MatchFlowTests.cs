@@ -325,6 +325,39 @@ namespace CardMoba.Tests
         }
 
         [Fact]
+        public void ApplyDefaultBuildChoicesAndLock_UsesDefaultActionInsteadOfCommittedDraftState()
+        {
+            var ruleset = CreateRuleset(openBuildWindowAfterFirst: true, includeSecondStep: true);
+            var context = CreateMatchContext(ruleset, p1Hp: 18, p2Hp: 30);
+            var manager = CreateMatchManager();
+            manager.StartMatch(context);
+
+            var summary = new BattleSummary
+            {
+                BattleId = context.ActiveBattleContext!.BattleId,
+                BattleEndReason = BattleEndReason.RoundLimitReached,
+            };
+            summary.ExtraBuildPickPlayerIds.Add("P1");
+            manager.CompleteCurrentBattle(context, summary);
+
+            manager.ApplyBuildAction(context, "P1", BuildActionType.Heal);
+            manager.ApplyBuildAction(context, "P1", BuildActionType.AddCard);
+
+            var addOpportunity = context.ActiveBuildWindow!.PlayerWindows["P1"].Opportunities[1];
+            addOpportunity.CommittedActionType.Should().Be(BuildActionType.AddCard);
+            addOpportunity.Offers.DraftGroupsRevealed.Should().BeTrue();
+            addOpportunity.IsResolved.Should().BeFalse();
+
+            manager.ApplyDefaultBuildChoicesAndLock(context, "P1", BuildActionType.Heal);
+
+            var playerWindow = context.ActiveBuildWindow.PlayerWindows["P1"];
+            playerWindow.IsLocked.Should().BeTrue();
+            playerWindow.Opportunities[1].IsResolved.Should().BeTrue();
+            playerWindow.Opportunities[1].Choice!.ActionType.Should().Be(BuildActionType.Heal);
+            playerWindow.PreviewHp.Should().BeGreaterThan(18);
+        }
+
+        [Fact]
         public void CompleteCurrentBattle_UsesRoundManagerCompletedSummary_WhenNoSummaryIsProvided()
         {
             var ruleset = new MatchRuleset();

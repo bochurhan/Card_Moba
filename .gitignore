@@ -69,3 +69,6 @@ appsettings.Development.json
 # =========================
 Crashlytics/
 crashlytics-build.properties
+
+# Test artifacts
+/Tests/Client.Tests/

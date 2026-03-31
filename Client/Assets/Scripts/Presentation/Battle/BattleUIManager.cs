@@ -100,6 +100,9 @@ namespace CardMoba.Client.Presentation.Battle
         private readonly List<string>     _logMessages = new List<string>();
         private readonly List<GameObject> _discardSelectionOptionObjects = new List<GameObject>();
         private Coroutine _logScrollCoroutine;
+        private bool _lastKnownTurnLockState;
+        private bool _lastKnownCanToggleTurnLock;
+        private int _logAutoFollowFramesRemaining;
 
         private GameObject _discardSelectionPanel;
         private RectTransform _discardSelectionDialog;
@@ -117,6 +120,7 @@ namespace CardMoba.Client.Presentation.Battle
             EnsureOptionalBindings();
             EnsureEventSystem();
             EnsureGraphicRaycaster();
+            EnsureLogScrollSupport();
 
             _gameRuntime = CreateRuntime();
             EnsureBuildWindowPanel();
@@ -174,6 +178,26 @@ namespace CardMoba.Client.Presentation.Battle
         private async void Start()
         {
             await StartNewBattleAsync();
+        }
+
+        private void Update()
+        {
+            if (_gameRuntime == null || !_gameRuntime.SupportsTurnLockToggle)
+            {
+                FollowLogToBottomIfNeeded();
+                return;
+            }
+
+            bool currentLockState = _gameRuntime.IsTurnLocked;
+            bool currentCanToggle = _gameRuntime.CanToggleTurnLock;
+            if (currentLockState != _lastKnownTurnLockState || currentCanToggle != _lastKnownCanToggleTurnLock)
+            {
+                _lastKnownTurnLockState = currentLockState;
+                _lastKnownCanToggleTurnLock = currentCanToggle;
+                RefreshButtons();
+            }
+
+            FollowLogToBottomIfNeeded();
         }
 
         private void OnDestroy()
@@ -244,6 +268,76 @@ namespace CardMoba.Client.Presentation.Battle
             _buildWindowPanel = panelObject.GetComponent<BuildWindowPanel>();
             _buildWindowPanel.Bind(_gameRuntime);
             _buildWindowPanel.Hide();
+        }
+
+        private void EnsureLogScrollSupport()
+        {
+            if (_logScrollRect == null || _logScrollRect.viewport == null)
+                return;
+
+            _logScrollRect.scrollSensitivity = 24f;
+            _logScrollRect.inertia = false;
+            _logScrollRect.movementType = ScrollRect.MovementType.Clamped;
+            if (_logScrollRect.content != null)
+            {
+                var fitter = _logScrollRect.content.GetComponent<ContentSizeFitter>();
+                if (fitter != null)
+                    fitter.enabled = false;
+            }
+            if (_logText != null)
+            {
+                _logText.raycastTarget = false;
+                _logText.overflowMode = TextOverflowModes.Overflow;
+                _logText.enableWordWrapping = true;
+            }
+
+            if (_logScrollRect.verticalScrollbar != null)
+                return;
+
+            var viewportRect = _logScrollRect.viewport;
+            viewportRect.offsetMax = new Vector2(-28f, viewportRect.offsetMax.y);
+
+            var scrollbarObject = new GameObject("RuntimeLogScrollbar", typeof(RectTransform), typeof(Image), typeof(Scrollbar));
+            scrollbarObject.transform.SetParent(_logScrollRect.transform, false);
+
+            var scrollbarRect = (RectTransform)scrollbarObject.transform;
+            scrollbarRect.anchorMin = new Vector2(1f, 0f);
+            scrollbarRect.anchorMax = new Vector2(1f, 1f);
+            scrollbarRect.pivot = new Vector2(1f, 0.5f);
+            scrollbarRect.offsetMin = new Vector2(-22f, 6f);
+            scrollbarRect.offsetMax = new Vector2(-6f, -6f);
+
+            var scrollbarBackground = scrollbarObject.GetComponent<Image>();
+            scrollbarBackground.color = new Color(0.08f, 0.08f, 0.12f, 0.9f);
+
+            var handleSlideArea = new GameObject("Sliding Area", typeof(RectTransform));
+            handleSlideArea.transform.SetParent(scrollbarObject.transform, false);
+            var slidingAreaRect = (RectTransform)handleSlideArea.transform;
+            slidingAreaRect.anchorMin = Vector2.zero;
+            slidingAreaRect.anchorMax = Vector2.one;
+            slidingAreaRect.offsetMin = new Vector2(2f, 2f);
+            slidingAreaRect.offsetMax = new Vector2(-2f, -2f);
+
+            var handleObject = new GameObject("Handle", typeof(RectTransform), typeof(Image));
+            handleObject.transform.SetParent(handleSlideArea.transform, false);
+            var handleRect = (RectTransform)handleObject.transform;
+            handleRect.anchorMin = Vector2.zero;
+            handleRect.anchorMax = Vector2.one;
+            handleRect.offsetMin = Vector2.zero;
+            handleRect.offsetMax = Vector2.zero;
+
+            var handleImage = handleObject.GetComponent<Image>();
+            handleImage.color = new Color(0.65f, 0.72f, 0.86f, 0.95f);
+
+            var scrollbar = scrollbarObject.GetComponent<Scrollbar>();
+            scrollbar.direction = Scrollbar.Direction.BottomToTop;
+            scrollbar.targetGraphic = handleImage;
+            scrollbar.handleRect = handleRect;
+            scrollbar.value = 0f;
+
+            _logScrollRect.verticalScrollbar = scrollbar;
+            _logScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+            _logScrollRect.verticalScrollbarSpacing = 4f;
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -417,15 +511,30 @@ namespace CardMoba.Client.Presentation.Battle
 
             if (_endTurnButton     != null) _endTurnButton.interactable = endTurnInteractable;
             if (_endTurnButtonText != null)
-                _endTurnButtonText.text = endTurnInteractable
-                    ? (_gameRuntime.SupportsTurnLockToggle
+            {
+                if (_gameRuntime.SupportsTurnLockToggle)
+                {
+                    bool showTurnLockLabel = canToggleTurn || _gameRuntime.IsTurnLocked;
+                    _endTurnButtonText.text = showTurnLockLabel
                         ? (_gameRuntime.IsTurnLocked ? "取消锁定" : "锁定回合")
-                        : "结束回合")
-                    : IsBuildWindowOpen()
-                        ? "构筑中..."
-                        : _gameRuntime.SupportsTurnLockToggle && canToggleTurn && !_gameRuntime.CanToggleTurnLock
-                            ? "冷却中..."
+                        : IsBuildWindowOpen()
+                            ? "构筑中..."
                             : (_isTimerLocked ? "等待结算..." : "等待中...");
+                }
+                else
+                {
+                    _endTurnButtonText.text = endTurnInteractable ? "结束回合" : (_isTimerLocked ? "等待结算..." : "等待中...");
+                }
+            }
+
+            if (_endTurnButton != null)
+            {
+                var buttonImage = _endTurnButton.GetComponent<Image>();
+                if (buttonImage != null)
+                    buttonImage.color = endTurnInteractable
+                        ? new Color(0.2f, 0.6f, 0.3f, 1f)
+                        : new Color(0.12f, 0.12f, 0.12f, 1f);
+            }
 
             foreach (var obj in _cardObjects)
             {
@@ -474,10 +583,7 @@ namespace CardMoba.Client.Presentation.Battle
             if (_gameRuntime.SupportsTurnLockToggle)
             {
                 if (!_gameRuntime.CanToggleTurnLock)
-                {
-                    AddLogMessage("<color=#ff8888>回合锁定切换冷却中</color>");
                     return;
-                }
 
                 bool targetLockState = !_gameRuntime.IsTurnLocked;
                 AddLogMessage(targetLockState
@@ -763,13 +869,9 @@ namespace CardMoba.Client.Presentation.Battle
             if (_logText != null) _logText.text = string.Join("\n", _logMessages);
             if (_logScrollRect != null)
             {
-                Canvas.ForceUpdateCanvases();
-                if (_logScrollRect.content != null)
-                    LayoutRebuilder.ForceRebuildLayoutImmediate(_logScrollRect.content);
-                if (_logText != null)
-                    LayoutRebuilder.ForceRebuildLayoutImmediate(_logText.rectTransform);
-
-                _logScrollRect.verticalNormalizedPosition = 0f;
+                RefreshLogScrollLayout();
+                ScrollLogToBottomImmediate();
+                _logAutoFollowFramesRemaining = 8;
                 if (_logScrollCoroutine != null)
                     StopCoroutine(_logScrollCoroutine);
                 _logScrollCoroutine = StartCoroutine(ScrollLogToBottomNextFrame());
@@ -784,19 +886,85 @@ namespace CardMoba.Client.Presentation.Battle
             if (_logScrollRect == null)
                 yield break;
 
-            Canvas.ForceUpdateCanvases();
-            if (_logScrollRect.content != null)
-                LayoutRebuilder.ForceRebuildLayoutImmediate(_logScrollRect.content);
-            if (_logText != null)
-                LayoutRebuilder.ForceRebuildLayoutImmediate(_logText.rectTransform);
-            _logScrollRect.verticalNormalizedPosition = 0f;
+            RefreshLogScrollLayout();
+            ScrollLogToBottomImmediate();
 
             yield return null;
 
-            if (_logScrollRect != null)
-                _logScrollRect.verticalNormalizedPosition = 0f;
+            RefreshLogScrollLayout();
+            ScrollLogToBottomImmediate();
 
             _logScrollCoroutine = null;
+        }
+
+        private void FollowLogToBottomIfNeeded()
+        {
+            if (_logAutoFollowFramesRemaining <= 0)
+                return;
+
+            RefreshLogScrollLayout();
+            ScrollLogToBottomImmediate();
+            _logAutoFollowFramesRemaining--;
+        }
+
+        private void RefreshLogScrollLayout()
+        {
+            if (_logScrollRect == null || _logText == null)
+                return;
+
+            _logText.ForceMeshUpdate();
+            var logTextRect = _logText.rectTransform;
+            float preferredHeight = Mathf.Ceil(_logText.preferredHeight);
+            if (_logScrollRect.viewport != null)
+            {
+                var viewportRect = _logScrollRect.viewport.rect;
+                logTextRect.anchorMin = new Vector2(0f, 1f);
+                logTextRect.anchorMax = new Vector2(1f, 1f);
+                logTextRect.pivot = new Vector2(0.5f, 1f);
+                logTextRect.offsetMin = new Vector2(10f, 0f);
+                logTextRect.offsetMax = new Vector2(-10f, 0f);
+                _logScrollRect.content.anchorMin = new Vector2(0f, 1f);
+                _logScrollRect.content.anchorMax = new Vector2(1f, 1f);
+                _logScrollRect.content.pivot = new Vector2(0.5f, 1f);
+                _logScrollRect.content.anchoredPosition = Vector2.zero;
+
+                if (viewportRect.height > 0f)
+                    preferredHeight = Mathf.Max(preferredHeight, viewportRect.height - 4f);
+            }
+
+            logTextRect.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, Mathf.Max(30f, preferredHeight));
+
+            if (_logScrollRect.content != null)
+            {
+                float viewportHeight = _logScrollRect.viewport != null
+                    ? _logScrollRect.viewport.rect.height
+                    : 0f;
+                float contentHeight = Mathf.Max(viewportHeight, preferredHeight + 12f);
+                _logScrollRect.content.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, contentHeight);
+                LayoutRebuilder.ForceRebuildLayoutImmediate(_logScrollRect.content);
+            }
+
+            LayoutRebuilder.ForceRebuildLayoutImmediate(logTextRect);
+            Canvas.ForceUpdateCanvases();
+        }
+
+        private void ScrollLogToBottomImmediate()
+        {
+            if (_logScrollRect == null)
+                return;
+
+            _logScrollRect.StopMovement();
+            if (_logScrollRect.content != null && _logScrollRect.viewport != null)
+            {
+                float hiddenHeight = Mathf.Max(0f, _logScrollRect.content.rect.height - _logScrollRect.viewport.rect.height);
+                var anchoredPosition = _logScrollRect.content.anchoredPosition;
+                anchoredPosition.y = hiddenHeight;
+                _logScrollRect.content.anchoredPosition = anchoredPosition;
+            }
+            _logScrollRect.normalizedPosition = new Vector2(0f, 0f);
+            _logScrollRect.verticalNormalizedPosition = 0f;
+            if (_logScrollRect.verticalScrollbar != null)
+                _logScrollRect.verticalScrollbar.value = 0f;
         }
 
         private void ShowGameOver(int winnerCode)

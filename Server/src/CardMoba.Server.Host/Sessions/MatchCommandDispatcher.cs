@@ -166,8 +166,8 @@ namespace CardMoba.Server.Host.Sessions
                 && _context.ActiveBuildWindow.PlayerWindows.TryGetValue(playerId, out var playerWindow)
                 && !playerWindow.IsLocked)
             {
-                _matchManager.LockBuildChoice(_context, playerId);
-                _logger.LogInformation("对局 {MatchId} 玩家 {PlayerId} 在构筑阶段掉线，已按默认规则锁定构筑。", _context.MatchId, playerId);
+                _matchManager.ApplyDefaultBuildChoicesAndLock(_context, playerId, _context.Ruleset.DefaultTimeoutAction);
+                _logger.LogInformation("对局 {MatchId} 玩家 {PlayerId} 在构筑阶段掉线，已按默认规则补齐未完成构筑并锁定。", _context.MatchId, playerId);
 
                 if (_matchManager.AdvanceIfReady(_context))
                 {
@@ -215,6 +215,7 @@ namespace CardMoba.Server.Host.Sessions
                     return;
 
                 _matchManager.LockBuildChoice(_context, playerId);
+                AutoResolveDisconnectedPlayersInBuildWindow();
                 _logger.LogInformation("对局 {MatchId} 玩家 {PlayerId} 锁定了构筑阶段。", _context.MatchId, playerId);
                 if (_matchManager.AdvanceIfReady(_context))
                 {
@@ -447,6 +448,26 @@ namespace CardMoba.Server.Host.Sessions
 
             if (_context.ActiveBuildWindow != null)
             {
+                AutoResolveDisconnectedPlayersInBuildWindow();
+
+                if (_matchManager.AdvanceIfReady(_context))
+                {
+                    await _broadcaster.BroadcastBuildWindowClosedAsync();
+                    if (_context.IsMatchOver)
+                    {
+                        await _broadcaster.BroadcastPhaseAsync(ServerPhaseKind.MatchEnded);
+                        await _broadcaster.BroadcastMatchEndedAsync();
+                        return true;
+                    }
+
+                    _battleLockedPlayerIds.Clear();
+                    _battleLockCooldownUntilUnixMsByPlayer.Clear();
+                    BeginActiveBattleRoundIfNeeded();
+                    await _broadcaster.BroadcastMatchStartedAsync();
+                    await _broadcaster.BroadcastBattlePhaseAndSnapshotAsync();
+                    return true;
+                }
+
                 await _broadcaster.BroadcastPhaseAsync(ServerPhaseKind.BuildWindow);
                 await _broadcaster.BroadcastBuildWindowOpenedAsync();
                 return true;
@@ -458,6 +479,21 @@ namespace CardMoba.Server.Host.Sessions
             await _broadcaster.BroadcastMatchStartedAsync();
             await _broadcaster.BroadcastBattlePhaseAndSnapshotAsync();
             return true;
+        }
+
+        private void AutoResolveDisconnectedPlayersInBuildWindow()
+        {
+            if (_context.CurrentPhase != MatchPhase.BuildWindow || _context.ActiveBuildWindow == null)
+                return;
+
+            foreach (var playerId in _disconnectedPlayerIds.ToList())
+            {
+                if (!_context.ActiveBuildWindow.PlayerWindows.TryGetValue(playerId, out var playerWindow) || playerWindow.IsLocked)
+                    continue;
+
+                _matchManager.ApplyDefaultBuildChoicesAndLock(_context, playerId, _context.Ruleset.DefaultTimeoutAction);
+                _logger.LogInformation("对局 {MatchId} 玩家 {PlayerId} 已处于离线状态，构筑窗口打开时自动补齐默认选择并锁定。", _context.MatchId, playerId);
+            }
         }
 
         private static BuildChoice ToRuntimeBuildChoice(BuildChoiceDto dto)

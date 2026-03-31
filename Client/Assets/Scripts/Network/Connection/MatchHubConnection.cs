@@ -20,7 +20,7 @@ namespace CardMoba.Client.Network.Connection
     public sealed class MatchHubConnection : IMatchHubConnection
     {
         private const char RecordSeparator = '\u001e';
-        private static readonly TimeSpan PingInterval = TimeSpan.FromSeconds(10);
+        private static readonly TimeSpan PingInterval = TimeSpan.FromSeconds(2);
         private static readonly JsonSerializerSettings JsonSettings = new JsonSerializerSettings
         {
             ContractResolver = new CamelCasePropertyNamesContractResolver(),
