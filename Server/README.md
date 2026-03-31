@@ -1,72 +1,102 @@
-# Server - ASP.NET Core 后台服务
+# Server
 
-## 技术环境
-- ASP.NET Core 7.0 / 8.0
-- SignalR（WebSocket长连接管理）
-- Entity Framework Core（MySQL ORM）
-- StackExchange.Redis（Redis客户端）
-- Protobuf-net（协议序列化）
+当前服务端是一个 `ASP.NET Core + SignalR` 的本机联机 MVP 骨架，目标是先把 `MatchFlow + BattleCore` 放到服务端做权威托管，而不是一开始就做完整后台。
 
-## MVP架构（4层极简架构）
-单台2核4G云服务器即可运行，开发周期4-6周。
-```
-客户端 → 网关层 → 核心逻辑层 → 数据存储层
-```
+## 当前定位
 
-## 目录结构
-```
+- 只支持 `localhost 1v1`
+- 只支持内存房间
+- 只托管整局 `4+1`
+- 不包含账号、数据库、匹配、重连恢复
+
+## 当前结构
+
+```text
 Server/
-├── src/
-│   ├── CardMoba.Gateway/            # 网关层 - 客户端连接唯一入口
-│   │   ├── Hubs/                    # SignalR Hub（WebSocket连接管理）
-│   │   ├── Middleware/              # 中间件（心跳检测、协议校验、AES加密）
-│   │   └── Filters/                # 过滤器（非法请求拦截、签名校验）
-│   │
-│   ├── CardMoba.AccountService/     # 账号服务
-│   │   ├── Controllers/            # API接口（登录、注册、密码找回）
-│   │   ├── Services/               # 业务逻辑（账号管理、卡组CRUD）
-│   │   └── Models/                 # 请求/响应模型
-│   │
-│   ├── CardMoba.MatchService/       # 匹配服务
-│   │   ├── Services/               # 匹配逻辑（队列管理、匹配规则、超时放宽）
-│   │   └── Models/                 # 匹配相关数据模型
-│   │
-│   ├── CardMoba.RoomService/        # 房间服务（后台核心模块）
-│   │   ├── Services/               # 房间生命周期管理（创建→对局→结束→销毁）
-│   │   ├── Models/                 # 房间/对局状态模型
-│   │   └── Handlers/              # 玩家操作处理（收集、校验、结算调度）
-│   │
-│   ├── CardMoba.ConfigService/      # 配置服务
-│   │   ├── Services/               # 配置加载、热重载、版本管理
-│   │   └── Models/                 # 配置缓存模型
-│   │
-│   ├── CardMoba.Common/             # 公共模块
-│   │   ├── Constants/              # 常量定义
-│   │   ├── Utils/                  # 工具类
-│   │   ├── Extensions/             # 扩展方法
-│   │   └── Middleware/             # 公共中间件
-│   │
-│   └── CardMoba.DataAccess/         # 数据访问层
-│       ├── Repositories/           # 仓储模式（MySQL数据操作）
-│       ├── Entities/               # 数据库实体（player_account, player_deck, battle_record）
-│       ├── Redis/                  # Redis操作（在线状态、房间状态、匹配队列、配置缓存）
-│       └── Migrations/             # EF Core数据库迁移
-│
-├── tests/                           # 单元测试
-│   ├── CardMoba.BattleCore.Tests/   # 结算库测试
-│   ├── CardMoba.RoomService.Tests/  # 房间服务测试
-│   └── CardMoba.MatchService.Tests/ # 匹配服务测试
-│
-└── sql/                             # 数据库脚本
-    └── init.sql                     # 初始化建表SQL
+├─ CardMoba.Server.sln
+├─ README.md
+├─ sql/
+│  └─ init.sql
+└─ src/
+   └─ CardMoba.Server.Host/
+      ├─ Program.cs
+      ├─ Config/
+      ├─ Hubs/
+      ├─ Services/
+      ├─ Sessions/
+      └─ Snapshots/
 ```
 
-## 核心数据存储
-- **MySQL 8.0**：玩家永久数据（账号表、卡组表、对局记录表）
-- **Redis 7.0**：高频临时数据（在线状态、房间状态、匹配队列、配置缓存）
+## 目录职责
 
-## 防作弊设计
-1. 操作全量校验：所有操作必须经过服务端合法性校验
-2. 信息按需下发：非公开信息绝对不下发到客户端
-3. 通信加密：AES对称加密 + 签名校验
-4. 异常行为检测：实时检测异常操作频率与数值变化
+### Config
+
+- `ServerCardCatalog`
+  - 读取卡牌配置
+- `ServerBuildCatalogFactory`
+  - 为服务端生成 `IBuildCatalog`
+- `ServerBattleFactoryFactory`
+  - 装配 `BattleFactory`
+- `LocalMatchTemplateFactory`
+  - 生成当前本地联机测试用的 `4+1` 模板
+
+### Hubs
+
+- `MatchHub`
+  - SignalR 入口
+  - 接收客户端请求并转发给会话层
+
+### Services
+
+- `LocalMatchRegistry`
+  - 管理未开始房间
+- `MatchSessionManager`
+  - 管理已开始对局
+- `MatchConnectionRegistry`
+  - 管理连接与玩家映射
+
+### Sessions
+
+- `MatchSession`
+  - 权威对局宿主
+- `MatchCommandDispatcher`
+  - 处理战斗命令与构筑命令
+- `MatchBroadcaster`
+  - 负责阶段消息、快照与拒绝消息广播
+
+### Snapshots
+
+- `BattleSnapshotBuilder`
+- `BuildWindowSnapshotBuilder`
+
+职责是把运行时对象裁剪成协议 DTO，不直接向客户端暴露 `BattleContext` 或 `BuildWindowState`。
+
+## 启动方式
+
+在仓库根目录执行：
+
+```powershell
+dotnet run --project Server\src\CardMoba.Server.Host\CardMoba.Server.Host.csproj
+```
+
+默认 Hub 地址：
+
+```text
+http://127.0.0.1:5000/hubs/match
+```
+
+## 当前规则
+
+- 服务端权威推进整局 `MatchFlow`
+- 双方都锁定时可提前推进
+- 当前已支持锁定/取消锁定
+- 当前已支持构筑窗口提交与锁定
+- 当前断线先按默认动作/默认锁定兜底
+
+## 当前已知后补项
+
+- 操作期倒计时与超时推进
+- 更完整的断线恢复
+- 服务端权威战斗事件流
+- 房间生命周期清理细化
+- 2v2 扩展

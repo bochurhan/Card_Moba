@@ -1,619 +1,149 @@
-﻿# Card_Moba 待办事项 (TODO)
-
-**更新日期**：2026年03月05日
-
-> ⚠️ **BattleCore V2 重构已启动（2026-03-04）**  
-> 当前 Sprint 切换为大规模重构，V1 阶段的 P0/P1 风险不再单独修复（将在 V2 中系统性解决）。  
-> 完整重构计划：[BattleCoreRefactorPlan.md](BattleCoreRefactorPlan.md)
-
----
-
-## 🔥 当前 Sprint - BattleCore V2 重构
-
-**更新**：2026-03-05 — 集成测试全部通过，旧版代码归档完毕。
-
-| Phase | 内容 | 状态 |
-|-------|------|------|
-| Phase 0 | 基础数据结构（Foundation） | ✅ 完成 |
-| Phase 1 | BattleContext + 管理器骨架 | ✅ 完成 |
-| Phase 2 | SettlementEngine + Handlers | ✅ 完成 |
-| Phase 3 | TriggerManager 完整实现 | ✅ 完成 |
-| Phase 4 | CardManager 完整实现 | ✅ 完成 |
-| Phase 5 | BuffManager + EventBus + Resolvers | ✅ 完成 |
-| Phase 6 | BattleFactory（战斗启动入口） | ✅ 完成 |
-| Phase 7 | 集成测试（xUnit 8项全通过） | ✅ 完成 |
-| Phase 8 | 首批卡牌配置 + 客户端接入 | 🟡 进行中 |
-
-### ✅ V2 已完成模块清单（2026-03-04）
-
-| 文件 | 说明 |
-|------|------|
-| `Foundation/Entity.cs` | 运行时实体（HP/Shield/Armor/Invincible/Silenced）|
-| `Foundation/BattleCard.cs` | 战斗卡牌实例（Zone 流转）|
-| `Foundation/EffectUnit.cs` | 效果原子（表达式 + 条件 + 层级）|
-| `Foundation/EffectResult.cs` | 效果执行结果（PerTargetValues）|
-| `Foundation/TriggerUnit.cs` | 触发器描述（支持 InlineExecute lambda）|
-| `Foundation/TriggerTiming.cs` | 完整触发时机枚举（含 OnStatCardHeld）|
-| `Foundation/BuffUnit.cs` | Buff 实例（StackRule / RemainingRounds）|
-| `Foundation/CardZone.cs` | 卡牌区域枚举（Hand/Deck/Discard/StrategyZone/StatZone）|
-| `Foundation/SettlementLayer` | 结算层枚举（Counter/Defense/Damage/Resource/BuffSpecial）|
-| `Context/BattleContext.cs` | 唯一状态容器（所有管理器挂载于此）|
-| `Context/PlayerData.cs` | 玩家数据（HeroEntity + AllCards + DefenseSnapshot）|
-| `Context/LaneData.cs` | 分路数据（预留扩展）|
-| `Core/PendingEffectQueue.cs` | 延迟效果队列（触发器产生的子效果）|
-| `Core/SettlementEngine.cs` | 五层结算引擎（Layer 0-4 + DrainPendingQueue）|
-| `Core/RoundManager.cs` | 回合生命周期（BeginRound/EndRound/死亡检查）|
-| `Core/BattleFactory.cs` | **战斗工厂（组装所有对象 + 启动入口）** ← 新增 |
-| `Managers/TriggerManager.cs` | 触发器注册/Fire/TickDecay（按时机分组存储）|
-| `Managers/BuffManager.cs` | Buff CRUD + 触发器/修正器生命周期同步 |
-| `Managers/CardManager.cs` | 卡组初始化/抽牌/区域流转/临时牌生命周期 |
-| `Managers/ValueModifierManager.cs` | 数值修正（Add/Mul/Set，Add→Mul→Set 顺序）|
-| `Handlers/HandlerPool.cs` | Handler 注册表 + 条件检查 + 表达式解析前置 |
-| `Handlers/CoreHandlers.cs` | Damage/Heal/Shield/AddBuff/DrawCard/GenerateCard |
-| `Handlers/IEffectHandler.cs` | Handler 接口定义 |
-| `Resolvers/DynamicParamResolver.cs` | 表达式求值（{{self.hp}}、算术、preEffect 引用）|
-| `Resolvers/ConditionChecker.cs` | 效果/触发器条件检查（hasBuff/比较/百分比）|
-| `Resolvers/TargetResolver.cs` | 目标解析（Self/Opponent/AllEnemies 等）|
-| `EventBus/BattleEventBus.cs` | 事件总线（Subscribe/Publish/Unsubscribe）|
-| `EventBus/BattleEvents.cs` | 所有事件类型（DamageDealt/Heal/Shield/CardDrawn…）|
-| `Random/SeededRandom.cs` | 确定性随机（Fisher-Yates 洗牌）|
-
-### ✅ Phase 7 完成 — 集成测试（2026-03-05）
-
-- [x] **编写集成测试**（`Tests/BattleCore.Tests/BattleCoreIntegrationTests.cs`）
-  - [x] T-01 `BattleFactory` 创建战斗 + 玩家注册验证
-  - [x] T-02 瞬策伤害牌 → 敌方 HP 正确扣减
-  - [x] T-03 治疗牌 → HP 恢复且不超上限
-  - [x] T-04 护盾先吸伤害 → HP 不受影响；护盾耗尽后扣 HP
-  - [x] T-05 定策牌批量结算 → 双方同回合互相造成伤害
-  - [x] T-06 HP 归零 → 战斗结束 + 胜者正确
-  - [x] T-07 相同种子两场战斗 → 结果完全一致（确定性随机验证）
-  - [x] T-08 多回合战斗 → 累计伤害超过 HP 上限后战斗结束
-  - **结果：8/8 通过，耗时 21ms**
-
-### 🟡 Phase 8 进行中 — 首批卡牌配置 + 客户端接入
-
-- [ ] **首批卡牌配置（Config/Excel/Cards.csv）**
-  - [ ] 3 张基础伤害定策牌（Damage Layer 2）
-  - [ ] 2 张护盾防御定策牌（Shield Layer 1）
-  - [ ] 1 张吸血卡（Damage + AddBuff 组合）
-  - [ ] 1 张反制牌（Counter Layer 0）
-
-- [ ] **客户端接入（BattleGameManager 对接 V2 API）**
-  - [ ] `BattleGameManager.StartBattle()` 调用 `BattleFactory.CreateBattle()`
-  - [ ] UI 订阅 `EventBus`（`DamageDealtEvent` / `HealEvent` / `RoundStartEvent`）
-
----
-
-## 📌 V1 阶段历史记录 - 核心结算引擎完善（已归档）
-
-### 优先级 P0（必须）
-
-- [x] **实现 SettlementEngine 四层结算**
-  - [x] Layer 0: 反制结算 (`ResolveLayer0_Counter`)
-  - [x] Layer 1: 防御/修正结算 (`ResolveLayer1_Defense`)
-  - [x] Layer 2: 伤害结算 (`ResolveLayer2_Damage` + Step1/Step2)
-  - [x] Layer 3: 功能效果结算 (`ResolveLayer3_Utility` + 普通/传说两个子阶段)
-  - 参考文档: [SettlementRules.md](../GameDesign/SettlementRules.md)
-
-- [x] **完善 BattleContext 数据结构**
-  - [x] `PlayerBattleState` 完整实现（护盾、护甲、Buff列表）
-  - [x] `LaneState` 分路状态管理
-  - [x] `PlayedCard` 运行时卡牌实例
-
-- [x] **实现 SeededRandom**
-  - [x] Fisher-Yates 洗牌算法（`Shuffle<T>` 泛型重载）
-  - [x] 确保客户端/服务端结果一致（Seed 传入构造，纯确定性计算）
-
-### 优先级 P1（重要）
-
-- [x] **卡牌效果系统（Handler 机制）**
-  - [x] `IEffectHandler` 接口定义（替代原 `ICardEffect`）
-  - [x] `DamageHandler` 伤害效果
-  - [x] `ShieldHandler` 护盾效果
-  - [x] `DrawHandler` 抽牌效果
-  - [x] `StunHandler` 晕眩效果
-  - [x] `HealHandler` 治疗效果
-  - [x] `CounterHandler` 反制效果
-  - [x] `HandlerRegistry` 注册表（29种 EffectType 全部注册）
-
-- [x] **目标解析器 (`TargetResolver`)**
-  - [x] 解析 `EffectRange` 枚举（12种范围类型全覆盖）
-  - [x] 支持跨路目标判定（`AdjacentLanes`、`SpecifiedLane`）
-  - [x] 分路内目标筛选（`CurrentLaneEnemies`、`CurrentLaneAllies`）
-  - [x] 随机目标支持（`RandomEnemy`、`RandomAlly`，使用 SeededRandom）
-
----
-
-## 📋 Sprint 2.2 - 配置与数据
-
-- [ ] **ExcelConverter 工具优化**
-  - [x] 基础 CSV → JSON 转换
-  - [ ] 支持多 Sheet 导出
-  - [ ] 数据校验（ID唯一性、枚举合法性）
-  - [ ] 批量导出命令
-
-- [ ] **Unity 配置加载器**
-  - [ ] `ConfigManager` 单例
-  - [ ] JSON 反序列化到 `CardConfig`
-  - [ ] 运行时配置热更新支持
-
-- [ ] **卡牌数据填充**
-  - [ ] 设计 10 张基础瞬策牌（抽牌、能量）
-  - [ ] 设计 20 张基础定策牌（伤害、防御、控制）
-  - [ ] 设计 3 张反制牌原型
-
----
-
-## 🚀 Sprint 2.3 - 回合流程
-
-- [ ] **RoundStateMachine 回合状态机**
-  - [ ] 7 阶段流转实现
-  - [ ] 阶段超时处理
-  - [ ] 服务端推送阶段变更
-
-- [ ] **操作窗口期**
-  - [ ] 瞬策牌即时执行
-  - [ ] 定策牌提交/修改/取消
-  - [ ] 操作锁定与超时自动锁定
-
-- [ ] **客户端预测与校正**
-  - [ ] 本地预计算结算
-  - [ ] 服务端结果校正机制
-  - [ ] 动画播放与校正回滚
-
----
-
-## 🔮 未来规划
-
-### 分路系统（Sprint 3.x）
-- [ ] 分路状态管理（双路结构，无显式站位）
-- [ ] 死斗阶段双路合流
-- [ ] 死斗入场护盾结算（推进折算 + 生命保底）
-- [ ] 死斗持续失血递增曲线
-
-### 局内构筑系统（Sprint 3.x）
-- [ ] 构筑窗口触发时机（每场战斗结束后）
-- [ ] 四类操作实现：拿卡 / 删卡 / 升级 / 回血
-- [ ] 拿卡 3 选 1 + 稀有度分布（白:蓝:金 = 6:3:1）
-- [ ] 击杀加选判定（团队本阶段产生击杀可额外多选 1）
-- [ ] 候选池配置（按英雄/阶段/目标分层）
-- [ ] 升级效果配置（数值型 vs 机制型）
-
-### 团队目标系统（Sprint 4.x）
-- [ ] 团队目标首个正式模板（完整说明 + 3 个奖励 + 进度来源 + 阈值 + UI 结构）
-- [ ] 完成度计算逻辑（基础进度 + 额外进度 + 防刷规则）
-- [ ] 奖励结算流程（死斗前，先/后完成方选择）
-- [ ] 团队目标与构筑窗口的联动上限测试
-
-### 英雄与卡牌内容（Sprint 3.x–4.x）
-- [ ] 首批 4 个英雄原型（战术定位 / 核心机制 / 对线职责 / 代表牌）
-- [ ] 基础牌与职业牌边界明确（哪些基础牌全英雄共享）
-- [ ] 首批卡牌样例（基础瞬策牌 + 基础定策牌 + 职业牌各英雄 1 套）
-
-### 网络同步（Sprint 5.x）
-- [ ] SignalR 消息定义
-- [ ] 心跳与重连机制
-- [ ] 战斗状态同步协议
-
----
-
-## ⚠️ BattleCore 架构风险清单（2026-03-01 评审）
-
-> 来源：对 `SettlementEngine`、`BattleContext`、`BuffManager`、`TriggerManager`、`DamageHelper` 五个核心文件的全量代码审查。
-> 分级：🔴 高风险（需尽快修复）/ 🟡 中风险（功能正确但脆弱）/ 🟢 低风险（轻微或设计取舍）
-
----
-
-### ✅ R-01：Thorns 触发器 Source/Target 语义颠倒（已修复 2026-03-01 ✅）
-
-**修复内容**：  
-在 `TriggerTypes.cs` 的 `TriggerContext.SourcePlayerId` 上新增完整触发时机语义对照表，
-明确约定 `AfterTakeDamage` 中 `SourcePlayerId=受伤方`、`TargetPlayerId=攻击方`。
-该约定在 `BuffManager`（Thorns 触发器）、`SettlementEngine`（Layer2-Step1 阶段C）三处一致。
-
----
-
-### 🔴 R-02：DOT 触发器绕过 DamageHelper，无敌/护盾/减免对 Poison/Burn/Bleed 无效（待修复 · P0 🔴）
-
-**位置**：`Shared/BattleCore/Buff/BuffManager.cs` `RegisterBuffTriggers` → `BuffType.Poison/Burn/Bleed` 分支，第 463 行
-
-**问题**：  
-Poison、Burn、Bleed 的 `OnRoundEnd` 触发器直接执行 `_owner.Hp -= dmg`，完全绕过 `DamageHelper.ApplyDamage`，导致以下规则对 DOT 全部失效：
-- 无敌状态（`IsInvincible`）
-- 护盾吸收（`Shield`）
-- 伤害减免（`DamageReductionPercent`）
-- `BeforeTakeDamage` 触发器（可修改/取消伤害的触发器）
-- `OnNearDeath` 触发器（复活 Buff 不会被 DOT 触发）
-
-**修复方案**：见下方"R-02 详细说明"章节。
-
-**优先级**：P0（规则严重缺失，无敌时仍受 DOT 属于明显 bug）
-
----
-
-### 🔴 R-03：Buff/Trigger 双重生命周期不同步，存在触发器泄漏风险（待修复 · P1 🔴）
-
-**位置**：`BattleContext.OnRoundEnd()` 步骤2（`BuffManager.OnRoundEnd`）与步骤3（`TriggerManager.OnRoundEnd`）
-
-**问题**：  
-- `BuffManager.OnRoundEnd` 在 Buff 到期时调用 `UnregisterBuffTriggers`，从 `TriggerManager` 中删除触发器。
-- `TriggerManager.OnRoundEnd` 随后再对剩余触发器做 `RemainingRounds--` 衰减。
-- 若触发器注册时 `remainingRounds = -1`（永久），而 Buff 有限时长，Buff 到期后 `UnregisterBuffTriggers` 正常清理。但若 `RemoveBuff` 的调用路径发生异常或被提前拦截，触发器就成为孤儿，永久挂在 `TriggerManager` 中持续触发。
-- Buff 持续时间和触发器持续时间是两个独立计数，设计上要求它们始终同步，但没有任何断言或校验机制保证这一点。
-
-**修复方案**：  
-在触发器注册时，将 `remainingRounds` 始终与 Buff 的 `RemainingRounds` 保持一致，或改为"触发器生命周期完全由 BuffManager 管理，TriggerManager 不做独立衰减"的单一所有权模式。添加战斗结束时的孤儿触发器检测断言。
-
-**优先级**：P1
-
----
-
-### ✅ R-04：SettlementEngine Layer2 批量伤害路径覆盖验证（已关闭 2026-03-01 ✅）
-
-**确认内容**：  
-`ResolveLayer2_Step1_Damage` 三阶段（A收集 / B写入 / C触发）已完整覆盖 `DamageHelper` 的等效逻辑：
-- 阶段A：`BeforeDealDamage` 触发器（可取消/修改出伤）
-- 阶段B：无敌检查 → `BeforeTakeDamage` → 护盾吸收 → 累计 delta 扣血（批量语义，避免同回合多伤互相干扰）
-- 阶段C：`AfterDealDamage` / `AfterTakeDamage` / `OnNearDeath` / 复活校验 统一补齐
-
-批量路径是 `DamageHelper.ApplyDamage`（单次）的等效替代，语义正确，触发器全部正常响应。
-
-**优先级**：已关闭
-
----
-
-### ✅ R-05：两套触发效果并行路径合并（已修复 2026-03-01 ✅）
-
-**修复内容**：  
-- 彻底删除旧的 `PendingTriggerEffects` 触发路径，包括：
-  - `BattleContext.PendingTriggerEffects` 字段（`List<PendingTriggerEffect>`）
-  - `BattleContext.HasChainTriggeredThisRound` 字段（连锁封顶标志）
-  - `BattleContext.PendingTriggerEffect` 类定义
-  - `SettlementEngine.ResolveLayer2_Step2_Triggers` 方法
-  - `ClearRoundData` 中 `PendingTriggerEffects.Clear()` 调用
-- 现在唯一触发路径：`BuffManager.RegisterBuffTriggers` → `TriggerManager` → Layer2-阶段C `FireTriggers(AfterDealDamage/AfterTakeDamage)`
-- 吸血、反伤、ArmorOnHit 均由 `TriggerManager` 统一调度，不再存在双重执行风险
-
-**优先级**：已关闭
-
----
-
-### ✅ R-06：`GetPlayer` O(n) 线性查找 → O(1) 字典优化（已修复 2026-03-01 ✅）
-
-**修复内容**：  
-- `BattleContext` 新增 `_playerMap`（`Dictionary<string, PlayerBattleState>`）私有字段
-- 新增 `RegisterPlayer(PlayerBattleState)` 公开方法，替代直接 `Players.Add`，同步写入字典
-- `GetPlayer(string)` 改为 `_playerMap.TryGetValue(playerId, out var p) ? p : null`，O(1) 查找
-- `Initialize(seed)` 重建 `_playerMap` 与 `Players` 列表的同步（支持 `Initialize` 前通过 `RegisterPlayer` 填充的场景）
-- `RoundManager.InitBattle` 中 `ctx.Players.Add(p1/p2)` 改为 `ctx.RegisterPlayer(p1/p2)`
-
-**优先级**：已关闭
-
----
-
-### 🟡 R-07：`TryStack` 后 `ApplyBuffModifiers` 全量叠加，数值型 Buff 叠加时属性翻倍（待修复 · P1 🟡）
-
-**位置**：`BuffManager.AddBuff`，叠加分支第 78 行 `ApplyBuffModifiers(_buffs[i])`
-
-**问题**：  
-`TryStack` 会将新 Buff 的 Value 合并到已有 Buff（使 `TotalValue` 增大），随后 `ApplyBuffModifiers` 再次执行 `_owner.Armor += buff.TotalValue`，这是全量值而不是差值。  
-例：Armor Buff 初始 `Value=5` → `Armor+=5`。再叠加一层 `Value=5`，`TotalValue=10`，此时 `ApplyBuffModifiers` 执行 `Armor+=10`，玩家护甲净增 15 而非 5。
-
-**修复方案**：  
-叠加时 `ApplyBuffModifiers` 应只应用**差值**（`newTotalValue - oldTotalValue`），或先 `RemoveBuffModifiers(旧值)` 再 `ApplyBuffModifiers(新值)`。
-
-**优先级**：P1（属性型 Buff 叠加全部受影响）
-
----
-
-### ✅ R-08：`ClearRoundData` 清空 `RoundLog`，历史日志持久化（已修复 2026-03-01 ✅）
-
-**修复内容**：  
-- `BattleContext` 新增 `HistoryLog`（`List<List<string>>`）公开字段，存储每回合的日志快照
-- `ClearRoundData()` 在 `RoundLog.Clear()` 前执行 `if (RoundLog.Count > 0) HistoryLog.Add(new List<string>(RoundLog))`，将当前回合日志做浅拷贝存入历史
-- 历史日志按回合顺序追加，战斗结束后全程可查（支持未来的回放 / UI 动画序列器接入）
-- `ResetBattle()` 中同步执行 `HistoryLog.Clear()`，确保多局之间不留脏数据
-
-**优先级**：已关闭
-
----
-
-### 🟢 R-09：`TriggerManager.UnregisterTrigger` 全字典遍历（低风险）
-
-**位置**：`TriggerManager.UnregisterTrigger`
-
-**问题**：注销单个触发器时遍历所有 timing 字典，O(timing 数 × trigger 数)。可在 `TriggerInstance` 上缓存 `Timing` 字段，直接定位后 O(1) 删除。
-
-**优先级**：P3
-
----
-
-### 🟢 R-10：最后一回合 DOT 触发时机语义歧义（低风险）
-
-**位置**：`BattleContext.OnRoundEnd` 的调用顺序（FireTriggers → BuffManager.OnRoundEnd）
-
-**问题**：  
-回合结束时先执行 DOT 触发器扣血，再衰减 Buff 持续时间。因此"持续 1 回合的中毒"会在到期前触发 1 次伤害，然后消失。这在设计上可以接受，但需要明确约定：**"N 回合中毒"= 触发 N 次伤害**。当前行为与此一致，但没有文档约定。
-
-**优先级**：P3（需设计确认并写入 GameDesign/SettlementRules.md）
-
----
-
-### 🟢 R-11：`TriggerContext.BattleContext` 冗余字段（低风险）
-
-**位置**：`TriggerContext` 类，`BattleContext BattleContext` 字段
-
-**问题**：触发器 lambda 闭包已经通过 `_ctx` 捕获了 `BattleContext`，`TriggerContext.BattleContext` 是同一引用的重复持有，轻微增加内存和理解成本。
-
-**优先级**：P3
-
----
-
-### R-02 详细说明：DOT 绕过 DamageHelper 的完整影响与修复方案
-
-#### 当前代码路径
-
-```
-BattleContext.OnRoundEnd()
-  └─ TriggerManager.FireTriggers(OnRoundEnd)
-       └─ BuffManager 注册的 Poison/Burn/Bleed 触发器 lambda
-            └─ _owner.Hp -= dmg        ← 直接写 Hp，无任何中间层
-               _owner.DamageTakenThisRound += dmg
-```
-
-#### 失效的规则一览
-
-| 规则 | 失效原因 | 游戏表现 |
-|------|----------|----------|
-| 无敌（IsInvincible） | `DamageHelper` 步骤1检查，被绕过 | 无敌状态下依然受到中毒伤害 |
-| 护盾吸收（Shield） | `DamageHelper` 步骤3处理，被绕过 | 护盾不能抵挡 DOT 伤害 |
-| 伤害减免（DamageReductionPercent） | `CalculateIncomingDamage` 在 `DamageHelper` 步骤2调用，被绕过 | 50% 减伤对中毒无效 |
-| BeforeTakeDamage 触发器 | 只在 `DamageHelper` 中触发 | 无法用卡牌拦截/减少 DOT |
-| AfterTakeDamage 触发器 | 只在 `DamageHelper` 中触发 | Thorns 不会响应 DOT（若目标被中毒） |
-| OnNearDeath 触发器 | 只在 `DamageHelper` 中触发 | 复活 Buff 不会被 DOT 致死触发 |
-| 战斗事件记录 | `EventRecorder.RecordDamage` 在 `DamageHelper` 中调用 | DOT 伤害不出现在战斗事件流中 |
-
-#### 修复方案
-
-将 DOT 触发器 lambda 改为调用 `DamageHelper.ApplyDamage`，并传入 `triggerCallbacks: false` 防止 DOT → Thorns → DOT 的无限递归：
-
-```csharp
-// 修复前（有问题）
-case BuffType.Poison:
-case BuffType.Burn:
-case BuffType.Bleed:
-{
-    var capturedBuff = buff;
-    string triggerId = _ctx.TriggerManager.RegisterTrigger(
-        timing: TriggerTiming.OnRoundEnd,
-        ownerPlayerId: ownerId,
-        effect: trigCtx =>
-        {
-            int dmg = capturedBuff.TotalValue;
-            _owner.Hp -= dmg;                      // ← 直接扣血
-            _owner.DamageTakenThisRound += dmg;
-            // ... 日志 ...
-        }
-    );
-}
-
-// 修复后（走 DamageHelper）
-case BuffType.Poison:
-case BuffType.Burn:
-case BuffType.Bleed:
-{
-    var capturedBuff = buff;
-    string triggerId = _ctx.TriggerManager.RegisterTrigger(
-        timing: TriggerTiming.OnRoundEnd,
-        ownerPlayerId: ownerId,
-        effect: trigCtx =>
-        {
-            int dmg = capturedBuff.TotalValue;
-            // triggerCallbacks: false —— 防止 DOT 触发 Thorns 再触发 DOT 死循环
-            DamageHelper.ApplyDamage(
-                _ctx,
-                sourceId: capturedBuff.SourcePlayerId,  // 中毒来源玩家
-                targetId: ownerId,                       // 中毒承受者
-                baseDamage: dmg,
-                triggerCallbacks: false,                 // 阻断递归
-                ignoreArmor: false,                      // 护甲正常减免（设计取舍：可改为 true）
-                damageSource: capturedBuff.BuffName
-            );
-        }
-    );
-}
-```
-
-#### 关于 `triggerCallbacks: false` 的设计取舍
-
-`triggerCallbacks: false` 阻断了 DOT 触发后续的 `AfterTakeDamage`（Thorns 不会响应中毒），这是否符合游戏设计需要明确：
-
-| 选项 | 效果 | 适用场景 |
-|------|------|----------|
-| `triggerCallbacks: false` | DOT 不触发反伤、不触发二次 DOT | 简单安全，推荐默认 |
-| `triggerCallbacks: true` | DOT 可触发反伤，但需配合触发深度保护（R-03 修复）防止死循环 | 需要实现"中毒被反伤回去"的复杂互动时 |
-
-**建议**：当前阶段使用 `triggerCallbacks: false`；待触发深度保护（R-03 修复，即 TD-01 中的 `MaxTriggerDepth = 8`）实现后，可改为 `true` 以支持更丰富的连锁交互。
-
-#### 需要同步检查的其他直接扣血位置
-
-修复 R-02 时，以下位置也需要检查是否存在相同的绕过问题：
-- `BuffManager` 中 `Resurrection` 触发器的 `_owner.Hp = Math.Max(...)` —— 这是治疗，可以不走 DamageHelper，但应走 `DamageHelper.ApplyHeal`
-- ~~`SettlementEngine.ResolveLayer2_Step2_Triggers`~~ — 已由 R-05 修复彻底删除，Thorns/Lifesteal 统一走 `TriggerManager`
-
----
-
-## 🔧 技术债 - 待处理（优先级高）
-
-### TD-01/TD-04（合并）：Buff / Trigger 协作架构重构（优先级：中，1v1玩法验证后执行）
-
-**问题根源**：  
-TD-01 和 TD-04 本质是同一个问题——`BuffManager` 的职责边界不清晰，导致两个层面的混乱：
-1. `BuffManager.TriggerBuffEffect()` 自己直接执行触发逻辑（扣血/反伤），与 `TriggerManager` 功能重叠
-2. `BuffInstance` 数据存放在 `BuffManager._buffs` 内部而非 `PlayerBattleState`，导致序列化困难
-
-**目标架构**（详见 [SystemArchitecture.md](../TechGuide/SystemArchitecture.md) Buff/Trigger 协作架构节）：
-
-```
-PlayerBattleState.ActiveBuffs    ← Buff 纯数据，住在玩家状态（可序列化）
-BuffManager（薄中介）             ← 只做 CRUD + 向 TriggerSystem 注册/注销回调
-TriggerSystem（事件总线）         ← 维护 Fire 节点 + 按 BuffType 分派静态处理函数
-```
-
-**具体改造步骤**：
-
-1. **迁移数据**：将 `BuffManager._buffs` 移入 `PlayerBattleState.ActiveBuffs`，`BuffManager` 改为操作 `PlayerBattleState` 的工具类。
-
-2. **瘦身 BuffManager**：只保留：
-   - `AddBuff()` — CRUD + 向 `TriggerSystem` 注册回调
-   - `RemoveBuff()` — CRUD + 向 `TriggerSystem` 注销回调
-   - `TickDecay()` — 回合衰减（调用 `RemoveBuff` 而非直接删 list）
-   - 删除 `OnDamageTaken()`、`OnDamageDealt()`、`TriggerBuffEffect()` 等触发逻辑
-
-3. **扩展 TriggerSystem**：增加 `BuffHandlerTable`（`Dictionary<BuffType, Action<BuffInstance, TriggerEvent, BattleContext>>`），将原 `BuffManager` 里的触发逻辑迁移为静态函数。
-
-4. **确认 Fire 节点完整**：确保 `SettlementEngine` 和 `RoundStateMachine` 中的 Fire 节点清单（约 11 个）全部到位。
-
-5. **加入触发深度保护**：`TriggerSystem.Fire()` 中加入 `_triggerDepth` 计数，超过 `MaxTriggerDepth = 8` 时截断并记录警告。
-
-6. **清理冗余字段**：移除 `StunnedRounds`、`SilencedRounds` 等字段（与 TD-02 合并处理）。
-
-**执行时机**：1v1 对战玩法跑通、第一批测试卡牌设计完成后。  
-**影响范围**：`BuffManager.cs`、`PlayerBattleState.cs`、`TriggerSystem.cs`、`SettlementEngine.cs`、所有 Handler。
-
----
-
-### TD-02：PlayerBattleState 三套衰减机制并存（优先级：高）
-
-**问题**：状态衰减逻辑分散在三处，互不统一：
-1. `PlayerBattleState.OnRoundStart()` — 直接 `SilencedRounds--`、`StunnedRounds--`
-2. `PlayerBattleState.ActiveBuffs` — 独立的 Buff 列表，`OnRoundStart` 里 `RemainingRounds--`
-3. `BuffManager._buffs` — 又一套独立 Buff 列表，`OnRoundEnd` 里做衰减
-
-**改造方向**：  
-以 `BuffManager` 为唯一权威，移除 `PlayerBattleState` 里的 `*Rounds` 字段和 `ActiveBuffs` 列表，所有状态读写统一走 `ctx.GetBuffManager(playerId)`。
-
-**影响范围**：`PlayerBattleState.cs`、`BattleContext.cs`、所有直接读写 `*Rounds` 字段的代码。
-
----
-
-### TD-03：CardEffect 缺少显式 Buff 声明字段（优先级：高）
-
-**问题**：`CardEffect` 里没有显式声明"是否附加 Buff"，Handler 只能靠 `Duration > 0` 猜测，导致效果与 BuffManager 的关联方式不明确，卡牌配置时缺乏强制约束。
-
-**改造方向**：  
-在 `CardEffect` 中添加 `AppliesBuff`、`BuffType`、`BuffStackRule` 字段，卡牌配置时必须显式声明；Handler 根据 `AppliesBuff` 字段决定是直写字段还是走 `BuffManager.AddBuff()`。
-
-**影响范围**：`CardEffect.cs`、所有 Handler、卡牌配置数据。
-
-**当前状态**：✅ 已完成（字段已添加，Handler 已按 `AppliesBuff` 分派）
-
----
-
-## 🏗️ 架构演进 - 未来可能需要
-
-### 多目标选择系统 (优先级: 低)
-
-**场景**：
-- 选择 2 个友方进行治疗
-- 选择 1 敌 1 友进行位置交换
-- 条件选择（血量最低的敌人）
-
-**当前限制**：
-- `CardConfig.TargetType` 只支持单一目标类型
-
-**解决方案草案**：
-```csharp
-public class TargetSelection
-{
-    public TargetType TargetType { get; set; }
-    public int Count { get; set; } = 1;
-    public string Condition { get; set; } = string.Empty;
-}
-```
-
-**决策**：暂不实施，等有具体卡牌需求时再设计。
-
----
-
-## 📚 文档补充
-
-### TechGuide 待补充
-- [x] ~~Architecture.md~~ → 已以 `SystemArchitecture.md` 完成
-- [x] `ConfigSystem.md` — 已完成
-- [ ] `ClientDev.md` — 客户端开发规范
-- [ ] `ServerDev.md` — 服务端架构
-- [ ] `Tools.md` — 开发工具手册
-
-### API 文档待补充
-- [ ] Enums.md — 枚举定义汇总
-- [ ] Protocol.md — 通信协议规范
-
----
-
-## ✅ 已完成
-
-### 2026-03-02 架构风险清理（R-01/R-04/R-05/R-06/R-08）
-- [x] **R-05 修复**：彻底删除 `PendingTriggerEffects` 双轨触发路径，统一由 `TriggerManager` 单一路径
-- [x] **R-06 修复**：`BattleContext.GetPlayer(id)` 改为 O(1) `_playerMap` 字典查找
-- [x] **R-08 修复**：新增 `HistoryLog` 持久化每回合 `RoundLog`
-- [x] **R-01 修复**：`AfterTakeDamage` 方向约定统一写入代码注释和规则文件
-- [x] **`.codemaker/rules/rules.mdc` 创建**：固化架构红线、命名规范和代码模板
-
-### 2026-02-27 核心结算引擎（Sprint 当前）
-- [x] **SettlementEngine 四层结算完整实现**（Layer 0/1/2/3 + 子阶段）
-- [x] **BattleContext 数据结构完善**（`PlayerBattleState`、`LaneState`、`PlayedCard`）
-- [x] **SeededRandom 实现**（Fisher-Yates 洗牌，纯确定性）
-- [x] **Handler 机制完整搭建**（`IEffectHandler` + 29种 EffectType 注册）
-  - DamageHandler、HealHandler、ShieldHandler、StunHandler、CounterHandler
-  - ArmorHandler、StrengthHandler、VulnerableHandler、WeakHandler、SilenceHandler
-  - SlowHandler、InvincibleHandler、DamageReductionHandler
-  - LifestealHandler、ThornsHandler、ArmorOnHitHandler、PierceHandler
-  - DrawHandler、DiscardHandler、EnergyHandler、DoubleStrengthHandler
-- [x] **TargetResolver 完整实现**（12种 EffectRange 全覆盖，含跨路/随机目标）
-- [x] **CardEffect 显式 Buff 声明字段**（`AppliesBuff`、`BuffType`、`BuffStackRule`、`IsBuffDispellable`）
-- [x] **Handler 层全面改造为走 BuffManager**（Buff 类效果不再直写 PlayerBattleState）
-- [x] **SettlementEngine 集成 BuffManager 回调**（`OnDamageTaken`/`OnDamageDealt`）
-- [x] **TechGuide/SystemArchitecture.md** — Buff/Trigger 协作架构定稿文档
-
-### 2026-02-25 文档重构
-- [x] 文档体系深度重构（Scheme C）
-- [x] GameDesign/Overview.md — 核心玩法概述
-- [x] GameDesign/CardSystem.md — 卡牌系统详解
-- [x] GameDesign/SettlementRules.md — 结算规则详解
-- [x] GameDesign/LaneSystem.md — 分路系统详解
-- [x] GameDesign/CentralTower.md — 中枢塔系统详解
-- [x] TechGuide/QuickStart.md — 5分钟快速入门
-- [x] TechGuide/BattleCore.md — 核心代码解读
-
-### 2026-02-24 配置工具
-- [x] ExcelConverter 基础实现
-- [x] CardEditorWindow Unity 编辑器窗口
-- [x] Excel 模板创建（Cards.xlsx）
-- [x] `E` 前缀 ID 格式避免日期问题
-
-### 2026-03-05 BattleCore V2 集成测试 + 代码归档
-- [x] **集成测试项目搭建**（`Tests/BattleCore.Tests/` — xUnit + FluentAssertions）
-  - [x] `BattleCoreIntegrationTests.cs`：8 项测试全通过（T-01 ~ T-08），耗时 21ms
-  - [x] 测试覆盖：工厂初始化、瞬策伤害、治疗上限、护盾优先、定策批量结算、死亡判定、确定性随机、多回合胜负
-- [x] **编译期 Bug 修复**（测试驱动发现）
-  - [x] `Entity.cs`：补充 `DeathEventFired` 字段（`RoundManager` 引用但缺失）
-  - [x] `HandlerPool.cs`：补充 `using CardMoba.Protocol.Enums`
-  - [x] `TriggerUnit.cs`：补充 `using CardMoba.BattleCore.Managers`（`TriggerContext` 引用）
-  - [x] `RoundManager.cs`：补充 `using CardMoba.BattleCore.Managers`
-  - [x] `BattleEvents.cs`：补充 `BattleStartEvent`、`BattleEndEvent`、`PlayerDeathEvent` 三个缺失事件类
-- [x] **旧版代码归档到 `_Archive_V1/`**
-  - [x] `BattleCore/RoundStateMachine/` → `_Archive_V1/RoundStateMachine/`
-  - [x] `BattleCore/Settlement/` → `_Archive_V1/Settlement/`
-  - [x] `BattleCore/Trigger/` → `_Archive_V1/Trigger/`
-  - [x] `BattleCore/Event/` → `_Archive_V1/Event/`
-  - [x] `BattleCore/Context/` 旧版文件（PlayerBattleState/CardInstance/PlayedCard/LaneState）→ `_Archive_V1/Context/`
-  - [x] `BattleCore/Buff/BuffManager.cs`（旧版 Manager）→ 删除（数据类 BuffConfig/BuffInstance/BuffType 保留）
-  - [x] `Protocol/Enums/TriggerTiming.cs`（空桥接文件）→ `Protocol/_Archive_V1/Enums/`
-  - [x] `Protocol/Enums/RoundPhase.cs`、`EffectConditionType.cs`、`EffectExecutionMode.cs`、`EffectRange.cs`（仅 V1 引用）→ `Protocol/_Archive_V1/Enums/`
-
-### 架构决策
-- [x] **CardSubType 合并到 CardTag** — 统一使用 `Tags` 字段
-- [x] **EffectType 决定结算层** — 100-199/200-299/300-399/400-499
-- [x] CardEffect.TargetOverride 支持效果级目标覆盖
+# Card_Moba 当前待办
+
+**最后更新**：2026-03-31  
+**当前主目标**：完成 `localhost 1v1` 联机 MVP  
+**当前原则**：先跑通 `服务端权威 MatchFlow + 客户端联机 Runtime + 现有 UI`，再补计时、重连、2v2 和持久化
+
+## 1. 已完成基线
+
+以下内容已经具备，不再作为当前 MVP 的阻塞项：
+
+- `Shared/BattleCore`
+  - 单场战斗主流程可运行
+  - 已支持 `BattleRuleset`
+  - 已支持队伍共享 `Objective`
+  - `RoundManager` 可自动产出 `BattleSummary`
+- `Shared/MatchFlow`
+  - 已有整局 `4+1` 骨架
+  - 已支持场间 `BuildWindow`
+  - 已支持 `回血 / 升级 / 删牌 / 拿牌`
+  - 已支持战败惩罚与 `燃烧之血`
+- `Server`
+  - 已有 `ASP.NET Core + SignalR` 本机服务端骨架
+  - 已有 `MatchHub / MatchSession / SnapshotBuilder`
+  - 已支持本地房间、Ready、权威对局推进
+- `Client`
+  - 已有 `IBattleClientRuntime`
+  - UI 已从本地 `BattleGameManager` 抽象出来
+  - 已有联机传输层与 `OnlineBattleClientRuntime`
+- 验证
+  - `BattleCore.Tests` 通过
+  - `Tools/Validate-ClientCompile.ps1` 可用于客户端编译校验
+
+## 2. P0：当前必须完成
+
+### 2.1 联机端到端联调收口
+
+- 跑通双客户端 `localhost 1v1`
+- 逐项确认：
+  - 建房
+  - 入房
+  - Ready
+  - 出牌
+  - 锁定/取消锁定
+  - 场间构筑
+  - 整局结束
+
+### 2.2 回合锁定机制补齐
+
+- 客户端按钮语义保持为“锁定回合 / 取消锁定”
+- 服务端拒绝 1 秒内重复锁定/取消锁定
+- 客户端本地也做 1 秒冷却保护
+- 明确锁定后的手牌区禁用表现
+
+### 2.3 客户端日志与展示内容补齐
+
+- 当前客户端日志只覆盖部分战斗行为
+- 需要补齐：
+  - 出牌结果展示
+  - 构筑选择展示
+  - 锁定/取消锁定展示
+  - 结束与胜负展示
+- 需要同时明确可见度：
+  - 哪些信息双方都能看到
+  - 哪些信息只允许自己看到
+
+### 2.4 拿牌逻辑联调确认
+
+- 确认 `AddCard` 二段式流程在联机下正常
+- 确认揭示前不可偷看候选
+- 确认承诺后跳过会消耗机会
+
+### 2.5 客户端日志滚动与长期对局显示
+
+- 确认长局内日志区域持续自动滚动
+- 区分“没有展示内容”与“展示后未滚动”
+
+## 3. P1：MVP 完成后优先补
+
+### 3.1 服务端权威战斗事件流
+
+- 不再依赖客户端本地拼字符串
+- 服务端统一产出可广播事件
+- 客户端只显示服务端允许可见的事件内容
+
+### 3.2 操作期倒计时与超时推进
+
+- 当前双方都锁定可提前推进
+- 后续要补：
+  - 操作期倒计时
+  - 超时自动锁定
+  - 阶段截止时间同步
+
+### 3.3 断线策略补强
+
+- 当前规则先按“默认动作/默认锁定”兜底
+- 后续补：
+  - 明确房间阶段性掉线行为
+  - 重连后恢复当前快照
+
+### 3.4 MatchSession 继续瘦身
+
+- 当前 `MatchSession` 已拆出广播与命令分发
+- 后续继续收：
+  - 生命周期管理
+  - 自动清理
+  - 更细的状态日志
+
+## 4. P2：MVP 之后的功能扩展
+
+### 4.1 构筑与职业扩展
+
+- 接入更多职业卡池
+- 接入角色系统
+- 接入装备系统更多被动
+- 补充奖励池与阶段池配置
+
+### 4.2 2v2 预留能力落地
+
+- 队友可见度规则
+- 2v2 同场快照
+- 2v2 构筑与同步规则
+- 最终死斗 2v2 联机验证
+
+### 4.3 后端基础设施
+
+- 房间列表
+- 简易匹配
+- 持久化
+- 回放
+- 运维日志
+
+## 5. P3：长期规划
+
+- 账号系统
+- 数据库
+- Redis
+- 重连恢复
+- 公网部署
+- 2v2 正式化
+- 回放系统
+- 运营与配置后台
+
+## 6. 当前推荐执行顺序
+
+1. 联调并收口 `localhost 1v1`
+2. 补齐客户端日志与可见度展示
+3. 确认拿牌与构筑联机行为
+4. 补操作期倒计时与超时推进
+5. 进入重连、2v2、持久化阶段
